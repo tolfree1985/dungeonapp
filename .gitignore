@@ -1,0 +1,9 @@
+node_modules
+.next
+.env
+.env.local
+cookies.txt
+next
+dungeonpp@0.1.0
+src/app/api
+*.BACKUP
