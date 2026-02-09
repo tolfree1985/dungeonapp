@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Adventure {
+  id              String  @id
+  latestTurnIndex Int     @default(0)
+  turns           Turn[]
+}
+
+model Turn {
+  id          String   @id @default(cuid())
+  adventureId String
+  turnIndex   Int
+  playerInput String
+  scene       String
+  resolution  Json
+  stateDeltas Json
+  ledgerAdds  Json
+
+  memoryGate  String?
+  debug       Json?
+  intentJson  Json?
+
+  createdAt   DateTime @default(now())
+
+  adventure   Adventure @relation(fields: [adventureId], references: [id], onDelete: Cascade)
+
+  @@unique([adventureId, turnIndex])
+  @@index([adventureId])
+}
