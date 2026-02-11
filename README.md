@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+---
 
-## Getting Started
+## 📊 Pricing & Cost Review Triggers
 
-First, run the development server:
+This project intentionally delays final pricing decisions until real usage data exists.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+We do NOT optimize for unlimited turns early.
+We optimize for deterministic engine stability and meaningful gameplay first.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 🎯 Decision Gates (Objective Triggers)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Pricing and turn limits will only be reviewed when ONE of the following happens:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- 10,000 total turns logged
+- 100 active users
+- Cost per user exceeds 30% of subscription price
 
-## Learn More
+Until one of those triggers occurs:
 
-To learn more about Next.js, take a look at the following resources:
+- No pricing changes
+- No turn cap increases
+- No unlimited promises
+- No premature cost optimizations
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 💰 Cost Philosophy
 
-## Deploy on Vercel
+This system is engineered to reduce marginal token cost per turn by:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Externalizing state (state-driven narrative)
+- Enforcing consequences in-engine
+- Avoiding large context injections
+- Using deterministic lifecycle rules
+- Supporting smaller model usage where possible
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The goal is:
+
+> Spend engineering effort to reduce per-turn token burn.
+
+---
+
+## 🚀 Current Phase
+
+We are in:
+
+ENGINE + UX VALIDATION PHASE
+
+Focus:
+- Deterministic intercept lifecycle
+- Replay safety
+- Escalation → consequence mapping
+- Clear player-facing pressure UX
+
+NOT focus:
+- Pricing tiers
+- Unlimited marketing
+- Growth hacks
+
+Those come after real usage data.
+
