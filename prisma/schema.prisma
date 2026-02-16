@@ -8,14 +8,27 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Tier {
+  NOMAD
+  TRAILBLAZOR
+  CHRONICLER
+  LOREMASTER
+}
+
 model Adventure {
-  id              String  @id
-  latestTurnIndex Int     @default(0)
+  id              String      @id
+  latestTurnIndex Int         @default(0)
+  seed            Int?
+  state           Json?
+  ownerId         String?
   turns           Turn[]
+  turnEvents      TurnEvent[]
+
+  @@index([ownerId])
 }
 
 model Turn {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   adventureId String
   turnIndex   Int
   playerInput String
@@ -23,15 +36,112 @@ model Turn {
   resolution  Json
   stateDeltas Json
   ledgerAdds  Json
-
   memoryGate  String?
   debug       Json?
   intentJson  Json?
-
-  createdAt   DateTime @default(now())
-
+  createdAt   DateTime  @default(now())
   adventure   Adventure @relation(fields: [adventureId], references: [id], onDelete: Cascade)
 
   @@unique([adventureId, turnIndex])
   @@index([adventureId])
+}
+
+model TurnEvent {
+  eventId             String      @id @default(cuid())
+  adventureId         String
+  seq                 Int
+  createdAt           DateTime    @default(now())
+  prevEventId         String?
+  idempotencyKey      String
+  eventHash           String
+  engineVersion       String
+  status              String
+  rejectReason        String?
+  baseStateHash       String
+  resultStateHash     String
+  rngSeed             String
+  playerInput         String
+  modelInputHash      String
+  turnJson            Json
+  receiptEnvelopeHash String?
+  receiptChainHash    String?
+  receiptSig          String?
+  adventure           Adventure   @relation(fields: [adventureId], references: [id], onDelete: Cascade)
+  prevEvent           TurnEvent?  @relation("TurnEventChain", fields: [prevEventId], references: [eventId], onDelete: Restrict)
+  nextEvents          TurnEvent[] @relation("TurnEventChain")
+
+  @@unique([adventureId, seq])
+  @@index([adventureId, seq])
+  @@index([adventureId])
+}
+
+model RateLimitBucket {
+  id            String @id
+  key           String
+  bucketStartMs BigInt
+  count         Int
+
+  @@unique([key, bucketStartMs])
+  @@index([key])
+}
+
+model UserUsage {
+  id            String   @id @default(cuid())
+  userId        String
+  monthKey      String
+  tier          Tier
+  turnCount     Int      @default(0)
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  totalTokens   Int      @default(0)
+  reservedTurns Int      @default(0)
+  reservedTotal Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, monthKey])
+  @@index([userId])
+  @@index([monthKey])
+}
+
+model TurnBudgetHold {
+  id                   String     @id @default(cuid())
+  holdKey              String
+  userId               String
+  adventureId          String?
+  tier                 Tier
+  monthKey             String
+  reservedTurns        Int        @default(1)
+  reservedInputTokens  Int        @default(0)
+  reservedOutputTokens Int        @default(0)
+  reservedTotal        Int        @default(0)
+  status               String     @default("HELD")
+  expiresAt            DateTime
+  releasedAt           DateTime?
+  consumedAt           DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  @@unique([holdKey])
+  @@index([holdKey])
+  @@index([userId, monthKey])
+  @@index([adventureId])
+  @@index([expiresAt])
+}
+
+model TurnLease {
+  id          String    @id @default(cuid())
+  adventureId String    @unique
+  userId      String
+  leaseKey    String
+  expiresAt   DateTime
+  acquiredAt  DateTime  @default(now())
+  releasedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([leaseKey])
+  @@index([leaseKey])
+  @@index([userId])
+  @@index([expiresAt])
 }
