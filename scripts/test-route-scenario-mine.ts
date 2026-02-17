@@ -1,3 +1,4 @@
+// Ensures owner isolation invariant for scenario listing.
 import { PrismaClient } from "../src/generated/prisma";
 import { createScenario } from "../src/lib/scenario/scenarioRepo";
 
