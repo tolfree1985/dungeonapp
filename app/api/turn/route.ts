@@ -29,12 +29,40 @@ type StubModelResult = {
   outputTokens: number;
 };
 
+type BudgetExceededCode = "CONCURRENCY_LIMIT_EXCEEDED" | "MONTHLY_TOKEN_CAP_EXCEEDED";
+
 function hashHex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
 
 function shortKey(prefix: string, input: string): string {
   return `${prefix}_${hashHex(input).slice(0, 24)}`;
+}
+
+function budgetExceeded429(params: {
+  code: BudgetExceededCode;
+  idempotencyKey: string;
+  retryAt: Date;
+  message?: string;
+}) {
+  return {
+    error: {
+      type: "BUDGET_EXCEEDED" as const,
+      code: params.code,
+      message: params.message ?? "Budget exceeded",
+      idempotencyKey: params.idempotencyKey,
+      retryAt: params.retryAt.toISOString(),
+    },
+  };
+}
+
+function parseRetryAt(value: unknown): Date | null {
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value;
+  if (typeof value === "string") {
+    const d = new Date(value);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+  return null;
 }
 
 async function runModelStub(args: { prompt: string; max_tokens: number }): Promise<StubModelResult> {
@@ -126,19 +154,32 @@ export async function POST(req: Request) {
     } catch (err) {
       const be = err as unknown;
       if (be instanceof BillingError) {
+        const details = (be as any).details ?? {};
+        const code: BudgetExceededCode =
+          be.code === "MONTHLY_TOKEN_CAP_EXCEEDED" ? "MONTHLY_TOKEN_CAP_EXCEEDED" : "CONCURRENCY_LIMIT_EXCEEDED";
+        const retryAt =
+          parseRetryAt(details?.retryAt) ??
+          (code === "MONTHLY_TOKEN_CAP_EXCEEDED"
+            ? new Date(new Date().getTime() + 60_000)
+            : new Date(new Date().getTime() + 1_000));
+        const shaped = budgetExceeded429({
+          code,
+          idempotencyKey,
+          retryAt,
+          message: be.message,
+        });
+
         return NextResponse.json(
           {
             ok: false,
             error: {
-              type: "BUDGET_EXCEEDED",
-              code: be.code,
+              ...shaped.error,
               tier,
               monthKey,
-              retryAt: (be as any).details?.retryAt ?? null,
-              cap: (be as any).details?.cap ?? null,
-              used: (be as any).details?.used ?? null,
-              reserved: (be as any).details?.reserved ?? null,
-              requestedReserve: (be as any).details?.requestedReserve ?? null,
+              cap: details?.cap ?? null,
+              used: details?.used ?? null,
+              reserved: details?.reserved ?? null,
+              requestedReserve: details?.requestedReserve ?? null,
             },
             idempotencyKey,
           },
