@@ -1,0 +1,28 @@
+{
+  "version": "1",
+  "id": "mystery-docks",
+  "title": "The Fog at Blackwater Docks",
+  "summary": "A missing courier, a sealed crate, and too many witnesses who saw nothing.",
+  "tags": ["mystery", "adventure", "sandbox"],
+  "initialState": {
+    "player": { "hp": 10, "maxHp": 10, "stress": 0 },
+    "inventory": [],
+    "flags": { "knowsCourierName": false },
+    "quests": [{ "id": "find-courier", "status": "open" }]
+  },
+  "memoryCards": [
+    {
+      "id": "fact-blackwater",
+      "title": "Blackwater Docks",
+      "content": "The docks are always foggy at night; locals blame old ship fires.",
+      "triggers": [{ "kind": "onSceneTag", "key": "docks" }]
+    }
+  ],
+  "start": {
+    "sceneId": "docks-arrival",
+    "prompt": "Night. Fog curls around the pilings. A lantern swings on a hook, unmanned. The harbormaster's office is dark—except for one thin line of light under the door.",
+    "sceneTags": ["docks", "night", "fog"]
+  },
+  "locks": { "tone": "noir", "pacing": "steady", "genre": "mystery-adventure" },
+  "content": { "rating": "PG-13", "warnings": ["threats", "mild violence"] }
+}

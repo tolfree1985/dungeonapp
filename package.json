@@ -11,6 +11,7 @@
     "prisma:validate": "bash scripts/with-sqlite-env.sh npx prisma validate",
     "smoke:billing": "BILLING_TEST_CAP=2000 bash scripts/with-sqlite-env.sh node --import tsx scripts/smoke-budget-local.ts",
     "ci:billing": "npm run prisma:validate && npm run typecheck && npm run smoke:billing",
+    "scenario:bootstrap:test": "SCENARIO_ID=mystery-docks node --import tsx scripts/test-scenario-bootstrap.ts",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "node scripts/seed-dev.js"
