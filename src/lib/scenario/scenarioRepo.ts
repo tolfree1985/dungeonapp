@@ -7,7 +7,7 @@ type TxLike = {
 };
 
 export type ScenarioVisibility = "PRIVATE" | "PUBLIC";
-type ListPageInput = { take?: number; cursor?: string };
+type ListPageInput = { take?: number; cursor?: string | null };
 
 export async function createScenario(
   tx: TxLike,
@@ -46,22 +46,24 @@ export async function createScenario(
 }
 
 export async function listPublicScenarios(tx: TxLike, input?: ListPageInput) {
-  const { take, cursor } = input ?? {};
+  const { cursor } = input ?? {};
+  const take = Math.min(Math.max(input?.take ?? 20, 1), 50);
   return tx.scenario.findMany({
     where: { visibility: "PUBLIC" },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    ...(typeof take === "number" ? { take } : {}),
+    take,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     select: { id: true, title: true, summary: true, ownerId: true, sourceScenarioId: true, updatedAt: true },
   });
 }
 
 export async function listMineScenarios(tx: TxLike, ownerId: string, input?: ListPageInput) {
-  const { take, cursor } = input ?? {};
+  const { cursor } = input ?? {};
+  const take = Math.min(Math.max(input?.take ?? 20, 1), 50);
   return tx.scenario.findMany({
     where: { ownerId },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    ...(typeof take === "number" ? { take } : {}),
+    take,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     select: { id: true, title: true, summary: true, ownerId: true, sourceScenarioId: true, updatedAt: true },
   });

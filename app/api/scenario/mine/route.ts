@@ -22,12 +22,11 @@ export async function GET(req: Request) {
     );
   }
 
-  const page = await prisma.$transaction(async (tx) => {
-    return listMineScenarios(tx as any, ownerId, { take: take + 1, cursor });
+  const scenarios = await prisma.$transaction(async (tx) => {
+    return listMineScenarios(tx as any, ownerId, { take, cursor });
   });
 
-  const scenarios = page.slice(0, take);
-  const nextCursor = page.length > take ? scenarios[scenarios.length - 1]?.id ?? null : null;
+  const nextCursor = scenarios.length === take ? scenarios[scenarios.length - 1]?.id ?? null : null;
 
   return NextResponse.json({ scenarios, nextCursor });
 }
