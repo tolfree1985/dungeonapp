@@ -15,6 +15,8 @@ const debug = (...args: unknown[]) => {
   if (SMOKE_DEBUG) console.log("[smoke:debug]", ...args);
 };
 
+type BudgetExceededCode = "CONCURRENCY_LIMIT_EXCEEDED" | "MONTHLY_TOKEN_CAP_EXCEEDED";
+
 async function callTurn(body: TurnReq) {
   const req = new Request("http://local/api/turn", {
     method: "POST",
@@ -33,17 +35,35 @@ async function callTurn(body: TurnReq) {
   return { status: res.status, json };
 }
 
-function assert(cond: any, msg: string) {
-  if (!cond) throw new Error(`ASSERT: ${msg}`);
+function assert(condition: unknown, msg: string): asserts condition {
+  if (!condition) throw new Error(msg);
 }
 
-function isBudget429(r: { status: number; json: any }) {
-  return (
-    r.status === 429 &&
-    r.json?.ok === false &&
-    r.json?.error?.type === "BUDGET_EXCEEDED" &&
-    typeof r.json?.error?.code === "string"
+function isISODateString(s: unknown): s is string {
+  if (typeof s !== "string") return false;
+  const t = Date.parse(s);
+  return Number.isFinite(t);
+}
+
+function assertBudgetExceeded429(
+  body: any,
+  expected: {
+    code: BudgetExceededCode;
+    idempotencyKey: string;
+  }
+) {
+  assert(body && typeof body === "object", "429 body must be an object");
+  assert(body.error && typeof body.error === "object", "429 body.error must exist");
+
+  assert(body.error.type === "BUDGET_EXCEEDED", "error.type must be BUDGET_EXCEEDED");
+  assert(body.error.code === expected.code, `error.code must be ${expected.code}`);
+
+  assert(
+    body.error.idempotencyKey === expected.idempotencyKey,
+    "error.idempotencyKey must equal request idempotencyKey"
   );
+
+  assert(isISODateString(body.error.retryAt), "error.retryAt must be an ISO date string");
 }
 
 async function resetTestState(prisma: PrismaClient, args: { adventureId: string; userId: string }) {
@@ -100,56 +120,71 @@ async function main() {
   // 3) Concurrency: force overlap + distinct idempotency
   process.env.BILLING_TEST_LATENCY_MS = "150";
 
+  const concKey1 = "smoke-conc-1";
+  const concKey2 = "smoke-conc-2";
   const [c1, c2] = await Promise.all([
     callTurn({
       adventureId,
       playerText: "push forward A",
       userId,
       tier,
-      idempotencyKey: "smoke-conc-1",
+      idempotencyKey: concKey1,
     }),
     callTurn({
       adventureId,
       playerText: "push forward B",
       userId,
       tier,
-      idempotencyKey: "smoke-conc-2",
+      idempotencyKey: concKey2,
     }),
   ]);
 
   delete process.env.BILLING_TEST_LATENCY_MS;
 
   debug("concurrency", c1.status, c2.status);
-  if (!((c1.status === 429 && isBudget429(c1)) || (c2.status === 429 && isBudget429(c2)) || c1.status === 409 || c2.status === 409)) {
+  if (!(c1.status === 429 || c2.status === 429)) {
     debug("c1 body", JSON.stringify(c1.json, null, 2));
     debug("c2 body", JSON.stringify(c2.json, null, 2));
   }
-  assert(
-    (c1.status === 429 && isBudget429(c1)) ||
-      (c2.status === 429 && isBudget429(c2)) ||
-      c1.status === 409 ||
-      c2.status === 409,
-    "one concurrent request must be blocked (429 concurrency or 409)"
-  );
+  assert(c1.status === 429 || c2.status === 429, "one concurrent request must be blocked with 429");
+
+  if (c1.status === 429) {
+    assertBudgetExceeded429(c1.json, {
+      code: "CONCURRENCY_LIMIT_EXCEEDED",
+      idempotencyKey: concKey1,
+    });
+  } else {
+    assertBudgetExceeded429(c2.json, {
+      code: "CONCURRENCY_LIMIT_EXCEEDED",
+      idempotencyKey: concKey2,
+    });
+  }
 
   // 4) Monthly cap test (requires BILLING_TEST_CAP override in tiers)
   if (process.env.BILLING_TEST_CAP) {
     let hit: any = null;
+    let capIdempotencyKey: string | null = null;
     for (let i = 0; i < 300; i++) {
-      const r = await callTurn({ adventureId, playerText: `spam ${i}`, userId, tier });
+      const idempotencyKey = `smoke-cap-${i}`;
+      const r = await callTurn({ adventureId, playerText: `spam ${i}`, userId, tier, idempotencyKey });
       if (r.status === 429) {
         hit = r;
+        capIdempotencyKey = idempotencyKey;
         break;
       }
     }
     const usage = await prisma.userUsage.findFirst({ where: { userId } });
     debug("usage after spam", usage);
     debug("cap-hit", hit?.status ?? "none", hit?.json?.error?.code ?? null);
-    if (!(hit && isBudget429(hit))) {
+    if (!(hit && hit.status === 429 && hit.json?.error?.type === "BUDGET_EXCEEDED")) {
       debug("cap-hit body", JSON.stringify(hit?.json ?? null, null, 2));
     }
-    assert(hit && isBudget429(hit), "should hit cap and get 429 budget error");
-    assert(hit.json.error.code === "MONTHLY_TOKEN_CAP_EXCEEDED", "must be MONTHLY_TOKEN_CAP_EXCEEDED");
+    assert(hit, "should hit cap and get 429 budget error");
+    assert(capIdempotencyKey, "cap idempotency key must be captured");
+    assertBudgetExceeded429(hit.json, {
+      code: "MONTHLY_TOKEN_CAP_EXCEEDED",
+      idempotencyKey: capIdempotencyKey,
+    });
   } else {
     debug("skip cap test: set BILLING_TEST_CAP=2000 to enable");
   }
