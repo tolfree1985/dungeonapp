@@ -15,6 +15,11 @@ enum Tier {
   LOREMASTER
 }
 
+enum ScenarioVisibility {
+  PRIVATE
+  PUBLIC
+}
+
 model Adventure {
   id              String      @id
   latestTurnIndex Int         @default(0)
@@ -144,4 +149,19 @@ model TurnLease {
   @@index([leaseKey])
   @@index([userId])
   @@index([expiresAt])
+}
+
+model Scenario {
+  id               String             @id
+  title            String
+  summary          String?
+  contentJson      Json
+  visibility       ScenarioVisibility @default(PRIVATE)
+  ownerId          String?
+  sourceScenarioId String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([visibility])
+  @@index([ownerId])
 }
