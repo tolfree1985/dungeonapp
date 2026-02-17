@@ -10,18 +10,24 @@ type PublicScenario = {
 
 type PublicResponse = {
   scenarios?: PublicScenario[];
+  nextCursor?: string | null;
 };
 
 type Mode = "public" | "mine";
+const PAGE_TAKE = 20;
 
 export default function ScenariosPage() {
   const [scenarios, setScenarios] = useState<PublicScenario[]>([]);
   const [mode, setMode] = useState<Mode>("public");
   const [ownerId, setOwnerId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [copyingId, setCopyingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const ownerIdTrimmed = ownerId.trim();
+  const mineOwnerKey = mode === "mine" ? ownerIdTrimmed : "";
 
   useEffect(() => {
     let cancelled = false;
@@ -30,13 +36,19 @@ export default function ScenariosPage() {
       setLoading(true);
       setError(null);
       try {
-        if (mode === "mine" && !ownerId.trim()) {
+        if (mode === "mine" && !ownerIdTrimmed) {
           setScenarios([]);
+          setNextCursor(null);
           setError("ownerId required");
           return;
         }
 
-        const url = mode === "mine" ? `/api/scenario/mine?ownerId=${encodeURIComponent(ownerId)}` : "/api/scenario/public";
+        const params = new URLSearchParams();
+        params.set("take", String(PAGE_TAKE));
+        if (mode === "mine") {
+          params.set("ownerId", ownerIdTrimmed);
+        }
+        const url = mode === "mine" ? `/api/scenario/mine?${params.toString()}` : `/api/scenario/public?${params.toString()}`;
         const res = await fetch(url);
         const json = (await res.json().catch(() => ({}))) as PublicResponse;
         if (!res.ok) {
@@ -44,7 +56,9 @@ export default function ScenariosPage() {
           throw new Error(msg);
         }
         if (!cancelled) {
-          setScenarios(Array.isArray(json.scenarios) ? json.scenarios : []);
+          const firstPage = Array.isArray(json.scenarios) ? json.scenarios : [];
+          setScenarios(firstPage);
+          setNextCursor(json.nextCursor ?? null);
         }
       } catch (e: any) {
         if (!cancelled) {
@@ -61,7 +75,41 @@ export default function ScenariosPage() {
     return () => {
       cancelled = true;
     };
-  }, [mode, ownerId]);
+  }, [mode, mineOwnerKey]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    if (mode === "mine" && !ownerIdTrimmed) {
+      setError("ownerId required");
+      return;
+    }
+
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("take", String(PAGE_TAKE));
+      params.set("cursor", nextCursor);
+      if (mode === "mine") {
+        params.set("ownerId", ownerIdTrimmed);
+      }
+      const url = mode === "mine" ? `/api/scenario/mine?${params.toString()}` : `/api/scenario/public?${params.toString()}`;
+      const res = await fetch(url);
+      const json = (await res.json().catch(() => ({}))) as PublicResponse;
+      if (!res.ok) {
+        const msg = (json as any)?.error?.message ?? "Failed to load more scenarios";
+        throw new Error(msg);
+      }
+
+      const nextPage = Array.isArray(json.scenarios) ? json.scenarios : [];
+      setScenarios((prev) => [...prev, ...nextPage]);
+      setNextCursor(json.nextCursor ?? null);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load more scenarios");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   async function copyScenario(sourceScenarioId: string) {
     if (!ownerId.trim()) {
@@ -147,6 +195,16 @@ export default function ScenariosPage() {
           </li>
         ))}
       </ul>
+
+      {!loading && nextCursor ? (
+        <button
+          className="mt-4 rounded border px-3 py-1.5 text-sm disabled:opacity-50"
+          onClick={loadMore}
+          disabled={loadingMore}
+        >
+          {loadingMore ? "Loading..." : "Load more"}
+        </button>
+      ) : null}
     </main>
   );
 }
