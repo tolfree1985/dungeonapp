@@ -69,6 +69,8 @@ async function main() {
   for (const id of ids1) {
     assert(!ids2.has(id), `page overlap detected for id ${id}`);
   }
+  const ids40 = new Set([...ids1, ...ids2]);
+  assert(ids40.size === 40, `expected 40 unique ids across two pages, got ${ids40.size}`);
 
   const top40 = await fetchPage({ take: 40 });
   const combined = [...page1.scenarios, ...page2.scenarios].map((s) => s.id).join(",");
