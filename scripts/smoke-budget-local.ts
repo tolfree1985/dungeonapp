@@ -1,7 +1,6 @@
 import { POST } from "../app/api/turn/route";
 import { PrismaClient } from "../src/generated/prisma";
 import { __debugCaps } from "../src/lib/billing/tiers";
-import { setTimeout as sleep } from "node:timers/promises";
 
 type TurnReq = {
   adventureId: string;
@@ -9,6 +8,11 @@ type TurnReq = {
   userId?: string;
   tier?: string;
   idempotencyKey?: string;
+};
+
+const SMOKE_DEBUG = process.env.SMOKE_DEBUG === "1";
+const debug = (...args: unknown[]) => {
+  if (SMOKE_DEBUG) console.log("[smoke:debug]", ...args);
 };
 
 async function callTurn(body: TurnReq) {
@@ -74,14 +78,14 @@ async function main() {
   const prisma = new PrismaClient();
   await resetTestState(prisma, { adventureId, userId });
 
-  console.log("LOCAL SMOKE:", { adventureId, userId, tier, BILLING_TEST_CAP: process.env.BILLING_TEST_CAP ?? null });
-  console.log("tiers debug:", __debugCaps());
+  debug("LOCAL SMOKE", { adventureId, userId, tier, BILLING_TEST_CAP: process.env.BILLING_TEST_CAP ?? null });
+  debug("tiers debug", __debugCaps());
 
   // 1) Normal turn
   const normal = await callTurn({ adventureId, playerText: "look around", userId, tier });
-  console.log("normal:", normal.status, normal.json?.ok);
+  debug("normal", normal.status, normal.json?.ok);
   if (!(normal.status === 200 && normal.json?.ok === true)) {
-    console.log("normal response body:", JSON.stringify(normal.json, null, 2));
+    debug("normal response body", JSON.stringify(normal.json, null, 2));
   }
   assert(normal.status === 200 && normal.json?.ok === true, "normal turn should succeed");
 
@@ -89,7 +93,7 @@ async function main() {
   const idemKey = "smoke-idem-1";
   const idem1 = await callTurn({ adventureId, playerText: "open the door", userId, tier, idempotencyKey: idemKey });
   const idem2 = await callTurn({ adventureId, playerText: "open the door", userId, tier, idempotencyKey: idemKey });
-  console.log("idem:", idem1.status, idem2.status, "idempotent:", idem2.json?.billing?.idempotent ?? null);
+  debug("idem", idem1.status, idem2.status, "idempotent:", idem2.json?.billing?.idempotent ?? null);
   assert(idem1.status === 200, "idempotency first should succeed");
   assert(idem2.status === 200, "idempotency second should succeed");
 
@@ -115,10 +119,10 @@ async function main() {
 
   delete process.env.BILLING_TEST_LATENCY_MS;
 
-  console.log("concurrency:", c1.status, c2.status);
+  debug("concurrency", c1.status, c2.status);
   if (!((c1.status === 429 && isBudget429(c1)) || (c2.status === 429 && isBudget429(c2)) || c1.status === 409 || c2.status === 409)) {
-    console.log("c1 body:", JSON.stringify(c1.json, null, 2));
-    console.log("c2 body:", JSON.stringify(c2.json, null, 2));
+    debug("c1 body", JSON.stringify(c1.json, null, 2));
+    debug("c2 body", JSON.stringify(c2.json, null, 2));
   }
   assert(
     (c1.status === 429 && isBudget429(c1)) ||
@@ -139,15 +143,15 @@ async function main() {
       }
     }
     const usage = await prisma.userUsage.findFirst({ where: { userId } });
-    console.log("usage after spam:", usage);
-    console.log("cap-hit:", hit?.status ?? "none", hit?.json?.error?.code ?? null);
+    debug("usage after spam", usage);
+    debug("cap-hit", hit?.status ?? "none", hit?.json?.error?.code ?? null);
     if (!(hit && isBudget429(hit))) {
-      console.log("cap-hit body:", JSON.stringify(hit?.json ?? null, null, 2));
+      debug("cap-hit body", JSON.stringify(hit?.json ?? null, null, 2));
     }
     assert(hit && isBudget429(hit), "should hit cap and get 429 budget error");
     assert(hit.json.error.code === "MONTHLY_TOKEN_CAP_EXCEEDED", "must be MONTHLY_TOKEN_CAP_EXCEEDED");
   } else {
-    console.log("skip cap test: set BILLING_TEST_CAP=2000 to enable");
+    debug("skip cap test: set BILLING_TEST_CAP=2000 to enable");
   }
 
   await prisma.$disconnect();
@@ -155,6 +159,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(e);
+  console.error("SMOKE FAIL", e);
   process.exit(1);
 });
