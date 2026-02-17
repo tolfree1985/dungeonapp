@@ -1,5 +1,15 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { PrismaClient } from "../../../src/generated/prisma";
+import { BillingError } from "../../../src/lib/billing/errors";
+import { estimateTokens } from "../../../src/lib/billing/estimate";
+import {
+  commitUsageAndRelease,
+  preflightHoldOrThrow,
+  releaseUsageAndLeaseBestEffort,
+} from "../../../src/lib/billing/enforce";
+import { monthKeyUtc } from "../../../src/lib/billing/monthKey";
+import { coerceTier } from "../../../src/lib/billing/tiers";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -7,10 +17,37 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 type PostBody = {
   adventureId: string;
-  playerText: string; // incoming API field; maps to Turn.playerInput
+  playerText: string;
+  userId?: string;
+  tier?: string;
+  idempotencyKey?: string;
 };
 
+type StubModelResult = {
+  scene: string;
+  resolution: { notes: string; max_tokens: number };
+  outputTokens: number;
+};
+
+function hashHex(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
+
+function shortKey(prefix: string, input: string): string {
+  return `${prefix}_${hashHex(input).slice(0, 24)}`;
+}
+
+async function runModelStub(args: { prompt: string; max_tokens: number }): Promise<StubModelResult> {
+  const scene = `You pause at the cellar door. (Stub model, max_tokens=${args.max_tokens})`;
+  const resolution = { notes: "Stub response.", max_tokens: args.max_tokens };
+  const outputTokens = Math.min(args.max_tokens, estimateTokens(`${scene} ${JSON.stringify(resolution)}`));
+  return { scene, resolution, outputTokens };
+}
+
 export async function POST(req: Request) {
+  let holdKey = "";
+  let leaseKeyForCleanup = "";
+
   try {
     const body = (await req.json()) as Partial<PostBody>;
 
@@ -21,40 +58,210 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing/invalid playerText" }, { status: 400 });
     }
 
-    const { turn } = await prisma.$transaction(async (tx) => {
-      // Atomic, race-safe turnIndex using Adventure.latestTurnIndex
-      const adv = await tx.adventure.update({
-        where: { id: body.adventureId },
+    const adventureId: string = body.adventureId;
+    const playerText: string = body.playerText;
+
+    const now = new Date();
+    const userId = typeof body.userId === "string" && body.userId.trim() ? body.userId.trim() : "anon";
+    const tier = coerceTier(body.tier);
+    const monthKey = monthKeyUtc(now);
+
+    // Prefer client idempotency, else deterministic hash
+    const idempotencyKey =
+      typeof body.idempotencyKey === "string" && body.idempotencyKey.trim()
+        ? body.idempotencyKey.trim()
+        : hashHex(`${adventureId}|${userId}|${tier}|${monthKey}|${playerText}`);
+
+    // Idempotency replay: if we've already applied this idempotencyKey for this adventure,
+    // return the previously persisted payload and do NOT re-run billing or create new Turn/TurnEvent.
+    const prevApplied = await prisma.turnEvent.findFirst({
+      where: {
+        adventureId,
+        idempotencyKey,
+        status: "APPLIED",
+      },
+      orderBy: { seq: "desc" },
+    });
+
+    if (prevApplied?.turnJson) {
+      try {
+        const parsed = JSON.parse(prevApplied.turnJson as string) as Record<string, unknown>;
+        return NextResponse.json({ ok: true, replayed: true, ...parsed }, { status: 200 });
+      } catch {
+        // If turnJson is unexpectedly not JSON, still return a safe replay response.
+        return NextResponse.json(
+          { ok: true, replayed: true, idempotencyKey, turnEventId: prevApplied.eventId },
+          { status: 200 }
+        );
+      }
+    }
+
+    holdKey = shortKey("hold", idempotencyKey);
+
+    // IMPORTANT: lease must be per adventure+user for real concurrency gating
+    const leaseKey = hashHex(`lease|${userId}|${adventureId}`);
+    leaseKeyForCleanup = leaseKey;
+
+    const estInputTokens = estimateTokens(playerText);
+    // Dev-only: allow smoke harness to clamp monthly cap for deterministic cap-exceed test.
+    const capOverrideHeader = req.headers.get("x-smoke-cap-override");
+    const capOverrideTokens =
+      process.env.NODE_ENV !== "production" && capOverrideHeader ? Number(capOverrideHeader) : undefined;
+
+    let preflight;
+    try {
+      preflight = await prisma.$transaction((tx) =>
+        preflightHoldOrThrow(tx, {
+          userId,
+          adventureId,
+          tier,
+          holdKey,
+          leaseKey,
+          monthKey,
+          now,
+          estInputTokens,
+          capOverrideTokens,
+        })
+      );
+    } catch (err) {
+      const be = err as unknown;
+      if (be instanceof BillingError) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: {
+              type: "BUDGET_EXCEEDED",
+              code: be.code,
+              tier,
+              monthKey,
+              retryAt: (be as any).details?.retryAt ?? null,
+              cap: (be as any).details?.cap ?? null,
+              used: (be as any).details?.used ?? null,
+              reserved: (be as any).details?.reserved ?? null,
+              requestedReserve: (be as any).details?.requestedReserve ?? null,
+            },
+            idempotencyKey,
+          },
+          { status: 429 }
+        );
+      }
+      throw err;
+    }
+
+    const testLatencyMs = Number(process.env.BILLING_TEST_LATENCY_MS ?? "0");
+    if (testLatencyMs > 0) {
+      await new Promise((r) => setTimeout(r, testLatencyMs));
+    }
+
+    // Dev-only: allow smoke harness to force real overlap for concurrency tests.
+    const sleepMsHeader = req.headers.get("x-smoke-sleep-ms");
+    const sleepMs = sleepMsHeader ? Number(sleepMsHeader) : 0;
+    if (process.env.NODE_ENV !== "production" && Number.isFinite(sleepMs) && sleepMs > 0) {
+      await new Promise((r) => setTimeout(r, sleepMs));
+    }
+
+    const model = await runModelStub({
+      prompt: playerText,
+      max_tokens: preflight.perTurnMaxOutputTokens,
+    });
+
+    const finalized = await prisma.$transaction(async (tx) => {
+      const updatedAdventure = await tx.adventure.update({
+        where: { id: adventureId },
         data: { latestTurnIndex: { increment: 1 } },
         select: { id: true, latestTurnIndex: true },
       });
 
       const turn = await tx.turn.create({
         data: {
-          adventureId: adv.id,                 // ✅ FK-safe (comes from real row)
-          turnIndex: adv.latestTurnIndex,      // ✅ required
-          playerInput: body.playerText,        // ✅ required
-
-          // ✅ required by schema (stubbed; no LLM yet)
-          scene: "You pause at the cellar door. (Stub scene.)",
-          resolution: { notes: "Stub response." },
+          adventureId: updatedAdventure.id,
+          turnIndex: updatedAdventure.latestTurnIndex,
+          playerInput: playerText,
+          scene: model.scene,
+          resolution: model.resolution,
           stateDeltas: [],
           ledgerAdds: [],
         },
       });
 
-      return { turn };
+      const prevEvent = await tx.turnEvent.findFirst({
+        where: { adventureId: updatedAdventure.id },
+        orderBy: { seq: "desc" },
+        select: { eventId: true, seq: true },
+      });
+      const seq = (prevEvent?.seq ?? -1) + 1;
+
+      const modelInputHash = hashHex(
+        JSON.stringify({
+          adventureId,
+          playerText,
+          max_tokens: preflight.perTurnMaxOutputTokens,
+        })
+      );
+      const turnPayload = {
+        turnId: turn.id,
+        turnIndex: turn.turnIndex,
+        scene: turn.scene,
+        resolution: turn.resolution,
+      };
+      const eventHash = hashHex(
+        JSON.stringify({
+          seq,
+          prevEventId: prevEvent?.eventId ?? null,
+          idempotencyKey,
+          modelInputHash,
+          turnPayload,
+        })
+      );
+
+      const committed = await commitUsageAndRelease(tx, {
+        userId,
+        monthKey,
+        holdKey,
+        leaseKey,
+        actualInputTokens: estInputTokens,
+        actualOutputTokens: model.outputTokens,
+        now: new Date(),
+      });
+
+      await tx.turnEvent.create({
+        data: {
+          adventureId: updatedAdventure.id,
+          seq,
+          prevEventId: prevEvent?.eventId ?? null,
+          idempotencyKey,
+          eventHash,
+          engineVersion: "billing-phase-a-b-v1",
+          status: "APPLIED",
+          baseStateHash: hashHex(`base|${updatedAdventure.id}|${turn.turnIndex}`),
+          resultStateHash: hashHex(`result|${updatedAdventure.id}|${turn.turnIndex}`),
+          rngSeed: "0",
+          playerInput: playerText,
+          modelInputHash,
+          turnJson: turnPayload,
+        },
+      });
+
+      return { turn, billing: committed, idempotencyKey };
     });
 
-    return NextResponse.json({ ok: true, turn }, { status: 200 });
-  } catch (err: any) {
-    if (err?.code === "P2025") {
-      // Adventure not found (the update failed)
+    return NextResponse.json({ ok: true, ...finalized }, { status: 200 });
+  } catch (err: unknown) {
+    if (holdKey && leaseKeyForCleanup) {
+      await releaseUsageAndLeaseBestEffort(prisma, { holdKey, leaseKey: leaseKeyForCleanup, now: new Date() });
+    }
+
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "P2025") {
       return NextResponse.json({ ok: false, error: "Adventure not found" }, { status: 404 });
     }
+    if (e?.code === "P2002") {
+      return NextResponse.json({ ok: false, error: "Duplicate request" }, { status: 409 });
+    }
+
     console.error("POST /api/turn error:", err);
     return NextResponse.json(
-      { ok: false, error: "Internal Server Error", details: String(err?.message ?? err) },
+      { ok: false, error: "Internal Server Error", details: String(e?.message ?? err) },
       { status: 500 }
     );
   }

@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.d.ts",
+    "app/api/turn/route.ts",
+    "src/lib/billing/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "_disabled_routes",
+    "_route_archive",
+    "tools",
+    "scripts",
+    "prisma/migrations",
+    "src/generated"
+  ]
+}
