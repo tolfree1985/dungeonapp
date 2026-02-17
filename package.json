@@ -9,7 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "prisma:validate": "bash scripts/with-sqlite-env.sh npx prisma validate",
-    "smoke:billing": "BILLING_TEST_CAP=2000 bash scripts/with-sqlite-env.sh npx tsx scripts/smoke-budget-local.ts",
+    "smoke:billing": "BILLING_TEST_CAP=2000 bash scripts/with-sqlite-env.sh node --import tsx scripts/smoke-budget-local.ts",
     "ci:billing": "npm run prisma:validate && npm run typecheck && npm run smoke:billing",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
