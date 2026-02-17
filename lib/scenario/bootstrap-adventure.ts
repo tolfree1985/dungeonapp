@@ -1,4 +1,4 @@
-import type { ScenarioV1 } from "../../schemas/scenario.v1";
+import type { ScenarioV1 } from "../../schemas/scenario.v1.ts";
 
 export type BootstrappedAdventure = {
   state: Record<string, unknown>;

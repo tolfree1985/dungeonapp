@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { ScenarioV1 } from "../../schemas/scenario.v1";
-import { validateScenarioV1 } from "../../schemas/scenario.v1";
+import type { ScenarioV1 } from "../../schemas/scenario.v1.ts";
+import { validateScenarioV1 } from "../../schemas/scenario.v1.ts";
 
 export function loadScenarioById(id: string): ScenarioV1 {
   const dir = path.join(process.cwd(), "scenarios");
