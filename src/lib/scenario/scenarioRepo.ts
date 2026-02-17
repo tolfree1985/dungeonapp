@@ -52,6 +52,14 @@ export async function listPublicScenarios(tx: TxLike) {
   });
 }
 
+export async function listMineScenarios(tx: TxLike, ownerId: string) {
+  return tx.scenario.findMany({
+    where: { ownerId },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, title: true, summary: true, ownerId: true, sourceScenarioId: true, updatedAt: true },
+  });
+}
+
 export async function forkScenario(
   tx: TxLike,
   input: {
