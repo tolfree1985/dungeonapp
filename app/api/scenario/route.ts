@@ -19,9 +19,26 @@ export async function POST(req: Request) {
     );
   }
 
-  const created = await prisma.$transaction(async (tx) => {
-    return createScenario(tx as any, { id, title, summary, contentJson, visibility, ownerId });
-  });
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      return createScenario(tx as any, { id, title, summary, contentJson, visibility, ownerId });
+    });
 
-  return NextResponse.json({ scenario: created });
+    return NextResponse.json({ scenario: created });
+  } catch (e: any) {
+    if (e?.code === "SCENARIO_CAP_EXCEEDED") {
+      return NextResponse.json(
+        {
+          error: {
+            type: "LIMIT_EXCEEDED",
+            code: "SCENARIO_CAP_EXCEEDED",
+            cap: e?.details?.cap ?? null,
+            used: e?.details?.used ?? null,
+          },
+        },
+        { status: 429 },
+      );
+    }
+    throw e;
+  }
 }

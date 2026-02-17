@@ -29,6 +29,19 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
         { status: 404 }
       );
     }
+    if (e?.code === "SCENARIO_CAP_EXCEEDED") {
+      return NextResponse.json(
+        {
+          error: {
+            type: "LIMIT_EXCEEDED",
+            code: "SCENARIO_CAP_EXCEEDED",
+            cap: e?.details?.cap ?? null,
+            used: e?.details?.used ?? null,
+          },
+        },
+        { status: 429 },
+      );
+    }
     throw e;
   }
 }
