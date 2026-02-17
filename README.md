@@ -59,3 +59,10 @@ NOT focus:
 
 Those come after real usage data.
 
+---
+
+## Determinism Invariants
+
+- `/api/scenario/public` and `/api/scenario/mine` must remain ordered by `updatedAt desc`, then `id desc`.
+- Paging must use `cursor` with `skip: 1`.
+- UI must not reorder, merge, or dedupe scenario lists; server order is the source of truth.
