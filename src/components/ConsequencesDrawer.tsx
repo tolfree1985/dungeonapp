@@ -80,6 +80,8 @@ function groupLedger(entries: { entry: AnyEntry; index: number }[]) {
 function groupKeyFromLedgerHash(hash: string): string | null {
   if (!hash.startsWith("#ledger-")) return null;
   const id = hash.slice(1);
+  if (id === "ledger-group-ungrouped") return "ungrouped";
+  if (id.startsWith("ledger-group-")) return id.slice("ledger-group-".length) || null;
   if (id.startsWith("ledger-idx-")) return "ungrouped";
   return id.slice("ledger-".length) || null;
 }
@@ -173,6 +175,7 @@ export function ConsequencesDrawer({
   const [filterRuleId, setFilterRuleId] = useState<string>("");
   const [deltaKeyFilter, setDeltaKeyFilter] = useState<string>(initialDeltaKey);
   const [focusMode, setFocusMode] = useState(false);
+  const [focusedGroupKey, setFocusedGroupKey] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const isOpen = (key: string) => openGroups[key] !== false;
   const filtered = filterLedgerEntries(ledgerRecords, {
@@ -355,9 +358,16 @@ export function ConsequencesDrawer({
       }
 
       const hash = window.location.hash;
-      if (!hash || !hash.startsWith("#ledger-")) return;
+      if (!hash || !hash.startsWith("#ledger-")) {
+        setFocusedGroupKey(null);
+        return;
+      }
 
       const groupKey = groupKeyFromLedgerHash(hash);
+      const resolvedFocusedGroupKey = groupKey && groupOrderRef.current.includes(groupKey)
+        ? groupKey
+        : null;
+      setFocusedGroupKey(resolvedFocusedGroupKey);
       if (focusModeRef.current && groupKey) {
         setOpenGroups(() => {
           const next: Record<string, boolean> = {};
@@ -866,6 +876,7 @@ export function ConsequencesDrawer({
               <div>+ Added: {addedKeysLine}</div>
               <div>– Removed: {removedKeysLine}</div>
               <div>= Unchanged: {unchangedKeysLine}</div>
+              <div>Focused group: {focusedGroupKey ?? "none"}</div>
               <div className="mt-2 space-y-1">
                 <div>Added keys</div>
                 <div className="flex flex-wrap gap-1">
