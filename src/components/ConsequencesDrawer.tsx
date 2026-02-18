@@ -54,6 +54,13 @@ function groupLedger(entries: { entry: AnyEntry; index: number }[]) {
   return { order, map };
 }
 
+function groupKeyFromLedgerHash(hash: string): string | null {
+  if (!hash.startsWith("#ledger-")) return null;
+  const id = hash.slice(1);
+  if (id.startsWith("ledger-idx-")) return "ungrouped";
+  return id.slice("ledger-".length) || null;
+}
+
 export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
   const deltas = Array.isArray(stateDeltas) ? stateDeltas : [];
   const ledger = Array.isArray(ledgerAdds) ? ledgerAdds : [];
@@ -110,8 +117,17 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
     if (typeof window === "undefined") return;
 
     const hash = window.location.hash;
-    if (!hash) return;
-    if (!hash.startsWith("#ledger-")) return;
+    if (!hash || !hash.startsWith("#ledger-")) return;
+
+    const groupKey = groupKeyFromLedgerHash(hash);
+    if (groupKey) {
+      setOpenGroups((prev) => {
+        if (prev[groupKey] !== false) return prev;
+        const next = { ...prev };
+        delete next[groupKey];
+        return next;
+      });
+    }
 
     const id = hash.slice(1);
     const el = document.getElementById(id);
