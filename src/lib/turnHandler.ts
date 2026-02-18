@@ -311,7 +311,8 @@ export async function handleTurn(body: any) {
     });
 
     // EngineReturn is an ARRAY with `.deltas`
-    const stateDeltas = (out as any).deltas ?? out;
+    const stateDeltasRaw = (out as any).deltas ?? out;
+    const stateDeltas = Array.isArray(stateDeltasRaw) ? stateDeltasRaw : [];
 
     const nextState = applyDeltas(prevState, stateDeltas);
 
@@ -401,7 +402,12 @@ export async function handleTurn(body: any) {
       ok: true,
       routeVersion: ROUTE_VERSION,
       engineBuild: ENGINE_BUILD,
-      turn: { ...(result as any).turn, engine: (result as any).engine },
+      turn: {
+        ...(result as any).turn,
+        engine: (result as any).engine,
+        stateDeltas: Array.isArray((result as any)?.engine?.stateDeltas) ? (result as any).engine.stateDeltas : [],
+        ledgerAdds: Array.isArray((result as any)?.engine?.ledgerAdds) ? (result as any).engine.ledgerAdds : [],
+      },
       view: (result as any).view,
     },
   };
