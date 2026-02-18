@@ -94,6 +94,7 @@ function main() {
   assert(html.includes("Clear filters"), 'Expected "Clear filters" to be present');
   assert(html.includes("Expand all"), 'Expected "Expand all" to be present');
   assert(html.includes("Collapse all"), 'Expected "Collapse all" to be present');
+  assert(html.includes("Focus mode:"), 'Expected "Focus mode:" to be present');
   assert(
     html.includes("Ungrouped") || html.includes("Event:"),
     'Expected causal ledger group header ("Ungrouped" or "Event:") to be present',
