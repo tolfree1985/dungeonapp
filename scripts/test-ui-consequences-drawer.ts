@@ -2,18 +2,27 @@ import assert from "node:assert/strict";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ConsequencesDrawer } from "../src/components/ConsequencesDrawer";
+import { buildConsequencesExplanationText } from "../src/lib/buildConsequencesExplanationText";
 
 function main() {
   const longText = "x".repeat(220);
+  const stateDeltas = [
+    { op: "set", path: "/flags/alpha", before: false, after: true },
+    { op: "set", path: "/flags/bravo", before: false, after: true },
+  ] as const;
+  const ledgerAdds = [{ type: "clue", summary: `Found key under mat. ${longText}` }] as const;
+
   const html = renderToStaticMarkup(
     React.createElement(ConsequencesDrawer, {
-      stateDeltas: [
-        { op: "set", path: "/flags/alpha", before: false, after: true },
-        { op: "set", path: "/flags/bravo", before: false, after: true },
-      ],
-      ledgerAdds: [{ type: "clue", summary: `Found key under mat. ${longText}` }],
+      stateDeltas,
+      ledgerAdds,
     })
   );
+  const explanation = buildConsequencesExplanationText({
+    stateDeltas,
+    ledgerAdds,
+    maxLen: 24,
+  });
 
   assert(html.includes("STATE DELTAS"), "missing STATE DELTAS heading");
   assert(html.includes("CAUSAL LEDGER"), "missing CAUSAL LEDGER heading");
@@ -27,6 +36,13 @@ function main() {
   );
   assert(html.includes("Found key under mat."), "missing expected ledger snippet");
   assert(html.includes("…(truncated)"), "missing truncation marker");
+  assert(explanation.includes("State Deltas ("), "missing explanation state deltas section");
+  assert(explanation.includes("Causal Ledger ("), "missing explanation causal ledger section");
+  assert(
+    explanation.indexOf("/flags/alpha") < explanation.indexOf("/flags/bravo"),
+    "explanation delta order was not preserved",
+  );
+  assert(explanation.includes("…(truncated)"), "missing explanation truncation marker");
 
   console.log("UI CONSEQUENCES DRAWER OK");
 }
