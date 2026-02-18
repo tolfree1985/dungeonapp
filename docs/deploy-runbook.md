@@ -60,6 +60,10 @@ node --import tsx scripts/smoke-prod-surface.ts
   - If a migration causes an issue, prefer a follow-up corrective migration.
 
 ## Determinism invariants checklist
+- `scripts/with-sqlite-env.sh` must set a valid SQLite `DATABASE_URL` (`file:` URL form).
+- `scripts/with-sqlite-env.sh` must run `npx prisma migrate deploy` before wrapped commands.
+- All deterministic scripts should be executed via `scripts/with-sqlite-env.sh`.
+
 - Replay invariant:
   - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-replay-invariant.ts`
 - Scenario mine/public paging invariants:
