@@ -6,6 +6,12 @@ export type TurnDiffDelta = {
   [k: string]: unknown;
 };
 
+export type ReplayTimelineItem = {
+  anchorId: string;
+  outcome: "success" | "mixed" | "failure";
+  label: string;
+};
+
 export function classifyTurnImpact(args: {
   deltaCount: number;
   ledgerCount: number;
@@ -171,6 +177,26 @@ export function buildPreviousTurnKeysCopyText(args: {
     args.previousTurnKeysLine,
     args.previousTopKeys.length > 0 ? args.previousTopKeys.join(", ") : "(none)",
   ].join("\n");
+}
+
+export function buildReplayTimelineCopyText(args: {
+  items: ReplayTimelineItem[];
+}): string {
+  const lines = [
+    "Replay timeline",
+    `Entries: ${args.items.length}`,
+  ];
+
+  if (args.items.length === 0) {
+    lines.push("(none)");
+    return lines.join("\n");
+  }
+
+  args.items.forEach((item, index) => {
+    lines.push(`${index + 1}. ${item.outcome}: ${item.label} (#${item.anchorId})`);
+  });
+
+  return lines.join("\n");
 }
 
 export function buildAllTurnDiffCopyText(args: {

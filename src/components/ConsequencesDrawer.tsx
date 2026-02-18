@@ -10,6 +10,7 @@ import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText
 import {
   buildAllTurnDiffCopyText,
   buildPreviousTurnKeysCopyText,
+  buildReplayTimelineCopyText,
   buildTurnComparisonCopyText,
   buildFilteredDeltasCopyText,
   buildTurnImpactSummaryCopyText,
@@ -210,6 +211,7 @@ export function ConsequencesDrawer({
   const [turnDiffAllCopyStatus, setTurnDiffAllCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnDiffCopyStatus, setTurnDiffCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnPreviousKeysCopyStatus, setTurnPreviousKeysCopyStatus] = useState<"" | "copied" | "unsupported">("");
+  const [turnReplayTimelineCopyStatus, setTurnReplayTimelineCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnComparisonCopyStatus, setTurnComparisonCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnImpactCopyStatus, setTurnImpactCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnLinkCopyStatus, setTurnLinkCopyStatus] = useState<"" | "copied" | "unsupported">("");
@@ -323,6 +325,7 @@ export function ConsequencesDrawer({
     || keyComparison.unchanged.length > 0
   );
   const canCopyFiltered = normalizedDeltaKeyFilter !== "" && visibleDeltas.length > 0;
+  const canCopyReplayTimeline = timeline.length > 0;
   const showNothingToCopy = (
     (deltaCount === 0 && ledgerCount === 0 && !hasPreviousTurn)
     || (normalizedDeltaKeyFilter !== "" && visibleDeltas.length === 0)
@@ -595,6 +598,25 @@ export function ConsequencesDrawer({
       setTurnPreviousKeysCopyStatus("copied");
     } catch {
       setTurnPreviousKeysCopyStatus("unsupported");
+    }
+  }
+
+  async function onCopyReplayTimeline(): Promise<void> {
+    if (
+      typeof navigator === "undefined"
+      || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== "function"
+    ) {
+      setTurnReplayTimelineCopyStatus("unsupported");
+      return;
+    }
+
+    try {
+      const text = buildReplayTimelineCopyText({ items: timeline });
+      await navigator.clipboard.writeText(text);
+      setTurnReplayTimelineCopyStatus("copied");
+    } catch {
+      setTurnReplayTimelineCopyStatus("unsupported");
     }
   }
 
@@ -893,6 +915,19 @@ export function ConsequencesDrawer({
               >
                 Copy turn link
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void onCopyReplayTimeline();
+                }}
+                className="text-xs underline ml-2 text-neutral-300"
+                aria-label="Copy replay timeline"
+                aria-describedby={turnDiffStatusRegionId}
+                disabled={!canCopyReplayTimeline}
+                aria-disabled={!canCopyReplayTimeline}
+              >
+                Copy replay timeline
+              </button>
             </div>
             <div className="text-xs">
               Impact: {impact} (Deltas: {deltaCount}, Ledger: {ledgerCount})
@@ -990,6 +1025,8 @@ export function ConsequencesDrawer({
               {turnDiffCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnPreviousKeysCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnPreviousKeysCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
+              {turnReplayTimelineCopyStatus === "copied" ? <div>Copied</div> : null}
+              {turnReplayTimelineCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnComparisonCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnComparisonCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnImpactCopyStatus === "copied" ? <div>Copied</div> : null}
