@@ -204,6 +204,9 @@ function main() {
   assert(html.includes("Copy previous turn keys"), 'Expected "Copy previous turn keys" to be present');
   assert(html.includes("Copy comparison"), 'Expected "Copy comparison" to be present');
   assert(html.includes("Copy turn link"), 'Expected "Copy turn link" to be present');
+  assert(html.includes("Copy replay timeline"), 'Expected "Copy replay timeline" to be present');
+  assert(html.includes("Copy focused group status"), 'Expected "Copy focused group status" to be present');
+  assert(html.includes("Clear hash focus"), 'Expected "Clear hash focus" to be present');
   assert(html.includes("No previous turn"), 'Expected "No previous turn" helper text to be present');
   assert(html.includes("Focused group: none"), 'Expected "Focused group: none" to be present');
   assert(html.includes("Focused anchor: none"), 'Expected "Focused anchor: none" to be present');
@@ -225,6 +228,22 @@ function main() {
   assert(
     html.includes("id=\"turn-diff-status-region\""),
     'Expected Turn Diff status region id to be present',
+  );
+  assert(
+    html.includes("role=\"status\""),
+    'Expected Turn Diff status region role to be present',
+  );
+  assert(
+    html.includes("data-impact=\"Low\""),
+    'Expected deterministic turn diff data-impact signal',
+  );
+  assert(
+    html.includes("data-delta-filter=\"All\""),
+    'Expected deterministic turn diff data-delta-filter signal',
+  );
+  assert(
+    html.includes("data-focused-group=\"none\""),
+    'Expected deterministic turn diff data-focused-group signal',
   );
   assert(html.includes("Added keys"), 'Expected "Added keys" to be present');
   assert(html.includes("Removed keys"), 'Expected "Removed keys" to be present');
