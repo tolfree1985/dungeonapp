@@ -298,6 +298,7 @@ export function ConsequencesDrawer({
   })();
   const turnDiffKeys = allTopKeys;
   const turnDiffKeyChips = turnDiffKeys.slice(0, 8);
+  const turnDiffStatusRegionId = "turn-diff-status-region";
 
   useEffect(() => {
     focusModeRef.current = focusMode;
@@ -702,6 +703,7 @@ export function ConsequencesDrawer({
                 }}
                 className="text-xs underline text-neutral-300"
                 aria-label="Copy turn diff for current turn"
+                aria-describedby={turnDiffStatusRegionId}
               >
                 Copy turn diff
               </button>
@@ -712,6 +714,7 @@ export function ConsequencesDrawer({
                 }}
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy impact summary for current turn"
+                aria-describedby={turnDiffStatusRegionId}
               >
                 Copy impact summary
               </button>
@@ -723,6 +726,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy comparison with previous turn"
                 disabled={!hasPreviousTurn}
+                aria-describedby={turnDiffStatusRegionId}
               >
                 Copy comparison
               </button>
@@ -737,6 +741,7 @@ export function ConsequencesDrawer({
                   }}
                   className="text-xs underline ml-2 text-neutral-300"
                   aria-label="Copy filtered deltas for current filter"
+                  aria-describedby={turnDiffStatusRegionId}
                 >
                   Copy filtered deltas
                 </button>
@@ -748,6 +753,7 @@ export function ConsequencesDrawer({
                 }}
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy turn link for current page"
+                aria-describedby={turnDiffStatusRegionId}
               >
                 Copy turn link
               </button>
@@ -763,7 +769,11 @@ export function ConsequencesDrawer({
             {impact === "High" ? (
               <div className="text-xs">High-impact turn</div>
             ) : null}
-            <div className="mt-2 space-y-1 text-xs text-neutral-400" aria-live="polite">
+            <div
+              id={turnDiffStatusRegionId}
+              className="mt-2 space-y-1 text-xs text-neutral-400"
+              aria-live="polite"
+            >
               <div>State delta entries: {stateDeltasArray.length}</div>
               <div>{topKeysLine}</div>
               <div>{previousTurnKeysLine}</div>
