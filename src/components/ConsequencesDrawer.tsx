@@ -30,12 +30,29 @@ function firstDefined(
 export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
   const deltas = Array.isArray(stateDeltas) ? stateDeltas : [];
   const ledger = Array.isArray(ledgerAdds) ? ledgerAdds : [];
+  const deltaCount = deltas.length;
+  const ledgerCount = ledger.length;
+  const hasCounts = deltaCount > 0 || ledgerCount > 0;
   const [showRawJson, setShowRawJson] = useState(false);
 
   return (
-    <details className="mt-3 rounded border border-neutral-800 p-3">
-      <summary className="cursor-pointer text-sm text-neutral-300">
-        Why did this happen?
+    <details
+      className={`mt-3 rounded border p-3 ${hasCounts ? "border-neutral-600" : "border-neutral-800"}`}
+    >
+      <summary
+        className={`cursor-pointer text-sm ${hasCounts ? "text-neutral-100" : "text-neutral-300"}`}
+      >
+        <span>Why did this happen?</span>
+        {deltaCount > 0 ? (
+          <span className="ml-2 rounded border border-neutral-600 px-1.5 py-0.5 text-[10px] text-neutral-200">
+            Δ {deltaCount}
+          </span>
+        ) : null}
+        {ledgerCount > 0 ? (
+          <span className="ml-2 rounded border border-neutral-600 px-1.5 py-0.5 text-[10px] text-neutral-200">
+            ⚡ {ledgerCount}
+          </span>
+        ) : null}
       </summary>
 
       <div className="mt-3 space-y-4 text-xs">
