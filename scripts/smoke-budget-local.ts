@@ -1,5 +1,5 @@
 import { POST } from "../app/api/turn/route";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../src/lib/prisma";
 import { __debugCaps } from "../src/lib/billing/tiers";
 
 type TurnReq = {
@@ -65,7 +65,7 @@ function assertBudgetExceeded429(
   assert(isISODateString(body.retryAt), "retryAt must be an ISO date string");
 }
 
-async function resetTestState(prisma: PrismaClient, args: { adventureId: string; userId: string }) {
+async function resetTestState(prisma: typeof import("../src/lib/prisma").prisma, args: { adventureId: string; userId: string }) {
   const { adventureId, userId } = args;
 
   // wipe only what the smoke uses (deterministic)
@@ -94,7 +94,6 @@ async function main() {
   const adventureId = process.env.ADVENTURE_ID || "adv_smoke_1";
   const userId = process.env.USER_ID || "smoke_user";
   const tier = process.env.TIER || "NOMAD";
-  const prisma = new PrismaClient();
   await resetTestState(prisma, { adventureId, userId });
 
   debug("LOCAL SMOKE", { adventureId, userId, tier, BILLING_TEST_CAP: process.env.BILLING_TEST_CAP ?? null });
