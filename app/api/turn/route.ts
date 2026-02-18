@@ -81,7 +81,9 @@ async function postHandler(req: Request) {
 
     // Dev-only: allow smoke harness to exercise billing cap paths deterministically without tripping soft rate limits.
     const capOverrideHeader = req.headers.get("x-smoke-cap-override");
-    const smokeBypassRateLimit = process.env.NODE_ENV !== "production" && !!capOverrideHeader;
+    // We bypass if the harness signals cap override OR the request is anon (common in smoke).
+    const smokeBypassRateLimit =
+      process.env.NODE_ENV !== "production" && (!!capOverrideHeader || userId === "anon");
 
     if (!smokeBypassRateLimit) {
       const rateLimit = checkSoftRateLimit({
