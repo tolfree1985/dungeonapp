@@ -5,6 +5,7 @@ import { ConsequencesDrawer } from "../src/components/ConsequencesDrawer";
 import { ResolutionBadge } from "../src/components/ResolutionBadge";
 import { buildConsequencesExplanationText } from "../src/lib/buildConsequencesExplanationText";
 import { buildLedgerGroupCopyText } from "../src/lib/buildLedgerGroupCopyText";
+import { buildVisibleLedgerCopyText } from "../src/lib/buildVisibleLedgerCopyText";
 
 function main() {
   const longText = "x".repeat(220);
@@ -30,6 +31,18 @@ function main() {
     "ledger-group-X",
     [{ message: "m" }],
   );
+  const visibleLedgerCollapsed = buildVisibleLedgerCopyText({
+    filterKind: "",
+    filterRuleId: "",
+    groups: [
+      {
+        title: "Event: X",
+        anchorId: "ledger-group-X",
+        state: "collapsed",
+        entries: [{ message: "m", because: "b" }],
+      },
+    ],
+  });
   const resolutionBadgeHtml = renderToStaticMarkup(
     React.createElement(ResolutionBadge, { outcome: "mixed" }),
   );
@@ -89,6 +102,14 @@ function main() {
   assert(
     groupSummary.includes("Anchor: #ledger-group-X"),
     "missing group summary anchor line",
+  );
+  assert(
+    visibleLedgerCollapsed.includes("State: collapsed"),
+    "Expected collapsed state line",
+  );
+  assert(
+    !visibleLedgerCollapsed.includes("raw:"),
+    "Collapsed group should not include entries",
   );
   assert(
     explanation.indexOf("/flags/alpha") < explanation.indexOf("/flags/bravo"),
