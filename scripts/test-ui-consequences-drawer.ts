@@ -66,6 +66,10 @@ function main() {
     html.includes("Ungrouped") || html.includes("Event:"),
     'Expected causal ledger group header ("Ungrouped" or "Event:") to be present',
   );
+  assert(
+    html.includes("Collapse") || html.includes("Expand"),
+    'Expected ledger group toggle label ("Collapse" or "Expand") to be present',
+  );
   assert(html.includes("Copy entry"), 'Expected "Copy entry" to be present');
   assert(html.includes("Copy link"), 'Expected "Copy link" to be present');
   assert(html.includes(">Details<"), "missing Details expander label");
