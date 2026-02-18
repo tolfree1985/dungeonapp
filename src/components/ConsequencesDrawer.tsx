@@ -855,6 +855,9 @@ export function ConsequencesDrawer({
           <section
             id={turnDiffPanelId}
             aria-label="Turn diff"
+            data-impact={impact}
+            data-delta-filter={activeDeltaFilterLabel}
+            data-focused-group={focusedGroupKey ?? "none"}
             className="mt-4 border-t border-neutral-800 pt-4"
           >
             <div className="flex items-center justify-between gap-2">
