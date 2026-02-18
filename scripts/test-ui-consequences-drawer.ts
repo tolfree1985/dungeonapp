@@ -92,6 +92,8 @@ function main() {
   assert(html.includes("Filter kind"), 'Expected "Filter kind" to be present');
   assert(html.includes("Filter ruleId"), 'Expected "Filter ruleId" to be present');
   assert(html.includes("Clear filters"), 'Expected "Clear filters" to be present');
+  assert(html.includes("Expand all"), 'Expected "Expand all" to be present');
+  assert(html.includes("Collapse all"), 'Expected "Collapse all" to be present');
   assert(
     html.includes("Ungrouped") || html.includes("Event:"),
     'Expected causal ledger group header ("Ungrouped" or "Event:") to be present',
