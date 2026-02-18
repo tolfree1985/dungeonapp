@@ -78,6 +78,7 @@ function main() {
   );
   assert(html.includes("Copy group link"), 'Expected "Copy group link" to be present');
   assert(html.includes("Copy group summary"), 'Expected "Copy group summary" to be present');
+  assert(html.includes("Copy visible ledger"), 'Expected "Copy visible ledger" to be present');
   assert(html.includes("ledger-"), 'Expected at least one ledger anchor id ("ledger-") to be present');
   assert(html.includes("Copy entry"), 'Expected "Copy entry" to be present');
   assert(html.includes("Copy link"), 'Expected "Copy link" to be present');
