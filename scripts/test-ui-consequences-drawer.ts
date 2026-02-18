@@ -15,6 +15,14 @@ import {
 } from "../src/lib/turnDiff/buildTurnDiffCopyText";
 
 function main() {
+  function assertNoOpControlDisabled(markup: string, ariaLabel: string): void {
+    const escaped = ariaLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(
+      `aria-label="${escaped}"[^>]*disabled=""[^>]*aria-disabled="true"`,
+    );
+    assert(pattern.test(markup), `Expected no-op control "${ariaLabel}" to be disabled`);
+  }
+
   const longText = "x".repeat(220);
   const stateDeltas = [
     { op: "set", path: "/flags/alpha", before: false, after: true },
@@ -222,6 +230,11 @@ function main() {
   assert(noOpHtml.includes("No-op turn"), 'Expected "No-op turn" in no-op fixture');
   assert(noOpHtml.includes("No replay events"), 'Expected "No replay events" in no-op fixture');
   assert(noOpHtml.includes("Nothing to copy"), 'Expected "Nothing to copy" in no-op fixture');
+  assertNoOpControlDisabled(noOpHtml, "Copy turn diff for current turn");
+  assertNoOpControlDisabled(noOpHtml, "Copy all Turn Diff");
+  assertNoOpControlDisabled(noOpHtml, "Copy impact summary for current turn");
+  assertNoOpControlDisabled(noOpHtml, "Copy previous turn keys");
+  assertNoOpControlDisabled(noOpHtml, "Copy replay timeline");
   assert(!noOpHtml.includes("Low-signal turn"), 'Did not expect "Low-signal turn" in no-op fixture');
   assert(!noOpHtml.includes("High-impact turn"), 'Did not expect "High-impact turn" in no-op fixture');
   assert(highImpactHtml.includes("High-impact turn"), 'Expected "High-impact turn" in high-impact fixture');
