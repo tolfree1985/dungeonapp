@@ -17,6 +17,8 @@ function main() {
 
   assert(html.includes("STATE DELTAS"), "missing STATE DELTAS heading");
   assert(html.includes("CAUSAL LEDGER"), "missing CAUSAL LEDGER heading");
+  assert(html.includes("Δ 2"), "missing delta count badge");
+  assert(html.includes("⚡ 1"), "missing ledger count badge");
   assert(html.includes("/flags/alpha"), "missing expected first state delta");
   assert(html.includes("/flags/bravo"), "missing expected second state delta");
   assert(
