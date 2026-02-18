@@ -72,6 +72,8 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
     .sort();
   const [filterKind, setFilterKind] = useState<string>("");
   const [filterRuleId, setFilterRuleId] = useState<string>("");
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const isOpen = (key: string) => openGroups[key] !== false;
   const filtered = filterLedgerEntries(ledgerRecords, {
     kind: filterKind || undefined,
     ruleId: filterRuleId || undefined,
@@ -264,11 +266,24 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                 const entries = groups.get(key)!;
                 return (
                   <div key={key} className="mb-3">
-                    <div className="text-xs font-semibold opacity-70">
-                      {key === "ungrouped" ? "Ungrouped" : `Event: ${key}`}
+                    <div className="flex items-center justify-between gap-2 text-xs font-semibold opacity-70">
+                      <span>{key === "ungrouped" ? "Ungrouped" : `Event: ${key}`}</span>
+                      <button
+                        type="button"
+                        className="text-xs underline opacity-80 hover:opacity-100"
+                        onClick={() =>
+                          setOpenGroups((prev) => ({
+                            ...prev,
+                            [key]: prev[key] === false ? true : false,
+                          }))
+                        }
+                      >
+                        {isOpen(key) ? "Collapse" : "Expand"}
+                      </button>
                     </div>
-                    <ol className="mt-1 list-decimal space-y-2 pl-5">
-                      {entries.map(({ entry, index }, groupIndex) => {
+                    {isOpen(key) ? (
+                      <div className="mt-1 space-y-2">
+                        {entries.map(({ entry, index }, groupIndex) => {
                         const row = asRecord(entry);
                         const rowId =
                           typeof (entry as any).refEventId === "string" && (entry as any).refEventId
@@ -286,7 +301,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                             : null;
                         const because = typeof row?.because === "string" ? row.because : null;
                         return (
-                          <li
+                          <div
                             id={rowId}
                             key={`${rowId}-${index}-${groupIndex}`}
                             className="space-y-1 rounded border border-transparent p-1"
@@ -368,10 +383,11 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                                 {JSON.stringify(entry, null, 2)}
                               </pre>
                             </details>
-                          </li>
+                          </div>
                         );
                       })}
-                    </ol>
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
