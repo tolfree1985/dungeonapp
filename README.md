@@ -63,6 +63,7 @@ Those come after real usage data.
 
 ## Determinism Invariants
 
-- `/api/scenario/public` and `/api/scenario/mine` must remain ordered by `updatedAt desc`, then `id desc`.
-- Paging must use `cursor` with `skip: 1`.
-- UI must not reorder, merge, or dedupe scenario lists; server order is the source of truth.
+- `/api/scenario/mine?ownerId=...` exists and is part of the stable scenario surface.
+- Deterministic scripts: `scripts/test-route-scenario-mine.ts`, `scripts/test-route-scenario-public-page.ts`, `scripts/test-route-scenario-mine-page.ts`.
+- Ordering invariant: `updatedAt desc`, then `id desc`.
+- UI rule: no merge, dedupe, reorder, or local filter client-side.
