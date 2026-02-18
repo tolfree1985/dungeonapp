@@ -12,6 +12,7 @@ type Props = {
   detailsId?: string;
   anchorId?: string;
 };
+type AnyEntry = Record<string, unknown>;
 
 const BEFORE_KEYS = ["before", "from", "oldValue", "previous", "prev"] as const;
 const AFTER_KEYS = ["after", "to", "newValue", "next", "value"] as const;
@@ -30,6 +31,27 @@ function firstDefined(
     if (key in input) return input[key];
   }
   return undefined;
+}
+
+function getRefEventId(e: AnyEntry): string | null {
+  const v = e["refEventId"];
+  return typeof v === "string" && v.length ? v : null;
+}
+
+function groupLedger(entries: { entry: AnyEntry; index: number }[]) {
+  const order: string[] = [];
+  const map = new Map<string, { entry: AnyEntry; index: number }[]>();
+
+  for (const e of entries) {
+    const key = getRefEventId(e.entry) ?? "ungrouped";
+    if (!map.has(key)) {
+      map.set(key, []);
+      order.push(key);
+    }
+    map.get(key)!.push(e);
+  }
+
+  return { order, map };
 }
 
 export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
@@ -54,6 +76,8 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
     kind: filterKind || undefined,
     ruleId: filterRuleId || undefined,
   });
+  const filteredWithIndex = filtered.map((entry, index) => ({ entry, index }));
+  const { order: groupOrder, map: groups } = groupLedger(filteredWithIndex);
   const deltaCount = deltas.length;
   const ledgerCount = ledger.length;
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
@@ -235,111 +259,123 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
             </div>
           </div>
           {ledger.length > 0 ? (
-            <ol className="mt-2 list-decimal space-y-2 pl-5">
-              {filtered.map((entry, index) => {
-                const row = asRecord(entry);
-                const rowId =
-                  typeof (entry as any).refEventId === "string" && (entry as any).refEventId
-                    ? `ledger-${(entry as any).refEventId}`
-                    : `ledger-idx-${index}`;
-                const kind = typeof row?.kind === "string"
-                  ? row.kind
-                  : typeof row?.type === "string"
-                    ? row.type
-                    : null;
-                const message = typeof row?.message === "string"
-                  ? row.message
-                  : typeof row?.summary === "string"
-                    ? row.summary
-                    : null;
-                const because = typeof row?.because === "string" ? row.because : null;
+            <div className="mt-2">
+              {groupOrder.map((key) => {
+                const entries = groups.get(key)!;
                 return (
-                  <li
-                    id={rowId}
-                    key={index}
-                    className="space-y-1 rounded border border-transparent p-1"
-                  >
-                    {kind ? <div className="font-medium text-neutral-300">{kind}</div> : null}
-                    {message ? (
-                      <div className="text-neutral-400">{formatConsequenceValue(message)}</div>
-                    ) : null}
-                    {because ? (
-                      <div className="text-neutral-500">Because: {formatConsequenceValue(because)}</div>
-                    ) : null}
-                    {!kind && !message && !because ? (
-                      <div className="text-neutral-400">{formatConsequenceValue(entry)}</div>
-                    ) : null}
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="text-xs underline opacity-80 hover:opacity-100"
-                        onClick={async () => {
-                          const nav: typeof navigator | undefined =
-                            typeof navigator !== "undefined" ? navigator : undefined;
-                          const canCopy =
-                            !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
-
-                          if (!canCopy) {
-                            setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
-                            return;
-                          }
-
-                          try {
-                            const text = buildLedgerEntryCopyText(entry as Record<string, unknown>);
-                            await nav.clipboard.writeText(text);
-                            setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
-                          } catch {
-                            setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
-                          }
-                        }}
-                      >
-                        Copy entry
-                      </button>
-                      {entryCopyStatus[index] ? (
-                        <span className="ml-2 text-xs opacity-70">{entryCopyStatus[index]}</span>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="text-xs underline opacity-80 hover:opacity-100"
-                        onClick={async () => {
-                          const nav: typeof navigator | undefined =
-                            typeof navigator !== "undefined" ? navigator : undefined;
-                          const canCopy =
-                            !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
-                          if (!canCopy) {
-                            setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
-                            return;
-                          }
-
-                          try {
-                            const loc: Location | undefined =
-                              typeof location !== "undefined" ? location : undefined;
-                            const path = `${loc?.pathname ?? ""}${loc?.search ?? ""}#${rowId}`;
-                            await nav.clipboard.writeText(path);
-                            setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
-                          } catch {
-                            setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
-                          }
-                        }}
-                      >
-                        Copy link
-                      </button>
-                      {entryLinkCopyStatus[index] ? (
-                        <span className="text-xs opacity-70">{entryLinkCopyStatus[index]}</span>
-                      ) : null}
+                  <div key={key} className="mb-3">
+                    <div className="text-xs font-semibold opacity-70">
+                      {key === "ungrouped" ? "Ungrouped" : `Event: ${key}`}
                     </div>
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-200">
-                        Details
-                      </summary>
-                      <pre className="mt-2 overflow-auto rounded bg-black/40 p-2 text-[11px] text-neutral-200">
-                        {JSON.stringify(entry, null, 2)}
-                      </pre>
-                    </details>
-                  </li>
+                    <ol className="mt-1 list-decimal space-y-2 pl-5">
+                      {entries.map(({ entry, index }, groupIndex) => {
+                        const row = asRecord(entry);
+                        const rowId =
+                          typeof (entry as any).refEventId === "string" && (entry as any).refEventId
+                            ? `ledger-${(entry as any).refEventId}`
+                            : `ledger-idx-${index}`;
+                        const kind = typeof row?.kind === "string"
+                          ? row.kind
+                          : typeof row?.type === "string"
+                            ? row.type
+                            : null;
+                        const message = typeof row?.message === "string"
+                          ? row.message
+                          : typeof row?.summary === "string"
+                            ? row.summary
+                            : null;
+                        const because = typeof row?.because === "string" ? row.because : null;
+                        return (
+                          <li
+                            id={rowId}
+                            key={`${rowId}-${index}-${groupIndex}`}
+                            className="space-y-1 rounded border border-transparent p-1"
+                          >
+                            {kind ? <div className="font-medium text-neutral-300">{kind}</div> : null}
+                            {message ? (
+                              <div className="text-neutral-400">{formatConsequenceValue(message)}</div>
+                            ) : null}
+                            {because ? (
+                              <div className="text-neutral-500">Because: {formatConsequenceValue(because)}</div>
+                            ) : null}
+                            {!kind && !message && !because ? (
+                              <div className="text-neutral-400">{formatConsequenceValue(entry)}</div>
+                            ) : null}
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="text-xs underline opacity-80 hover:opacity-100"
+                                onClick={async () => {
+                                  const nav: typeof navigator | undefined =
+                                    typeof navigator !== "undefined" ? navigator : undefined;
+                                  const canCopy =
+                                    !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+
+                                  if (!canCopy) {
+                                    setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                                    return;
+                                  }
+
+                                  try {
+                                    const text = buildLedgerEntryCopyText(entry as Record<string, unknown>);
+                                    await nav.clipboard.writeText(text);
+                                    setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
+                                  } catch {
+                                    setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                                  }
+                                }}
+                              >
+                                Copy entry
+                              </button>
+                              {entryCopyStatus[index] ? (
+                                <span className="ml-2 text-xs opacity-70">{entryCopyStatus[index]}</span>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="text-xs underline opacity-80 hover:opacity-100"
+                                onClick={async () => {
+                                  const nav: typeof navigator | undefined =
+                                    typeof navigator !== "undefined" ? navigator : undefined;
+                                  const canCopy =
+                                    !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+                                  if (!canCopy) {
+                                    setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                                    return;
+                                  }
+
+                                  try {
+                                    const loc: Location | undefined =
+                                      typeof location !== "undefined" ? location : undefined;
+                                    const path = `${loc?.pathname ?? ""}${loc?.search ?? ""}#${rowId}`;
+                                    await nav.clipboard.writeText(path);
+                                    setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
+                                  } catch {
+                                    setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                                  }
+                                }}
+                              >
+                                Copy link
+                              </button>
+                              {entryLinkCopyStatus[index] ? (
+                                <span className="text-xs opacity-70">{entryLinkCopyStatus[index]}</span>
+                              ) : null}
+                            </div>
+                            <details className="mt-2">
+                              <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-200">
+                                Details
+                              </summary>
+                              <pre className="mt-2 overflow-auto rounded bg-black/40 p-2 text-[11px] text-neutral-200">
+                                {JSON.stringify(entry, null, 2)}
+                              </pre>
+                            </details>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </div>
                 );
               })}
-            </ol>
+            </div>
           ) : (
             <div className="mt-2 text-neutral-500">None.</div>
           )}
