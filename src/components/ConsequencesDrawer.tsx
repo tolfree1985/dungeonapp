@@ -123,6 +123,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
     .sort();
   const [filterKind, setFilterKind] = useState<string>("");
   const [filterRuleId, setFilterRuleId] = useState<string>("");
+  const [focusMode, setFocusMode] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const isOpen = (key: string) => openGroups[key] !== false;
   const filtered = filterLedgerEntries(ledgerRecords, {
@@ -153,6 +154,8 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const [groupLinkCopyStatus, setGroupLinkCopyStatus] = useState<Record<string, string>>({});
   const [groupSummaryCopyStatus, setGroupSummaryCopyStatus] = useState<Record<string, string>>({});
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const focusModeRef = useRef(focusMode);
+  const groupOrderRef = useRef(groupOrder);
   const visibleLedgerGroups = groupOrder.map((key) => {
     const entries = groups.get(key) ?? [];
     const expanded = isOpen(key);
@@ -163,6 +166,14 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
       entries: expanded ? entries.map(({ entry }) => entry as AnyEntry) : [],
     };
   });
+
+  useEffect(() => {
+    focusModeRef.current = focusMode;
+  }, [focusMode]);
+
+  useEffect(() => {
+    groupOrderRef.current = groupOrder;
+  }, [groupOrder]);
 
   useEffect(() => {
     if (!anchorId) return;
@@ -189,7 +200,15 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
       if (!hash || !hash.startsWith("#ledger-")) return;
 
       const groupKey = groupKeyFromLedgerHash(hash);
-      if (groupKey) {
+      if (focusModeRef.current && groupKey) {
+        setOpenGroups(() => {
+          const next: Record<string, boolean> = {};
+          groupOrderRef.current.forEach((k) => {
+            next[k] = k === groupKey;
+          });
+          return next;
+        });
+      } else if (groupKey) {
         setOpenGroups((prev) => {
           if (prev[groupKey] !== false) return prev;
           const next = { ...prev };
@@ -438,6 +457,13 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                   className="underline opacity-80 hover:opacity-100"
                 >
                   Collapse all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFocusMode((v) => !v)}
+                  className="underline opacity-80 hover:opacity-100"
+                >
+                  Focus mode: {focusMode ? "On" : "Off"}
                 </button>
               </div>
               {groupOrder.map((key) => {
