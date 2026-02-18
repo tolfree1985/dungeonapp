@@ -20,7 +20,10 @@ type BudgetExceededCode = "CONCURRENCY_LIMIT_EXCEEDED" | "MONTHLY_TOKEN_CAP_EXCE
 async function callTurn(body: TurnReq) {
   const req = new Request("http://local/api/turn", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "x-smoke-bypass-soft-rate-limit": "1",
+    },
     body: JSON.stringify(body),
   });
 
