@@ -110,10 +110,12 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
   const visibleLedgerGroups = groupOrder.map((key) => {
     const entries = groups.get(key) ?? [];
+    const expanded = isOpen(key);
     return {
       title: groupTitleFromKey(key),
       anchorId: groupAnchorIdFromKey(key),
-      entries: entries.map(({ entry }) => entry as AnyEntry),
+      state: expanded ? ("expanded" as const) : ("collapsed" as const),
+      entries: expanded ? entries.map(({ entry }) => entry as AnyEntry) : [],
     };
   });
 

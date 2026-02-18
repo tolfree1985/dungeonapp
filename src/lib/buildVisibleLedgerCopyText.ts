@@ -3,6 +3,7 @@ type AnyRecord = Record<string, unknown>;
 export type VisibleLedgerGroup = {
   title: string;
   anchorId: string;
+  state: "expanded" | "collapsed";
   entries: AnyRecord[];
 };
 
@@ -29,7 +30,12 @@ export function buildVisibleLedgerCopyText(args: {
 
     lines.push(`Group: ${g.title}`);
     lines.push(`Anchor: #${g.anchorId}`);
+    lines.push(`State: ${g.state}`);
     lines.push("");
+
+    if (g.state !== "expanded") {
+      continue;
+    }
 
     for (let ei = 0; ei < g.entries.length; ei++) {
       const e = g.entries[ei];
