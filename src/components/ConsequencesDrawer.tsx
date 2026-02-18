@@ -646,6 +646,11 @@ export function ConsequencesDrawer({
             <div className="text-xs">
               Impact: {impact} (Deltas: {deltaCount}, Ledger: {ledgerCount})
             </div>
+            {deltaCount === 0 && ledgerCount === 0 ? (
+              <div className="text-xs">No-op turn</div>
+            ) : impact === "Low" ? (
+              <div className="text-xs">Low-signal turn</div>
+            ) : null}
             <div className="mt-2 space-y-1 text-xs text-neutral-400">
               <div>State delta entries: {stateDeltasArray.length}</div>
               <div>{topKeysLine}</div>
