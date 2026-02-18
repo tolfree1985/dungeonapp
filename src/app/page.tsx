@@ -118,12 +118,14 @@ export default function Home() {
                     </a>
                   </div>
                   <div style={{ marginTop: 4 }}>{t.assistantText}</div>
-                  <ConsequencesDrawer
-                    stateDeltas={t.stateDeltas}
-                    ledgerAdds={t.ledgerAdds}
-                    anchorId={`turn-${stableTurnId}-consequences`}
-                    detailsId={`details-turn-${stableTurnId}-consequences`}
-                  />
+                  <div id={`turn-${stableTurnId}-consequences`}>
+                    <ConsequencesDrawer
+                      stateDeltas={t.stateDeltas}
+                      ledgerAdds={t.ledgerAdds}
+                      anchorId={`turn-${stableTurnId}-consequences`}
+                      detailsId={`details-turn-${stableTurnId}-consequences`}
+                    />
+                  </div>
                 </article>
               );
             })}

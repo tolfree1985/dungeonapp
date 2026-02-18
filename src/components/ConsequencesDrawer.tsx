@@ -77,12 +77,11 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   }
 
   return (
-    <div id={anchorId}>
-      <details
-        ref={detailsRef}
-        id={detailsId}
-        className={`mt-3 rounded border p-3 ${hasCounts ? "border-neutral-600" : "border-neutral-800"}`}
-      >
+    <details
+      ref={detailsRef}
+      id={detailsId}
+      className={`mt-3 rounded border p-3 ${hasCounts ? "border-neutral-600" : "border-neutral-800"}`}
+    >
       <summary
         className={`cursor-pointer text-sm ${hasCounts ? "text-neutral-100" : "text-neutral-300"}`}
       >
@@ -200,7 +199,6 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
           ) : null}
         </div>
       </div>
-      </details>
-    </div>
+    </details>
   );
 }

@@ -34,12 +34,16 @@ function main() {
       "section",
       null,
       React.createElement("a", { href: `#${anchorId}` }, "See why"),
-      React.createElement(ConsequencesDrawer, {
-        stateDeltas,
-        ledgerAdds,
-        anchorId,
-        detailsId: `details-turn-${stableTurnId}-consequences`,
-      }),
+      React.createElement(
+        "div",
+        { id: anchorId },
+        React.createElement(ConsequencesDrawer, {
+          stateDeltas,
+          ledgerAdds,
+          anchorId,
+          detailsId: `details-turn-${stableTurnId}-consequences`,
+        }),
+      ),
     ),
   );
 
