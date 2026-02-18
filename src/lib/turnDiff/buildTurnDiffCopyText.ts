@@ -199,6 +199,19 @@ export function buildReplayTimelineCopyText(args: {
   return lines.join("\n");
 }
 
+export function buildFocusedGroupStatusCopyText(args: {
+  focusMode: boolean;
+  focusedGroup: string | null;
+  hashTarget: string | null;
+}): string {
+  return [
+    "Focused group status",
+    `Focus mode: ${args.focusMode ? "on" : "off"}`,
+    `Resolved group: ${args.focusedGroup ?? "none"}`,
+    `Hash target: ${args.hashTarget ?? "none"}`,
+  ].join("\n");
+}
+
 export function buildAllTurnDiffCopyText(args: {
   impact: "Low" | "Medium" | "High";
   deltaCount: number;

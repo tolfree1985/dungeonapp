@@ -9,6 +9,7 @@ import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText";
 import {
   buildAllTurnDiffCopyText,
+  buildFocusedGroupStatusCopyText,
   buildPreviousTurnKeysCopyText,
   buildReplayTimelineCopyText,
   buildTurnComparisonCopyText,
@@ -178,6 +179,7 @@ export function ConsequencesDrawer({
   const [deltaKeyFilter, setDeltaKeyFilter] = useState<string>(initialDeltaKey);
   const [focusMode, setFocusMode] = useState(false);
   const [focusedGroupKey, setFocusedGroupKey] = useState<string | null>(null);
+  const [focusedHashTarget, setFocusedHashTarget] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const isOpen = (key: string) => openGroups[key] !== false;
   const filtered = filterLedgerEntries(ledgerRecords, {
@@ -212,6 +214,7 @@ export function ConsequencesDrawer({
   const [turnDiffCopyStatus, setTurnDiffCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnPreviousKeysCopyStatus, setTurnPreviousKeysCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnReplayTimelineCopyStatus, setTurnReplayTimelineCopyStatus] = useState<"" | "copied" | "unsupported">("");
+  const [turnFocusedGroupStatusCopyStatus, setTurnFocusedGroupStatusCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnComparisonCopyStatus, setTurnComparisonCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnImpactCopyStatus, setTurnImpactCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnLinkCopyStatus, setTurnLinkCopyStatus] = useState<"" | "copied" | "unsupported">("");
@@ -371,6 +374,7 @@ export function ConsequencesDrawer({
       const hash = window.location.hash;
       if (!hash || !hash.startsWith("#ledger-")) {
         setFocusedGroupKey(null);
+        setFocusedHashTarget(null);
         return;
       }
 
@@ -379,6 +383,7 @@ export function ConsequencesDrawer({
         ? groupKey
         : null;
       setFocusedGroupKey(resolvedFocusedGroupKey);
+      setFocusedHashTarget(hash);
       if (focusModeRef.current && groupKey) {
         setOpenGroups(() => {
           const next: Record<string, boolean> = {};
@@ -617,6 +622,29 @@ export function ConsequencesDrawer({
       setTurnReplayTimelineCopyStatus("copied");
     } catch {
       setTurnReplayTimelineCopyStatus("unsupported");
+    }
+  }
+
+  async function onCopyFocusedGroupStatus(): Promise<void> {
+    if (
+      typeof navigator === "undefined"
+      || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== "function"
+    ) {
+      setTurnFocusedGroupStatusCopyStatus("unsupported");
+      return;
+    }
+
+    try {
+      const text = buildFocusedGroupStatusCopyText({
+        focusMode,
+        focusedGroup: focusedGroupKey,
+        hashTarget: focusedHashTarget,
+      });
+      await navigator.clipboard.writeText(text);
+      setTurnFocusedGroupStatusCopyStatus("copied");
+    } catch {
+      setTurnFocusedGroupStatusCopyStatus("unsupported");
     }
   }
 
@@ -928,6 +956,18 @@ export function ConsequencesDrawer({
               >
                 Copy replay timeline
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void onCopyFocusedGroupStatus();
+                }}
+                className="text-xs underline ml-2 text-neutral-300"
+                aria-label="Copy focused group status"
+                aria-describedby={turnDiffStatusRegionId}
+                aria-disabled={false}
+              >
+                Copy focused group status
+              </button>
             </div>
             <div className="text-xs">
               Impact: {impact} (Deltas: {deltaCount}, Ledger: {ledgerCount})
@@ -1027,6 +1067,8 @@ export function ConsequencesDrawer({
               {turnPreviousKeysCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnReplayTimelineCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnReplayTimelineCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
+              {turnFocusedGroupStatusCopyStatus === "copied" ? <div>Copied</div> : null}
+              {turnFocusedGroupStatusCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnComparisonCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnComparisonCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnImpactCopyStatus === "copied" ? <div>Copied</div> : null}
