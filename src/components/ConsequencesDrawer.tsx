@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { buildConsequencesExplanationText } from "@/lib/buildConsequencesExplanationText";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 
 type Props = {
@@ -34,6 +35,26 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
   const ledgerCount = ledger.length;
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
   const [showRawJson, setShowRawJson] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+
+  async function handleCopyExplanation(): Promise<void> {
+    const text = buildConsequencesExplanationText({
+      stateDeltas: deltas,
+      ledgerAdds: ledger,
+    });
+
+    if (!navigator.clipboard?.writeText) {
+      setCopyStatus("Copy not supported in this environment");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus("Copied!");
+    } catch {
+      setCopyStatus("Copy failed");
+    }
+  }
 
   return (
     <details
@@ -56,6 +77,19 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
       </summary>
 
       <div className="mt-3 space-y-4 text-xs">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="rounded border border-neutral-700 px-2 py-1 text-neutral-200 hover:border-neutral-500"
+            onClick={() => {
+              void handleCopyExplanation();
+            }}
+          >
+            Copy explanation
+          </button>
+          {copyStatus ? <span className="text-neutral-400">{copyStatus}</span> : null}
+        </div>
+
         <label className="flex items-center gap-2 text-neutral-400">
           <input
             type="checkbox"
