@@ -8,6 +8,7 @@ import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
 import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText";
 import {
+  buildAllTurnDiffCopyText,
   buildTurnComparisonCopyText,
   buildFilteredDeltasCopyText,
   buildTurnImpactSummaryCopyText,
@@ -201,6 +202,7 @@ export function ConsequencesDrawer({
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [turnDiffAllCopyStatus, setTurnDiffAllCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnDiffCopyStatus, setTurnDiffCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnComparisonCopyStatus, setTurnComparisonCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnImpactCopyStatus, setTurnImpactCopyStatus] = useState<"" | "copied" | "unsupported">("");
@@ -298,6 +300,7 @@ export function ConsequencesDrawer({
   })();
   const turnDiffKeys = allTopKeys;
   const turnDiffKeyChips = turnDiffKeys.slice(0, 8);
+  const turnDiffKeyOverflow = turnDiffKeys.length > 8 ? turnDiffKeys.length - 8 : 0;
   const turnDiffStatusRegionId = "turn-diff-status-region";
 
   useEffect(() => {
@@ -407,6 +410,45 @@ export function ConsequencesDrawer({
       setTurnDiffCopyStatus("copied");
     } catch {
       setTurnDiffCopyStatus("unsupported");
+    }
+  }
+
+  async function onCopyAllTurnDiff(): Promise<void> {
+    if (
+      typeof navigator === "undefined"
+      || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== "function"
+    ) {
+      setTurnDiffAllCopyStatus("unsupported");
+      return;
+    }
+
+    try {
+      const text = buildAllTurnDiffCopyText({
+        impact,
+        deltaCount,
+        ledgerCount,
+        showNoOp: deltaCount === 0 && ledgerCount === 0,
+        showLowSignal: !(deltaCount === 0 && ledgerCount === 0) && impact === "Low",
+        showHighImpact: impact === "High",
+        stateDeltaEntriesLine: `State delta entries: ${stateDeltasArray.length}`,
+        topKeysLine,
+        previousTurnKeysLine,
+        previousTopKeys,
+        addedKeysLine: `+ Added: ${addedKeysLine}`,
+        removedKeysLine: `– Removed: ${removedKeysLine}`,
+        unchangedKeysLine: `= Unchanged: ${unchangedKeysLine}`,
+        addedKeys: keyComparison.added,
+        removedKeys: keyComparison.removed,
+        unchangedKeys: keyComparison.unchanged,
+        activeDeltaFilterLabel,
+        turnDiffKeyChips,
+        turnDiffKeyOverflow,
+      });
+      await navigator.clipboard.writeText(text);
+      setTurnDiffAllCopyStatus("copied");
+    } catch {
+      setTurnDiffAllCopyStatus("unsupported");
     }
   }
 
@@ -710,6 +752,17 @@ export function ConsequencesDrawer({
               <button
                 type="button"
                 onClick={() => {
+                  void onCopyAllTurnDiff();
+                }}
+                className="text-xs underline ml-2 text-neutral-300"
+                aria-label="Copy all Turn Diff"
+                aria-describedby={turnDiffStatusRegionId}
+              >
+                Copy all Turn Diff
+              </button>
+              <button
+                type="button"
+                onClick={() => {
                   void onCopyTurnImpactSummary();
                 }}
                 className="text-xs underline ml-2 text-neutral-300"
@@ -840,13 +893,15 @@ export function ConsequencesDrawer({
                       {key}
                     </span>
                   ))}
-                  {turnDiffKeys.length > 8 ? (
+                  {turnDiffKeyOverflow > 0 ? (
                     <span className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300">
-                      +{turnDiffKeys.length - 8} more
+                      +{turnDiffKeyOverflow} more
                     </span>
                   ) : null}
                 </div>
               ) : null}
+              {turnDiffAllCopyStatus === "copied" ? <div>Copied</div> : null}
+              {turnDiffAllCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnDiffCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnDiffCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnComparisonCopyStatus === "copied" ? <div>Copied</div> : null}

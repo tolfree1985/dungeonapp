@@ -156,3 +156,67 @@ export function buildTurnComparisonCopyText(args: {
     `Unchanged: ${unchanged.length > 0 ? unchanged.join(", ") : "(none)"}`,
   ].join("\n");
 }
+
+export function buildAllTurnDiffCopyText(args: {
+  impact: "Low" | "Medium" | "High";
+  deltaCount: number;
+  ledgerCount: number;
+  showNoOp: boolean;
+  showLowSignal: boolean;
+  showHighImpact: boolean;
+  stateDeltaEntriesLine: string;
+  topKeysLine: string;
+  previousTurnKeysLine: string;
+  previousTopKeys: string[];
+  addedKeysLine: string;
+  removedKeysLine: string;
+  unchangedKeysLine: string;
+  addedKeys: string[];
+  removedKeys: string[];
+  unchangedKeys: string[];
+  activeDeltaFilterLabel: string;
+  turnDiffKeyChips: string[];
+  turnDiffKeyOverflow: number;
+}): string {
+  const previousTopKeys = [...args.previousTopKeys].sort((a, b) => a.localeCompare(b));
+  const addedKeys = [...args.addedKeys].sort((a, b) => a.localeCompare(b));
+  const removedKeys = [...args.removedKeys].sort((a, b) => a.localeCompare(b));
+  const unchangedKeys = [...args.unchangedKeys].sort((a, b) => a.localeCompare(b));
+  const turnDiffKeyChips = [...args.turnDiffKeyChips];
+
+  const lines = [
+    "Turn diff",
+    `Impact: ${args.impact} (Deltas: ${args.deltaCount}, Ledger: ${args.ledgerCount})`,
+  ];
+
+  if (args.showNoOp) lines.push("No-op turn");
+  if (args.showLowSignal) lines.push("Low-signal turn");
+  if (args.showHighImpact) lines.push("High-impact turn");
+
+  lines.push(
+    args.stateDeltaEntriesLine,
+    args.topKeysLine,
+    args.previousTurnKeysLine,
+    "Previous turn keys",
+    previousTopKeys.length > 0 ? previousTopKeys.join(", ") : "(none)",
+    "Compared to previous turn",
+    args.addedKeysLine,
+    args.removedKeysLine,
+    args.unchangedKeysLine,
+    "Added keys",
+    addedKeys.length > 0 ? addedKeys.join(", ") : "(none)",
+    "Removed keys",
+    removedKeys.length > 0 ? removedKeys.join(", ") : "(none)",
+    "Unchanged keys",
+    unchangedKeys.length > 0 ? unchangedKeys.join(", ") : "(none)",
+    `Active delta filter: ${args.activeDeltaFilterLabel}`,
+    "Top keys",
+    turnDiffKeyChips.length > 0 ? turnDiffKeyChips.join(", ") : "(none)",
+  );
+
+  if (args.turnDiffKeyOverflow > 0) {
+    lines.push(`+${args.turnDiffKeyOverflow} more`);
+  }
+
+  return lines.join("\n");
+}
