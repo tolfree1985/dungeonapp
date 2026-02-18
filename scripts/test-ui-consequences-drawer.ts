@@ -206,12 +206,15 @@ function main() {
   assert(html.includes("Copy turn link"), 'Expected "Copy turn link" to be present');
   assert(html.includes("No previous turn"), 'Expected "No previous turn" helper text to be present');
   assert(html.includes("Focused group: none"), 'Expected "Focused group: none" to be present');
+  assert(html.includes("Focused anchor: none"), 'Expected "Focused anchor: none" to be present');
   assert(html.includes("Clear delta filter"), 'Expected "Clear delta filter" to be present');
   assert(html.includes("id=\"turn-diff-panel\""), 'Expected turn diff panel id to be present');
   assert(html.includes("id=\"state-deltas-panel\""), 'Expected state deltas panel id to be present');
   assert(html.includes("id=\"replay-timeline-panel\""), 'Expected replay timeline panel id to be present');
   assert(html.includes("id=\"ledger-groups-panel\""), 'Expected ledger groups panel id to be present');
   assert(html.includes("aria-controls=\"ledger-groups-panel\""), 'Expected ledger control aria-controls linkage');
+  assert(html.includes("aria-controls=\"turn-diff-panel\""), 'Expected turn diff aria-controls linkage');
+  assert(html.includes("aria-controls=\"state-deltas-panel\""), 'Expected state deltas aria-controls linkage');
   assert(html.includes("aria-pressed="), "Expected at least one aria-pressed attribute");
   assert(html.includes("aria-disabled="), "Expected at least one aria-disabled attribute");
   assert(html.includes("Previous turn keys"), 'Expected "Previous turn keys" to be present');
