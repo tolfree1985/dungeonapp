@@ -74,3 +74,5 @@ node --import tsx scripts/smoke-prod-surface.ts
   - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-route-scenario-fork-cap.ts`
 - Error safety invariant:
   - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-route-error-safety.ts`
+- UI consequences drawer invariant:
+  - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-ui-consequences-drawer.ts`
