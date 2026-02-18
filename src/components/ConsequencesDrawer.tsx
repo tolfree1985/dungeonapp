@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { buildConsequencesExplanationText } from "@/lib/buildConsequencesExplanationText";
 import { buildLedgerEntryCopyText } from "@/lib/buildLedgerEntryCopyText";
+import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
 import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 
@@ -94,6 +95,8 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [entryCopyStatus, setEntryCopyStatus] = useState<Record<number, string>>({});
   const [entryLinkCopyStatus, setEntryLinkCopyStatus] = useState<Record<number, string>>({});
+  const [groupLinkCopyStatus, setGroupLinkCopyStatus] = useState<Record<string, string>>({});
+  const [groupSummaryCopyStatus, setGroupSummaryCopyStatus] = useState<Record<string, string>>({});
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
 
   useEffect(() => {
@@ -280,128 +283,191 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
             <div className="mt-2">
               {groupOrder.map((key) => {
                 const entries = groups.get(key)!;
+                const groupAnchorId = key === "ungrouped" ? "ledger-group-ungrouped" : `ledger-group-${key}`;
+                const groupTitle = key === "ungrouped" ? "Ungrouped" : `Event: ${key}`;
                 return (
-                  <div key={key} className="mb-3">
+                  <div key={key} id={groupAnchorId} className="mb-3">
                     <div className="flex items-center justify-between gap-2 text-xs font-semibold opacity-70">
-                      <span>{key === "ungrouped" ? "Ungrouped" : `Event: ${key}`}</span>
-                      <button
-                        type="button"
-                        className="text-xs underline opacity-80 hover:opacity-100"
-                        onClick={() =>
-                          setOpenGroups((prev) => ({
-                            ...prev,
-                            [key]: prev[key] === false ? true : false,
-                          }))
-                        }
-                      >
-                        {isOpen(key) ? "Collapse" : "Expand"}
-                      </button>
+                      <span>{groupTitle}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="text-xs underline opacity-80 hover:opacity-100"
+                          onClick={async () => {
+                            const nav: typeof navigator | undefined =
+                              typeof navigator !== "undefined" ? navigator : undefined;
+                            const canCopy =
+                              !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+                            if (!canCopy) {
+                              setGroupLinkCopyStatus((prev) => ({ ...prev, [key]: "Copy not supported" }));
+                              return;
+                            }
+
+                            try {
+                              const loc: Location | undefined =
+                                typeof location !== "undefined" ? location : undefined;
+                              const path = `${loc?.pathname ?? ""}${loc?.search ?? ""}#${groupAnchorId}`;
+                              await nav.clipboard.writeText(path);
+                              setGroupLinkCopyStatus((prev) => ({ ...prev, [key]: "Copied" }));
+                            } catch {
+                              setGroupLinkCopyStatus((prev) => ({ ...prev, [key]: "Copy not supported" }));
+                            }
+                          }}
+                        >
+                          Copy group link
+                        </button>
+                        {groupLinkCopyStatus[key] ? (
+                          <span className="text-xs opacity-70">{groupLinkCopyStatus[key]}</span>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="text-xs underline opacity-80 hover:opacity-100"
+                          onClick={async () => {
+                            const nav: typeof navigator | undefined =
+                              typeof navigator !== "undefined" ? navigator : undefined;
+                            const canCopy =
+                              !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+                            if (!canCopy) {
+                              setGroupSummaryCopyStatus((prev) => ({ ...prev, [key]: "Copy not supported" }));
+                              return;
+                            }
+
+                            try {
+                              const text = buildLedgerGroupCopyText(
+                                groupTitle,
+                                entries.map(({ entry }) => entry as AnyEntry),
+                              );
+                              await nav.clipboard.writeText(text);
+                              setGroupSummaryCopyStatus((prev) => ({ ...prev, [key]: "Copied" }));
+                            } catch {
+                              setGroupSummaryCopyStatus((prev) => ({ ...prev, [key]: "Copy not supported" }));
+                            }
+                          }}
+                        >
+                          Copy group summary
+                        </button>
+                        {groupSummaryCopyStatus[key] ? (
+                          <span className="text-xs opacity-70">{groupSummaryCopyStatus[key]}</span>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="text-xs underline opacity-80 hover:opacity-100"
+                          onClick={() =>
+                            setOpenGroups((prev) => ({
+                              ...prev,
+                              [key]: prev[key] === false ? true : false,
+                            }))
+                          }
+                        >
+                          {isOpen(key) ? "Collapse" : "Expand"}
+                        </button>
+                      </div>
                     </div>
                     {isOpen(key) ? (
                       <div className="mt-1 space-y-2">
                         {entries.map(({ entry, index }, groupIndex) => {
-                        const row = asRecord(entry);
-                        const rowId =
-                          typeof (entry as any).refEventId === "string" && (entry as any).refEventId
-                            ? `ledger-${(entry as any).refEventId}`
-                            : `ledger-idx-${index}`;
-                        const kind = typeof row?.kind === "string"
-                          ? row.kind
-                          : typeof row?.type === "string"
-                            ? row.type
-                            : null;
-                        const message = typeof row?.message === "string"
-                          ? row.message
-                          : typeof row?.summary === "string"
-                            ? row.summary
-                            : null;
-                        const because = typeof row?.because === "string" ? row.because : null;
-                        return (
-                          <div
-                            id={rowId}
-                            key={`${rowId}-${index}-${groupIndex}`}
-                            className="space-y-1 rounded border border-transparent p-1"
-                          >
-                            {kind ? <div className="font-medium text-neutral-300">{kind}</div> : null}
-                            {message ? (
-                              <div className="text-neutral-400">{formatConsequenceValue(message)}</div>
-                            ) : null}
-                            {because ? (
-                              <div className="text-neutral-500">Because: {formatConsequenceValue(because)}</div>
-                            ) : null}
-                            {!kind && !message && !because ? (
-                              <div className="text-neutral-400">{formatConsequenceValue(entry)}</div>
-                            ) : null}
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                className="text-xs underline opacity-80 hover:opacity-100"
-                                onClick={async () => {
-                                  const nav: typeof navigator | undefined =
-                                    typeof navigator !== "undefined" ? navigator : undefined;
-                                  const canCopy =
-                                    !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
-
-                                  if (!canCopy) {
-                                    setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
-                                    return;
-                                  }
-
-                                  try {
-                                    const text = buildLedgerEntryCopyText(entry as Record<string, unknown>);
-                                    await nav.clipboard.writeText(text);
-                                    setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
-                                  } catch {
-                                    setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
-                                  }
-                                }}
-                              >
-                                Copy entry
-                              </button>
-                              {entryCopyStatus[index] ? (
-                                <span className="ml-2 text-xs opacity-70">{entryCopyStatus[index]}</span>
+                          const row = asRecord(entry);
+                          const rowId =
+                            typeof (entry as any).refEventId === "string" && (entry as any).refEventId
+                              ? `ledger-${(entry as any).refEventId}`
+                              : `ledger-idx-${index}`;
+                          const kind = typeof row?.kind === "string"
+                            ? row.kind
+                            : typeof row?.type === "string"
+                              ? row.type
+                              : null;
+                          const message = typeof row?.message === "string"
+                            ? row.message
+                            : typeof row?.summary === "string"
+                              ? row.summary
+                              : null;
+                          const because = typeof row?.because === "string" ? row.because : null;
+                          return (
+                            <div
+                              id={rowId}
+                              key={`${rowId}-${index}-${groupIndex}`}
+                              className="space-y-1 rounded border border-transparent p-1"
+                            >
+                              {kind ? <div className="font-medium text-neutral-300">{kind}</div> : null}
+                              {message ? (
+                                <div className="text-neutral-400">{formatConsequenceValue(message)}</div>
                               ) : null}
-                              <button
-                                type="button"
-                                className="text-xs underline opacity-80 hover:opacity-100"
-                                onClick={async () => {
-                                  const nav: typeof navigator | undefined =
-                                    typeof navigator !== "undefined" ? navigator : undefined;
-                                  const canCopy =
-                                    !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
-                                  if (!canCopy) {
-                                    setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
-                                    return;
-                                  }
-
-                                  try {
-                                    const loc: Location | undefined =
-                                      typeof location !== "undefined" ? location : undefined;
-                                    const path = `${loc?.pathname ?? ""}${loc?.search ?? ""}#${rowId}`;
-                                    await nav.clipboard.writeText(path);
-                                    setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
-                                  } catch {
-                                    setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
-                                  }
-                                }}
-                              >
-                                Copy link
-                              </button>
-                              {entryLinkCopyStatus[index] ? (
-                                <span className="text-xs opacity-70">{entryLinkCopyStatus[index]}</span>
+                              {because ? (
+                                <div className="text-neutral-500">Because: {formatConsequenceValue(because)}</div>
                               ) : null}
+                              {!kind && !message && !because ? (
+                                <div className="text-neutral-400">{formatConsequenceValue(entry)}</div>
+                              ) : null}
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="text-xs underline opacity-80 hover:opacity-100"
+                                  onClick={async () => {
+                                    const nav: typeof navigator | undefined =
+                                      typeof navigator !== "undefined" ? navigator : undefined;
+                                    const canCopy =
+                                      !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+
+                                    if (!canCopy) {
+                                      setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                                      return;
+                                    }
+
+                                    try {
+                                      const text = buildLedgerEntryCopyText(entry as Record<string, unknown>);
+                                      await nav.clipboard.writeText(text);
+                                      setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
+                                    } catch {
+                                      setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                                    }
+                                  }}
+                                >
+                                  Copy entry
+                                </button>
+                                {entryCopyStatus[index] ? (
+                                  <span className="ml-2 text-xs opacity-70">{entryCopyStatus[index]}</span>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="text-xs underline opacity-80 hover:opacity-100"
+                                  onClick={async () => {
+                                    const nav: typeof navigator | undefined =
+                                      typeof navigator !== "undefined" ? navigator : undefined;
+                                    const canCopy =
+                                      !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+                                    if (!canCopy) {
+                                      setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                                      return;
+                                    }
+
+                                    try {
+                                      const loc: Location | undefined =
+                                        typeof location !== "undefined" ? location : undefined;
+                                      const path = `${loc?.pathname ?? ""}${loc?.search ?? ""}#${rowId}`;
+                                      await nav.clipboard.writeText(path);
+                                      setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
+                                    } catch {
+                                      setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                                    }
+                                  }}
+                                >
+                                  Copy link
+                                </button>
+                                {entryLinkCopyStatus[index] ? (
+                                  <span className="text-xs opacity-70">{entryLinkCopyStatus[index]}</span>
+                                ) : null}
+                              </div>
+                              <details className="mt-2">
+                                <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-200">
+                                  Details
+                                </summary>
+                                <pre className="mt-2 overflow-auto rounded bg-black/40 p-2 text-[11px] text-neutral-200">
+                                  {JSON.stringify(entry, null, 2)}
+                                </pre>
+                              </details>
                             </div>
-                            <details className="mt-2">
-                              <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-200">
-                                Details
-                              </summary>
-                              <pre className="mt-2 overflow-auto rounded bg-black/40 p-2 text-[11px] text-neutral-200">
-                                {JSON.stringify(entry, null, 2)}
-                              </pre>
-                            </details>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>
