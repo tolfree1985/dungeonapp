@@ -9,6 +9,10 @@ import { buildConsequencesExplanationText } from "../src/lib/buildConsequencesEx
 import { buildInspectorBundleCopyText } from "../src/lib/buildInspectorBundleCopyText";
 import { buildLedgerGroupCopyText } from "../src/lib/buildLedgerGroupCopyText";
 import { buildVisibleLedgerCopyText } from "../src/lib/buildVisibleLedgerCopyText";
+import {
+  buildTurnComparisonCopyText,
+  buildTurnImpactSummaryCopyText,
+} from "../src/lib/turnDiff/buildTurnDiffCopyText";
 
 function main() {
   const longText = "x".repeat(220);
@@ -93,6 +97,21 @@ function main() {
   const resolutionBadgeHtml = renderToStaticMarkup(
     React.createElement(ResolutionBadge, { outcome: "mixed" }),
   );
+  const impactSummary = buildTurnImpactSummaryCopyText({
+    turnIndex: 2,
+    impact: "Low",
+    deltaCount: 2,
+    ledgerCount: 1,
+    added: ["inventory"],
+    removed: ["status"],
+    unchanged: ["health"],
+  });
+  const comparisonSummary = buildTurnComparisonCopyText({
+    turnIndex: 2,
+    added: ["inventory"],
+    removed: ["status"],
+    unchanged: ["health"],
+  });
   const stableTurnId = "evt-123";
   const anchorId = `turn-${stableTurnId}-consequences`;
   const seeWhyHtml = renderToStaticMarkup(
@@ -149,6 +168,14 @@ function main() {
   assert(html.includes("Copy inspector bundle"), 'Expected "Copy inspector bundle" to be present');
   assert(html.includes("Turn diff"), 'Expected "Turn diff" to be present');
   assert(html.includes("Copy turn diff"), 'Expected "Copy turn diff" to be present');
+  assert(html.includes("Copy impact summary"), 'Expected "Copy impact summary" to be present');
+  assert(html.includes("Copy comparison"), 'Expected "Copy comparison" to be present');
+  assert(html.includes("Copy turn link"), 'Expected "Copy turn link" to be present');
+  assert(html.includes("Clear delta filter"), 'Expected "Clear delta filter" to be present');
+  assert(html.includes("Added keys"), 'Expected "Added keys" to be present');
+  assert(html.includes("Removed keys"), 'Expected "Removed keys" to be present');
+  assert(html.includes("Unchanged keys"), 'Expected "Unchanged keys" to be present');
+  assert(html.includes("Low-signal turn"), 'Expected "Low-signal turn" to be present');
   assert(html.includes("ledger-group-"), 'Expected timeline/group anchor signal ("ledger-group-") to be present');
   assert(html.includes("ledger-"), 'Expected at least one ledger anchor id ("ledger-") to be present');
   assert(html.includes("Copy entry"), 'Expected "Copy entry" to be present');
@@ -187,6 +214,24 @@ function main() {
     "explanation delta order was not preserved",
   );
   assert(explanation.includes("…(truncated)"), "missing explanation truncation marker");
+  assert(
+    impactSummary.includes("Turn impact summary (turn 2)"),
+    "missing impact summary header",
+  );
+  assert(impactSummary.includes("Impact: Low"), "missing impact summary impact line");
+  assert(impactSummary.includes("Added: inventory"), "missing impact summary added line");
+  assert(
+    comparisonSummary.includes("Turn comparison (turn 2)"),
+    "missing comparison summary header",
+  );
+  assert(
+    comparisonSummary.includes("Compared to previous turn"),
+    "missing comparison summary comparison line",
+  );
+  assert(
+    comparisonSummary.includes("Removed: status"),
+    "missing comparison summary removed line",
+  );
   assert(resolutionBadgeHtml.includes("⚠ Success w/ cost"), "missing resolution badge text");
   assert(seeWhyHtml.includes("See why"), "missing See why text");
   assert(
