@@ -210,6 +210,9 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
           const key = getTurnDiffTopKeys([d])[0];
           return key === deltaKeyFilter;
         });
+  const totalDeltas = stateDeltasArray.length;
+  const shownDeltas = visibleDeltas.length;
+  const activeDeltaFilterLabel = deltaKeyFilter === "" ? "All" : deltaKeyFilter;
   const topKeysLine = (() => {
     const lines = turnDiffText.split("\n");
     const keysLine = lines.find((line) => line.startsWith("Keys: "));
@@ -537,6 +540,7 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
             <div className="mt-2 space-y-1 text-xs text-neutral-400">
               <div>State delta entries: {stateDeltasArray.length}</div>
               <div>{topKeysLine}</div>
+              <div>Active delta filter: {activeDeltaFilterLabel}</div>
               {turnDiffKeyChips.length > 0 ? (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {turnDiffKeyChips.map((key) => (
@@ -576,6 +580,9 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
                 </option>
               ))}
             </select>
+            <span className="ml-2 text-xs text-muted-foreground">
+              Showing {shownDeltas} of {totalDeltas} deltas
+            </span>
           </div>
           {visibleDeltas.length > 0 ? (
             <ol className="mt-2 list-decimal space-y-2 pl-5">
