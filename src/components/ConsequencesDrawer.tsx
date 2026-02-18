@@ -722,9 +722,13 @@ export function ConsequencesDrawer({
                 }}
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy comparison with previous turn"
+                disabled={!hasPreviousTurn}
               >
                 Copy comparison
               </button>
+              {!hasPreviousTurn ? (
+                <div className="text-xs text-neutral-400">No previous turn</div>
+              ) : null}
               {normalizedDeltaKeyFilter !== "" ? (
                 <button
                   type="button"
