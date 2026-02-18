@@ -777,6 +777,14 @@ export function ConsequencesDrawer({
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              className="ml-2 text-xs underline text-neutral-300"
+              onClick={() => updateDeltaFilter("")}
+              aria-label="Clear delta filter"
+            >
+              Clear delta filter
+            </button>
             <span className="ml-2 text-xs text-muted-foreground">
               Showing {shownDeltas} of {totalDeltas} deltas
             </span>
