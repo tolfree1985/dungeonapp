@@ -168,10 +168,21 @@ function main() {
   assert(html.includes("Copy inspector bundle"), 'Expected "Copy inspector bundle" to be present');
   assert(html.includes("Turn diff"), 'Expected "Turn diff" to be present');
   assert(html.includes("Copy turn diff"), 'Expected "Copy turn diff" to be present');
+  assert(html.includes("Copy all Turn Diff"), 'Expected "Copy all Turn Diff" to be present');
   assert(html.includes("Copy impact summary"), 'Expected "Copy impact summary" to be present');
   assert(html.includes("Copy comparison"), 'Expected "Copy comparison" to be present');
   assert(html.includes("Copy turn link"), 'Expected "Copy turn link" to be present');
+  assert(html.includes("No previous turn"), 'Expected "No previous turn" helper text to be present');
   assert(html.includes("Clear delta filter"), 'Expected "Clear delta filter" to be present');
+  assert(html.includes("Previous turn keys"), 'Expected "Previous turn keys" to be present');
+  assert(
+    html.includes("aria-describedby=\"turn-diff-status-region\""),
+    'Expected Turn Diff controls to include aria-describedby="turn-diff-status-region"',
+  );
+  assert(
+    html.includes("id=\"turn-diff-status-region\""),
+    'Expected Turn Diff status region id to be present',
+  );
   assert(html.includes("Added keys"), 'Expected "Added keys" to be present');
   assert(html.includes("Removed keys"), 'Expected "Removed keys" to be present');
   assert(html.includes("Unchanged keys"), 'Expected "Unchanged keys" to be present');
