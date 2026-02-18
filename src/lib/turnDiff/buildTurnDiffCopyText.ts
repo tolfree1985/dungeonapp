@@ -19,12 +19,7 @@ function topLevelKeyFromPath(path: string | string[] | undefined): string | null
   return first ? first : null;
 }
 
-export function buildTurnDiffCopyText(args: {
-  turnIndex: number | null;
-  deltas: TurnDiffDelta[];
-}): string {
-  const { turnIndex, deltas } = args;
-
+export function getTurnDiffTopKeys(deltas: TurnDiffDelta[]): string[] {
   const keys: string[] = [];
   const seen = new Set<string>();
 
@@ -37,6 +32,15 @@ export function buildTurnDiffCopyText(args: {
   }
 
   keys.sort((a, b) => a.localeCompare(b));
+  return keys;
+}
+
+export function buildTurnDiffCopyText(args: {
+  turnIndex: number | null;
+  deltas: TurnDiffDelta[];
+}): string {
+  const { turnIndex, deltas } = args;
+  const keys = getTurnDiffTopKeys(deltas);
 
   const header = `Turn diff${typeof turnIndex === "number" ? ` (turn ${turnIndex})` : ""}`;
   const lines: string[] = [header, `State delta entries: ${deltas.length}`, `Top-level keys: ${keys.length}`];

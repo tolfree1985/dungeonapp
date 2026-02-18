@@ -6,7 +6,7 @@ import { buildLedgerEntryCopyText } from "@/lib/buildLedgerEntryCopyText";
 import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
 import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText";
-import { buildTurnDiffCopyText } from "@/lib/turnDiff/buildTurnDiffCopyText";
+import { buildTurnDiffCopyText, getTurnDiffTopKeys } from "@/lib/turnDiff/buildTurnDiffCopyText";
 import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 import { ResolutionBadge as OutcomeBadge } from "@/components/ResolutionBadge";
@@ -198,6 +198,16 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
     const keysLine = lines.find((line) => line.startsWith("Keys: "));
     return keysLine ?? "Keys: (none)";
   })();
+  const turnDiffKeys = getTurnDiffTopKeys(
+    stateDeltasArray as {
+      path?: string | string[];
+      op?: string;
+      before?: unknown;
+      after?: unknown;
+      [k: string]: unknown;
+    }[],
+  );
+  const turnDiffKeyChips = turnDiffKeys.slice(0, 8);
 
   useEffect(() => {
     focusModeRef.current = focusMode;
@@ -518,6 +528,23 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
             <div className="mt-2 space-y-1 text-xs text-neutral-400">
               <div>State delta entries: {stateDeltasArray.length}</div>
               <div>{topKeysLine}</div>
+              {turnDiffKeyChips.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {turnDiffKeyChips.map((key) => (
+                    <span
+                      key={key}
+                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300"
+                    >
+                      {key}
+                    </span>
+                  ))}
+                  {turnDiffKeys.length > 8 ? (
+                    <span className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300">
+                      +{turnDiffKeys.length - 8} more
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               {turnDiffCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnDiffCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
             </div>
