@@ -8,6 +8,7 @@ import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
 import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText";
 import {
+  buildTurnComparisonCopyText,
   buildFilteredDeltasCopyText,
   buildTurnImpactSummaryCopyText,
   buildTurnDiffCopyText,
@@ -201,6 +202,7 @@ export function ConsequencesDrawer({
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [turnDiffCopyStatus, setTurnDiffCopyStatus] = useState<"" | "copied" | "unsupported">("");
+  const [turnComparisonCopyStatus, setTurnComparisonCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnImpactCopyStatus, setTurnImpactCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnLinkCopyStatus, setTurnLinkCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [visibleLedgerCopyStatus, setVisibleLedgerCopyStatus] = useState<string | null>(null);
@@ -473,6 +475,30 @@ export function ConsequencesDrawer({
     }
   }
 
+  async function onCopyComparison(): Promise<void> {
+    if (
+      typeof navigator === "undefined"
+      || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== "function"
+    ) {
+      setTurnComparisonCopyStatus("unsupported");
+      return;
+    }
+
+    try {
+      const text = buildTurnComparisonCopyText({
+        turnIndex: typeof turnIndex === "number" ? turnIndex : null,
+        added: keyComparison.added,
+        removed: keyComparison.removed,
+        unchanged: keyComparison.unchanged,
+      });
+      await navigator.clipboard.writeText(text);
+      setTurnComparisonCopyStatus("copied");
+    } catch {
+      setTurnComparisonCopyStatus("unsupported");
+    }
+  }
+
   return (
     <details
       ref={detailsRef}
@@ -689,6 +715,16 @@ export function ConsequencesDrawer({
               >
                 Copy impact summary
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void onCopyComparison();
+                }}
+                className="text-xs underline ml-2 text-neutral-300"
+                aria-label="Copy comparison"
+              >
+                Copy comparison
+              </button>
               {normalizedDeltaKeyFilter !== "" ? (
                 <button
                   type="button"
@@ -786,6 +822,8 @@ export function ConsequencesDrawer({
               ) : null}
               {turnDiffCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnDiffCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
+              {turnComparisonCopyStatus === "copied" ? <div>Copied</div> : null}
+              {turnComparisonCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnImpactCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnImpactCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnLinkCopyStatus === "copied" ? <div className="text-xs">Copied</div> : null}

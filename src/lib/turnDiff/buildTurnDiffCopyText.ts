@@ -133,3 +133,26 @@ export function buildTurnImpactSummaryCopyText(args: {
 
   return lines.join("\n");
 }
+
+export function buildTurnComparisonCopyText(args: {
+  turnIndex: number | null;
+  added: string[];
+  removed: string[];
+  unchanged: string[];
+}): string {
+  const header =
+    "Turn comparison"
+    + (typeof args.turnIndex === "number" ? ` (turn ${args.turnIndex})` : "");
+
+  const added = [...args.added].sort((a, b) => a.localeCompare(b));
+  const removed = [...args.removed].sort((a, b) => a.localeCompare(b));
+  const unchanged = [...args.unchanged].sort((a, b) => a.localeCompare(b));
+
+  return [
+    header,
+    "Compared to previous turn",
+    `Added: ${added.length > 0 ? added.join(", ") : "(none)"}`,
+    `Removed: ${removed.length > 0 ? removed.join(", ") : "(none)"}`,
+    `Unchanged: ${unchanged.length > 0 ? unchanged.join(", ") : "(none)"}`,
+  ].join("\n");
+}
