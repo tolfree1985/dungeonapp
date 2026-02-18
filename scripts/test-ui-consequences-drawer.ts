@@ -63,6 +63,7 @@ function main() {
   assert(html.includes("Filter ruleId"), 'Expected "Filter ruleId" to be present');
   assert(html.includes("Clear filters"), 'Expected "Clear filters" to be present');
   assert(html.includes("Copy entry"), 'Expected "Copy entry" to be present');
+  assert(html.includes("Copy link"), 'Expected "Copy link" to be present');
   assert(html.includes(">Details<"), "missing Details expander label");
   assert(html.includes("<summary"), "missing summary element");
   assert(explanation.includes("State Deltas ("), "missing explanation state deltas section");
