@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { buildConsequencesExplanationText } from "@/lib/buildConsequencesExplanationText";
 import { buildLedgerEntryCopyText } from "@/lib/buildLedgerEntryCopyText";
 import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
@@ -123,6 +124,22 @@ function timelineLabelFromEntry(entry: AnyEntry | null): string {
 }
 
 export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
+  const searchParams = (() => {
+    try {
+      return useSearchParams();
+    } catch {
+      return null;
+    }
+  })();
+  const router = (() => {
+    try {
+      return useRouter();
+    } catch {
+      return null;
+    }
+  })();
+  void router;
+  const initialDeltaKey = searchParams?.get("deltaKey") ?? "";
   const deltas = Array.isArray(stateDeltas) ? stateDeltas : [];
   const stateDeltasArray = deltas;
   const ledger = Array.isArray(ledgerAdds) ? ledgerAdds : [];
@@ -141,7 +158,7 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
     .sort();
   const [filterKind, setFilterKind] = useState<string>("");
   const [filterRuleId, setFilterRuleId] = useState<string>("");
-  const [deltaKeyFilter, setDeltaKeyFilter] = useState<string>("");
+  const [deltaKeyFilter, setDeltaKeyFilter] = useState<string>(initialDeltaKey);
   const [focusMode, setFocusMode] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const isOpen = (key: string) => openGroups[key] !== false;
@@ -178,6 +195,23 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
   const focusModeRef = useRef(focusMode);
   const groupOrderRef = useRef(groupOrder);
+
+  function updateDeltaFilter(value: string): void {
+    setDeltaKeyFilter(value);
+
+    if (!searchParams || !router) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (!value) {
+      params.delete("deltaKey");
+    } else {
+      params.set("deltaKey", value);
+    }
+
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }
+
   const visibleLedgerGroups = groupOrder.map((key) => {
     const entries = groups.get(key) ?? [];
     const expanded = isOpen(key);
@@ -207,16 +241,19 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
       [k: string]: unknown;
     }[],
   );
+  const normalizedDeltaKeyFilter = allTopKeys.includes(deltaKeyFilter)
+    ? deltaKeyFilter
+    : "";
   const visibleDeltas =
-    deltaKeyFilter === ""
+    normalizedDeltaKeyFilter === ""
       ? stateDeltasArray
       : stateDeltasArray.filter((d: any) => {
           const key = getTurnDiffTopKeys([d])[0];
-          return key === deltaKeyFilter;
+          return key === normalizedDeltaKeyFilter;
         });
   const totalDeltas = stateDeltasArray.length;
   const shownDeltas = visibleDeltas.length;
-  const activeDeltaFilterLabel = deltaKeyFilter === "" ? "All" : deltaKeyFilter;
+  const activeDeltaFilterLabel = normalizedDeltaKeyFilter === "" ? "All" : normalizedDeltaKeyFilter;
   const topKeysLine = (() => {
     const lines = turnDiffText.split("\n");
     const keysLine = lines.find((line) => line.startsWith("Keys: "));
@@ -560,7 +597,7 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
               >
                 Copy turn diff
               </button>
-              {deltaKeyFilter !== "" ? (
+              {normalizedDeltaKeyFilter !== "" ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -604,8 +641,8 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
               Filter deltas
             </label>
             <select
-              value={deltaKeyFilter}
-              onChange={(e) => setDeltaKeyFilter(e.target.value)}
+              value={normalizedDeltaKeyFilter}
+              onChange={(e) => updateDeltaFilter(e.target.value)}
               className="ml-2 text-xs"
               aria-label="Filter deltas"
             >
