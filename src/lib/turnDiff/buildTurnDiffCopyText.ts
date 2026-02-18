@@ -102,3 +102,34 @@ export function buildFilteredDeltasCopyText(args: {
 
   return lines.join("\n");
 }
+
+export function buildTurnImpactSummaryCopyText(args: {
+  turnIndex: number | null;
+  impact: "Low" | "Medium" | "High";
+  deltaCount: number;
+  ledgerCount: number;
+  added: string[];
+  removed: string[];
+  unchanged: string[];
+}): string {
+  const header =
+    "Turn impact summary"
+    + (typeof args.turnIndex === "number" ? ` (turn ${args.turnIndex})` : "");
+
+  const added = [...args.added].sort((a, b) => a.localeCompare(b));
+  const removed = [...args.removed].sort((a, b) => a.localeCompare(b));
+  const unchanged = [...args.unchanged].sort((a, b) => a.localeCompare(b));
+
+  const lines = [
+    header,
+    `Impact: ${args.impact}`,
+    `Deltas: ${args.deltaCount}`,
+    `Ledger: ${args.ledgerCount}`,
+    "Compared to previous turn",
+    `Added: ${added.length > 0 ? added.join(", ") : "(none)"}`,
+    `Removed: ${removed.length > 0 ? removed.join(", ") : "(none)"}`,
+    `Unchanged: ${unchanged.length > 0 ? unchanged.join(", ") : "(none)"}`,
+  ];
+
+  return lines.join("\n");
+}

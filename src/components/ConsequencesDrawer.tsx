@@ -9,6 +9,7 @@ import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText";
 import {
   buildFilteredDeltasCopyText,
+  buildTurnImpactSummaryCopyText,
   buildTurnDiffCopyText,
   classifyTurnImpact,
   compareTurnKeys,
@@ -200,6 +201,7 @@ export function ConsequencesDrawer({
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [turnDiffCopyStatus, setTurnDiffCopyStatus] = useState<"" | "copied" | "unsupported">("");
+  const [turnImpactCopyStatus, setTurnImpactCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnLinkCopyStatus, setTurnLinkCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [visibleLedgerCopyStatus, setVisibleLedgerCopyStatus] = useState<string | null>(null);
   const [focusedViewCopyStatus, setFocusedViewCopyStatus] = useState<string | null>(null);
@@ -444,6 +446,33 @@ export function ConsequencesDrawer({
     }
   }
 
+  async function onCopyTurnImpactSummary(): Promise<void> {
+    if (
+      typeof navigator === "undefined"
+      || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== "function"
+    ) {
+      setTurnImpactCopyStatus("unsupported");
+      return;
+    }
+
+    try {
+      const text = buildTurnImpactSummaryCopyText({
+        turnIndex: typeof turnIndex === "number" ? turnIndex : null,
+        impact,
+        deltaCount,
+        ledgerCount,
+        added: keyComparison.added,
+        removed: keyComparison.removed,
+        unchanged: keyComparison.unchanged,
+      });
+      await navigator.clipboard.writeText(text);
+      setTurnImpactCopyStatus("copied");
+    } catch {
+      setTurnImpactCopyStatus("unsupported");
+    }
+  }
+
   return (
     <details
       ref={detailsRef}
@@ -650,6 +679,16 @@ export function ConsequencesDrawer({
               >
                 Copy turn diff
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void onCopyTurnImpactSummary();
+                }}
+                className="text-xs underline ml-2 text-neutral-300"
+                aria-label="Copy impact summary"
+              >
+                Copy impact summary
+              </button>
               {normalizedDeltaKeyFilter !== "" ? (
                 <button
                   type="button"
@@ -712,6 +751,8 @@ export function ConsequencesDrawer({
               ) : null}
               {turnDiffCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnDiffCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
+              {turnImpactCopyStatus === "copied" ? <div>Copied</div> : null}
+              {turnImpactCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnLinkCopyStatus === "copied" ? <div className="text-xs">Copied</div> : null}
               {turnLinkCopyStatus === "unsupported" ? (
                 <div className="text-xs">Copy not supported</div>
