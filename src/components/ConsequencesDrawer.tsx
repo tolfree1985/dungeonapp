@@ -1027,6 +1027,7 @@ export function ConsequencesDrawer({
               <div>– Removed: {removedKeysLine}</div>
               <div>= Unchanged: {unchangedKeysLine}</div>
               <div>Focused group: {focusedGroupKey ?? "none"}</div>
+              <div>Focused anchor: {focusedHashTarget ?? "none"}</div>
               <div className="mt-2 space-y-1">
                 <div>Added keys</div>
                 <div className="flex flex-wrap gap-1">
