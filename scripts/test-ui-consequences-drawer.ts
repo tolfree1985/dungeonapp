@@ -27,6 +27,21 @@ function main() {
   const resolutionBadgeHtml = renderToStaticMarkup(
     React.createElement(ResolutionBadge, { outcome: "mixed" }),
   );
+  const stableTurnId = "evt-123";
+  const anchorId = `turn-${stableTurnId}-consequences`;
+  const seeWhyHtml = renderToStaticMarkup(
+    React.createElement(
+      "section",
+      null,
+      React.createElement("a", { href: `#${anchorId}` }, "See why"),
+      React.createElement(ConsequencesDrawer, {
+        stateDeltas,
+        ledgerAdds,
+        anchorId,
+        detailsId: `details-turn-${stableTurnId}-consequences`,
+      }),
+    ),
+  );
 
   assert(html.includes("STATE DELTAS"), "missing STATE DELTAS heading");
   assert(html.includes("CAUSAL LEDGER"), "missing CAUSAL LEDGER heading");
@@ -48,6 +63,15 @@ function main() {
   );
   assert(explanation.includes("…(truncated)"), "missing explanation truncation marker");
   assert(resolutionBadgeHtml.includes("⚠ Success w/ cost"), "missing resolution badge text");
+  assert(seeWhyHtml.includes("See why"), "missing See why text");
+  assert(
+    seeWhyHtml.includes(`href=\"#${anchorId}\"`),
+    "missing See why href to consequences anchor",
+  );
+  assert(
+    seeWhyHtml.includes(`id=\"${anchorId}\"`),
+    "missing matching consequences drawer container id",
+  );
 
   console.log("UI CONSEQUENCES DRAWER OK");
 }
