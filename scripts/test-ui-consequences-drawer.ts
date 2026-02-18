@@ -193,10 +193,19 @@ function main() {
   assert(html.includes("Copy turn diff"), 'Expected "Copy turn diff" to be present');
   assert(html.includes("Copy all Turn Diff"), 'Expected "Copy all Turn Diff" to be present');
   assert(html.includes("Copy impact summary"), 'Expected "Copy impact summary" to be present');
+  assert(html.includes("Copy previous turn keys"), 'Expected "Copy previous turn keys" to be present');
   assert(html.includes("Copy comparison"), 'Expected "Copy comparison" to be present');
   assert(html.includes("Copy turn link"), 'Expected "Copy turn link" to be present');
   assert(html.includes("No previous turn"), 'Expected "No previous turn" helper text to be present');
+  assert(html.includes("Focused group: none"), 'Expected "Focused group: none" to be present');
   assert(html.includes("Clear delta filter"), 'Expected "Clear delta filter" to be present');
+  assert(html.includes("id=\"turn-diff-panel\""), 'Expected turn diff panel id to be present');
+  assert(html.includes("id=\"state-deltas-panel\""), 'Expected state deltas panel id to be present');
+  assert(html.includes("id=\"replay-timeline-panel\""), 'Expected replay timeline panel id to be present');
+  assert(html.includes("id=\"ledger-groups-panel\""), 'Expected ledger groups panel id to be present');
+  assert(html.includes("aria-controls=\"ledger-groups-panel\""), 'Expected ledger control aria-controls linkage');
+  assert(html.includes("aria-pressed="), "Expected at least one aria-pressed attribute");
+  assert(html.includes("aria-disabled="), "Expected at least one aria-disabled attribute");
   assert(html.includes("Previous turn keys"), 'Expected "Previous turn keys" to be present');
   assert(
     html.includes("aria-describedby=\"turn-diff-status-region\""),
@@ -211,6 +220,8 @@ function main() {
   assert(html.includes("Unchanged keys"), 'Expected "Unchanged keys" to be present');
   assert(html.includes("Low-signal turn"), 'Expected "Low-signal turn" to be present');
   assert(noOpHtml.includes("No-op turn"), 'Expected "No-op turn" in no-op fixture');
+  assert(noOpHtml.includes("No replay events"), 'Expected "No replay events" in no-op fixture');
+  assert(noOpHtml.includes("Nothing to copy"), 'Expected "Nothing to copy" in no-op fixture');
   assert(!noOpHtml.includes("Low-signal turn"), 'Did not expect "Low-signal turn" in no-op fixture');
   assert(!noOpHtml.includes("High-impact turn"), 'Did not expect "High-impact turn" in no-op fixture');
   assert(highImpactHtml.includes("High-impact turn"), 'Expected "High-impact turn" in high-impact fixture');
