@@ -59,6 +59,9 @@ function main() {
   );
   assert(html.includes("Found key under mat."), "missing expected ledger snippet");
   assert(html.includes("…(truncated)"), "missing truncation marker");
+  assert(html.includes("Filter kind"), 'Expected "Filter kind" to be present');
+  assert(html.includes("Filter ruleId"), 'Expected "Filter ruleId" to be present');
+  assert(html.includes("Clear filters"), 'Expected "Clear filters" to be present');
   assert(html.includes("Copy entry"), 'Expected "Copy entry" to be present');
   assert(html.includes(">Details<"), "missing Details expander label");
   assert(html.includes("<summary"), "missing summary element");
