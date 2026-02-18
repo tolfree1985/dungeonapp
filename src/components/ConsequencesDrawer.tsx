@@ -184,25 +184,35 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const hash = window.location.hash;
-    if (!hash || !hash.startsWith("#ledger-")) return;
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (!hash || !hash.startsWith("#ledger-")) return;
 
-    const groupKey = groupKeyFromLedgerHash(hash);
-    if (groupKey) {
-      setOpenGroups((prev) => {
-        if (prev[groupKey] !== false) return prev;
-        const next = { ...prev };
-        delete next[groupKey];
-        return next;
+      const groupKey = groupKeyFromLedgerHash(hash);
+      if (groupKey) {
+        setOpenGroups((prev) => {
+          if (prev[groupKey] !== false) return prev;
+          const next = { ...prev };
+          delete next[groupKey];
+          return next;
+        });
+      }
+
+      document.querySelectorAll(".ledger-highlight").forEach((n) => {
+        n.classList.remove("ledger-highlight");
       });
-    }
 
-    const id = hash.slice(1);
-    const el = document.getElementById(id);
-    if (!el) return;
+      const id = hash.slice(1);
+      const el = document.getElementById(id);
+      if (!el) return;
 
-    el.classList.add("ledger-highlight");
-    el.scrollIntoView({ block: "center" });
+      el.classList.add("ledger-highlight");
+      el.scrollIntoView({ block: "center" });
+    };
+
+    handleHash();
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
   }, []);
 
   async function handleCopyExplanation(): Promise<void> {
