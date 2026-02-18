@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { PrismaClient } from "../../../src/generated/prisma";
 import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimit } from "@/lib/api/readJsonWithLimit";
+import { withRouteLogging } from "@/lib/api/routeLogging";
 import { BillingError } from "../../../src/lib/billing/errors";
 import { estimateTokens } from "../../../src/lib/billing/estimate";
 import {
@@ -57,7 +58,7 @@ async function runModelStub(args: { prompt: string; max_tokens: number }): Promi
   return { scene, resolution, outputTokens };
 }
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   let holdKey = "";
   let leaseKeyForCleanup = "";
 
@@ -285,3 +286,5 @@ export async function POST(req: Request) {
     return errorResponse(500, "Internal Server Error");
   }
 }
+
+export const POST = withRouteLogging("POST /api/turn", postHandler);

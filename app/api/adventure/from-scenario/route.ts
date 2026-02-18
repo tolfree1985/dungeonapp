@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
+import { withRouteLogging } from "@/lib/api/routeLogging";
 import { prisma } from "@/lib/prisma";
 import { createAdventureFromScenarioId } from "@/lib/game/createAdventureFromScenario";
 
@@ -15,7 +16,7 @@ function newAdventureId() {
   return randomUUID();
 }
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   let body: PostBody | null;
   try {
     body = (await readJsonWithLimitOrNull<PostBody>(req)) as PostBody | null;
@@ -61,3 +62,5 @@ export async function POST(req: Request) {
     return errorResponse(typeof err?.status === "number" ? err.status : 400, "Invalid scenario request");
   }
 }
+
+export const POST = withRouteLogging("POST /api/adventure/from-scenario", postHandler);

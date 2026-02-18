@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
+import { withRouteLogging } from "@/lib/api/routeLogging";
 import { prisma } from "@/lib/prisma";
 import { createScenario } from "@/lib/scenario/scenarioRepo";
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   let body: any;
   try {
     body = await readJsonWithLimitOrNull(req);
@@ -42,3 +43,5 @@ export async function POST(req: Request) {
     return errorResponse(500, "Internal Server Error");
   }
 }
+
+export const POST = withRouteLogging("POST /api/scenario", postHandler);

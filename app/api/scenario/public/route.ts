@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api/errorResponse";
+import { withRouteLogging } from "@/lib/api/routeLogging";
 import { prisma } from "@/lib/prisma";
 import { listPublicScenarios } from "@/lib/scenario/scenarioRepo";
 
@@ -9,7 +10,7 @@ function parseTake(raw: string | null): number {
   return Math.min(50, Math.floor(parsed));
 }
 
-export async function GET(req?: Request) {
+async function getHandler(req?: Request) {
   const params = req ? new URL(req.url).searchParams : new URLSearchParams();
   const take = parseTake(params.get("take"));
   const cursorRaw = params.get("cursor");
@@ -27,3 +28,5 @@ export async function GET(req?: Request) {
     return errorResponse(500, "Internal Server Error");
   }
 }
+
+export const GET = withRouteLogging("GET /api/scenario/public", getHandler);
