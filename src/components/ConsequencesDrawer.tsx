@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { buildConsequencesExplanationText } from "@/lib/buildConsequencesExplanationText";
 import { buildLedgerEntryCopyText } from "@/lib/buildLedgerEntryCopyText";
+import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 
 type Props = {
@@ -34,6 +35,25 @@ function firstDefined(
 export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
   const deltas = Array.isArray(stateDeltas) ? stateDeltas : [];
   const ledger = Array.isArray(ledgerAdds) ? ledgerAdds : [];
+  const ledgerRecords = ledger.filter(
+    (entry): entry is Record<string, unknown> =>
+      !!entry && typeof entry === "object" && !Array.isArray(entry),
+  );
+  const kindOptions = Array.from(
+    new Set(
+      ledgerRecords.map((entry) =>
+        typeof entry.kind === "string" ? entry.kind : "",
+      ),
+    ),
+  )
+    .filter(Boolean)
+    .sort();
+  const [filterKind, setFilterKind] = useState<string>("");
+  const [filterRuleId, setFilterRuleId] = useState<string>("");
+  const filtered = filterLedgerEntries(ledgerRecords, {
+    kind: filterKind || undefined,
+    ruleId: filterRuleId || undefined,
+  });
   const deltaCount = deltas.length;
   const ledgerCount = ledger.length;
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
@@ -160,9 +180,47 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
 
         <div>
           <div className="font-semibold text-neutral-400">CAUSAL LEDGER</div>
+          <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <label className="text-neutral-400">
+              <span className="mb-1 block text-[11px]">Filter kind</span>
+              <select
+                className="w-full rounded border border-neutral-700 bg-black/30 px-2 py-1 text-neutral-200"
+                value={filterKind}
+                onChange={(e) => setFilterKind(e.target.value)}
+              >
+                <option value="">All</option>
+                {kindOptions.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-neutral-400">
+              <span className="mb-1 block text-[11px]">Filter ruleId</span>
+              <input
+                type="text"
+                value={filterRuleId}
+                onChange={(e) => setFilterRuleId(e.target.value)}
+                className="w-full rounded border border-neutral-700 bg-black/30 px-2 py-1 text-neutral-200"
+              />
+            </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                className="rounded border border-neutral-700 px-2 py-1 text-neutral-200 hover:border-neutral-500"
+                onClick={() => {
+                  setFilterKind("");
+                  setFilterRuleId("");
+                }}
+              >
+                Clear filters
+              </button>
+            </div>
+          </div>
           {ledger.length > 0 ? (
             <ol className="mt-2 list-decimal space-y-2 pl-5">
-              {ledger.map((entry, index) => {
+              {filtered.map((entry, index) => {
                 const row = asRecord(entry);
                 const kind = typeof row?.kind === "string"
                   ? row.kind
@@ -232,6 +290,9 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
           ) : (
             <div className="mt-2 text-neutral-500">None.</div>
           )}
+          {ledger.length > 0 && filtered.length === 0 ? (
+            <div className="mt-2 text-neutral-500">No matching entries.</div>
+          ) : null}
           {showRawJson ? (
             <pre className="mt-2 overflow-auto bg-black/40 p-2">
               {JSON.stringify(ledger, null, 2)}
