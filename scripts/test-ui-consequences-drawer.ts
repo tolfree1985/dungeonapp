@@ -150,7 +150,14 @@ function main() {
     "ConsequencesDrawer.tsx",
   );
   const drawerSource = fs.readFileSync(drawerPath, "utf8");
-  const mustInclude = ["hashchange", "ledger-highlight", "addEventListener(\"hashchange\""];
+  const mustInclude = [
+    "hashchange",
+    "ledger-highlight",
+    "addEventListener(\"hashchange\"",
+    "URLSearchParams",
+    "sp.set(\"focus\", \"1\")",
+    "get(\"focus\") === \"1\"",
+  ];
   for (const signal of mustInclude) {
     if (!drawerSource.includes(signal)) {
       throw new Error(
