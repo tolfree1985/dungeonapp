@@ -1,5 +1,5 @@
 import { POST } from "../app/api/turn/route";
-import { PrismaClient } from "../src/generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import { __debugCaps } from "../src/lib/billing/tiers";
 
 type TurnReq = {
