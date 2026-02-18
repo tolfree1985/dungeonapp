@@ -777,6 +777,19 @@ export function ConsequencesDrawer({
               <div>State delta entries: {stateDeltasArray.length}</div>
               <div>{topKeysLine}</div>
               <div>{previousTurnKeysLine}</div>
+              <div className="mt-2 space-y-1">
+                <div>Previous turn keys</div>
+                <div className="flex flex-wrap gap-1">
+                  {previousTopKeys.length > 0 ? previousTopKeys.map((key) => (
+                    <span
+                      key={`previous-${key}`}
+                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300"
+                    >
+                      {key}
+                    </span>
+                  )) : <span>(none)</span>}
+                </div>
+              </div>
               <div className="pt-1">Compared to previous turn</div>
               <div>+ Added: {addedKeysLine}</div>
               <div>– Removed: {removedKeysLine}</div>
