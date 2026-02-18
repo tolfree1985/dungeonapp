@@ -192,6 +192,7 @@ export function ConsequencesDrawer({
         label: timelineLabelFromEntry(firstEntry),
       };
     });
+  const renderedGroupCount = groupOrder.length;
   const ledgerRows = filteredWithIndex;
   const deltaCount = stateDeltasArray.length;
   const ledgerCount = ledgerRows.length;
@@ -981,30 +982,34 @@ export function ConsequencesDrawer({
           <div className="font-semibold text-neutral-400">CAUSAL LEDGER</div>
           <div className="mb-4 border-b border-neutral-800 pb-2">
             <div className="mb-2 text-xs font-semibold opacity-70">Replay timeline</div>
-            <div className="space-y-1">
-              {timeline.map((item) => (
-                <button
-                  key={item.turnKey}
-                  type="button"
-                  onClick={() => {
-                    if (typeof window === "undefined") return;
-                    const hash = `#${item.anchorId}`;
-                    window.location.hash = hash;
-                    const el = document.getElementById(item.anchorId);
-                    if (el) {
-                      el.classList.add("ledger-highlight");
-                      el.scrollIntoView({ block: "center" });
-                    }
-                  }}
-                  className="flex items-center gap-2 text-xs underline"
-                >
-                  <OutcomeBadge
-                    outcome={item.outcome === "failure" ? "fail" : item.outcome}
-                  />
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
+            {renderedGroupCount === 0 ? (
+              <div className="text-xs text-neutral-500">No replay events</div>
+            ) : (
+              <div className="space-y-1">
+                {timeline.map((item) => (
+                  <button
+                    key={item.turnKey}
+                    type="button"
+                    onClick={() => {
+                      if (typeof window === "undefined") return;
+                      const hash = `#${item.anchorId}`;
+                      window.location.hash = hash;
+                      const el = document.getElementById(item.anchorId);
+                      if (el) {
+                        el.classList.add("ledger-highlight");
+                        el.scrollIntoView({ block: "center" });
+                      }
+                    }}
+                    className="flex items-center gap-2 text-xs underline"
+                  >
+                    <OutcomeBadge
+                      outcome={item.outcome === "failure" ? "fail" : item.outcome}
+                    />
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <label className="text-neutral-400">
