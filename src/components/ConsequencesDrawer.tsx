@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { buildConsequencesExplanationText } from "@/lib/buildConsequencesExplanationText";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 
@@ -38,6 +38,24 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  useEffect(() => {
+    if (!anchorId) return;
+
+    const expectedHash = `#${anchorId}`;
+    const maybeOpenFromHash = () => {
+      if (location.hash === expectedHash && detailsRef.current) {
+        detailsRef.current.open = true;
+      }
+    };
+
+    maybeOpenFromHash();
+    window.addEventListener("hashchange", maybeOpenFromHash);
+    return () => {
+      window.removeEventListener("hashchange", maybeOpenFromHash);
+    };
+  }, [anchorId]);
 
   async function handleCopyExplanation(): Promise<void> {
     const text = buildConsequencesExplanationText({
@@ -61,6 +79,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   return (
     <div id={anchorId}>
       <details
+        ref={detailsRef}
         id={detailsId}
         className={`mt-3 rounded border p-3 ${hasCounts ? "border-neutral-600" : "border-neutral-800"}`}
       >
