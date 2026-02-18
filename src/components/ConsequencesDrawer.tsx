@@ -200,6 +200,7 @@ export function ConsequencesDrawer({
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [turnDiffCopyStatus, setTurnDiffCopyStatus] = useState<"" | "copied" | "unsupported">("");
+  const [turnLinkCopyStatus, setTurnLinkCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [visibleLedgerCopyStatus, setVisibleLedgerCopyStatus] = useState<string | null>(null);
   const [focusedViewCopyStatus, setFocusedViewCopyStatus] = useState<string | null>(null);
   const [inspectorBundleCopyStatus, setInspectorBundleCopyStatus] = useState<string | null>(null);
@@ -424,6 +425,25 @@ export function ConsequencesDrawer({
     setTurnDiffCopyStatus("copied");
   }
 
+  async function onCopyTurnLink(): Promise<void> {
+    if (
+      typeof window === "undefined"
+      || typeof navigator === "undefined"
+      || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== "function"
+    ) {
+      setTurnLinkCopyStatus("unsupported");
+      return;
+    }
+    try {
+      const href = window.location.href;
+      await navigator.clipboard.writeText(href);
+      setTurnLinkCopyStatus("copied");
+    } catch {
+      setTurnLinkCopyStatus("unsupported");
+    }
+  }
+
   return (
     <details
       ref={detailsRef}
@@ -642,6 +662,16 @@ export function ConsequencesDrawer({
                   Copy filtered deltas
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  void onCopyTurnLink();
+                }}
+                className="text-xs underline ml-2 text-neutral-300"
+                aria-label="Copy turn link"
+              >
+                Copy turn link
+              </button>
             </div>
             <div className="text-xs">
               Impact: {impact} (Deltas: {deltaCount}, Ledger: {ledgerCount})
@@ -650,6 +680,9 @@ export function ConsequencesDrawer({
               <div className="text-xs">No-op turn</div>
             ) : impact === "Low" ? (
               <div className="text-xs">Low-signal turn</div>
+            ) : null}
+            {impact === "High" ? (
+              <div className="text-xs">High-impact turn</div>
             ) : null}
             <div className="mt-2 space-y-1 text-xs text-neutral-400">
               <div>State delta entries: {stateDeltasArray.length}</div>
@@ -679,6 +712,10 @@ export function ConsequencesDrawer({
               ) : null}
               {turnDiffCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnDiffCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
+              {turnLinkCopyStatus === "copied" ? <div className="text-xs">Copied</div> : null}
+              {turnLinkCopyStatus === "unsupported" ? (
+                <div className="text-xs">Copy not supported</div>
+              ) : null}
             </div>
           </section>
           <div className="font-semibold text-neutral-400">STATE DELTAS</div>
