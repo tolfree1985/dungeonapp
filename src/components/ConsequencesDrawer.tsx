@@ -415,6 +415,31 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
           </div>
           {ledger.length > 0 ? (
             <div className="mt-2">
+              <div className="mb-2 flex gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenGroups({});
+                  }}
+                  className="underline opacity-80 hover:opacity-100"
+                >
+                  Expand all
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next: Record<string, boolean> = {};
+                    groupOrder.forEach((key) => {
+                      next[key] = false;
+                    });
+                    setOpenGroups(next);
+                  }}
+                  className="underline opacity-80 hover:opacity-100"
+                >
+                  Collapse all
+                </button>
+              </div>
               {groupOrder.map((key) => {
                 const entries = groups.get(key)!;
                 const groupAnchorId = groupAnchorIdFromKey(key);
