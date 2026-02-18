@@ -701,7 +701,7 @@ export function ConsequencesDrawer({
                   void onCopyTurnDiff();
                 }}
                 className="text-xs underline text-neutral-300"
-                aria-label="Copy turn diff"
+                aria-label="Copy turn diff for current turn"
               >
                 Copy turn diff
               </button>
@@ -711,7 +711,7 @@ export function ConsequencesDrawer({
                   void onCopyTurnImpactSummary();
                 }}
                 className="text-xs underline ml-2 text-neutral-300"
-                aria-label="Copy impact summary"
+                aria-label="Copy impact summary for current turn"
               >
                 Copy impact summary
               </button>
@@ -721,7 +721,7 @@ export function ConsequencesDrawer({
                   void onCopyComparison();
                 }}
                 className="text-xs underline ml-2 text-neutral-300"
-                aria-label="Copy comparison"
+                aria-label="Copy comparison with previous turn"
               >
                 Copy comparison
               </button>
@@ -732,7 +732,7 @@ export function ConsequencesDrawer({
                     void onCopyFiltered();
                   }}
                   className="text-xs underline ml-2 text-neutral-300"
-                  aria-label="Copy filtered deltas"
+                  aria-label="Copy filtered deltas for current filter"
                 >
                   Copy filtered deltas
                 </button>
@@ -743,7 +743,7 @@ export function ConsequencesDrawer({
                   void onCopyTurnLink();
                 }}
                 className="text-xs underline ml-2 text-neutral-300"
-                aria-label="Copy turn link"
+                aria-label="Copy turn link for current page"
               >
                 Copy turn link
               </button>
@@ -759,7 +759,7 @@ export function ConsequencesDrawer({
             {impact === "High" ? (
               <div className="text-xs">High-impact turn</div>
             ) : null}
-            <div className="mt-2 space-y-1 text-xs text-neutral-400">
+            <div className="mt-2 space-y-1 text-xs text-neutral-400" aria-live="polite">
               <div>State delta entries: {stateDeltasArray.length}</div>
               <div>{topKeysLine}</div>
               <div>{previousTurnKeysLine}</div>
