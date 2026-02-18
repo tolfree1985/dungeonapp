@@ -9,6 +9,7 @@ import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText";
 import {
   buildAllTurnDiffCopyText,
+  buildPreviousTurnKeysCopyText,
   buildTurnComparisonCopyText,
   buildFilteredDeltasCopyText,
   buildTurnImpactSummaryCopyText,
@@ -208,6 +209,7 @@ export function ConsequencesDrawer({
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [turnDiffAllCopyStatus, setTurnDiffAllCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnDiffCopyStatus, setTurnDiffCopyStatus] = useState<"" | "copied" | "unsupported">("");
+  const [turnPreviousKeysCopyStatus, setTurnPreviousKeysCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnComparisonCopyStatus, setTurnComparisonCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnImpactCopyStatus, setTurnImpactCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [turnLinkCopyStatus, setTurnLinkCopyStatus] = useState<"" | "copied" | "unsupported">("");
@@ -573,6 +575,29 @@ export function ConsequencesDrawer({
     }
   }
 
+  async function onCopyPreviousTurnKeys(): Promise<void> {
+    if (
+      typeof navigator === "undefined"
+      || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== "function"
+    ) {
+      setTurnPreviousKeysCopyStatus("unsupported");
+      return;
+    }
+
+    try {
+      const text = buildPreviousTurnKeysCopyText({
+        turnIndex: typeof turnIndex === "number" ? turnIndex : null,
+        previousTurnKeysLine,
+        previousTopKeys,
+      });
+      await navigator.clipboard.writeText(text);
+      setTurnPreviousKeysCopyStatus("copied");
+    } catch {
+      setTurnPreviousKeysCopyStatus("unsupported");
+    }
+  }
+
   return (
     <details
       ref={detailsRef}
@@ -815,6 +840,19 @@ export function ConsequencesDrawer({
               <button
                 type="button"
                 onClick={() => {
+                  void onCopyPreviousTurnKeys();
+                }}
+                className="text-xs underline ml-2 text-neutral-300"
+                aria-label="Copy previous turn keys"
+                aria-describedby={turnDiffStatusRegionId}
+                disabled={!hasPreviousTurn}
+                aria-disabled={!hasPreviousTurn}
+              >
+                Copy previous turn keys
+              </button>
+              <button
+                type="button"
+                onClick={() => {
                   void onCopyComparison();
                 }}
                 className="text-xs underline ml-2 text-neutral-300"
@@ -950,6 +988,8 @@ export function ConsequencesDrawer({
               {turnDiffAllCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnDiffCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnDiffCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
+              {turnPreviousKeysCopyStatus === "copied" ? <div>Copied</div> : null}
+              {turnPreviousKeysCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnComparisonCopyStatus === "copied" ? <div>Copied</div> : null}
               {turnComparisonCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
               {turnImpactCopyStatus === "copied" ? <div>Copied</div> : null}

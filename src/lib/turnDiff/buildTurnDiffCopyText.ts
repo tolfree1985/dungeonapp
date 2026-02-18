@@ -157,6 +157,22 @@ export function buildTurnComparisonCopyText(args: {
   ].join("\n");
 }
 
+export function buildPreviousTurnKeysCopyText(args: {
+  turnIndex: number | null;
+  previousTurnKeysLine: string;
+  previousTopKeys: string[];
+}): string {
+  const header =
+    "Previous turn keys"
+    + (typeof args.turnIndex === "number" ? ` (turn ${args.turnIndex})` : "");
+
+  return [
+    header,
+    args.previousTurnKeysLine,
+    args.previousTopKeys.length > 0 ? args.previousTopKeys.join(", ") : "(none)",
+  ].join("\n");
+}
+
 export function buildAllTurnDiffCopyText(args: {
   impact: "Low" | "Medium" | "High";
   deltaCount: number;
