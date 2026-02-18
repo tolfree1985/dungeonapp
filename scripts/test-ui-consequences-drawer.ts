@@ -147,6 +147,8 @@ function main() {
   assert(html.includes("Copy visible ledger"), 'Expected "Copy visible ledger" to be present');
   assert(html.includes("Copy focused view"), 'Expected "Copy focused view" to be present');
   assert(html.includes("Copy inspector bundle"), 'Expected "Copy inspector bundle" to be present');
+  assert(html.includes("Turn diff"), 'Expected "Turn diff" to be present');
+  assert(html.includes("Copy turn diff"), 'Expected "Copy turn diff" to be present');
   assert(html.includes("ledger-group-"), 'Expected timeline/group anchor signal ("ledger-group-") to be present');
   assert(html.includes("ledger-"), 'Expected at least one ledger anchor id ("ledger-") to be present');
   assert(html.includes("Copy entry"), 'Expected "Copy entry" to be present');
