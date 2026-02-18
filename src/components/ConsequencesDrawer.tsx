@@ -648,6 +648,17 @@ export function ConsequencesDrawer({
     }
   }
 
+  function onClearHashFocus(): void {
+    if (typeof window === "undefined") return;
+    const nextUrl = `${window.location.pathname}${window.location.search}`;
+    window.history.replaceState(null, "", nextUrl);
+    setFocusedGroupKey(null);
+    setFocusedHashTarget(null);
+    document.querySelectorAll(".ledger-highlight").forEach((node) => {
+      node.classList.remove("ledger-highlight");
+    });
+  }
+
   return (
     <details
       ref={detailsRef}
@@ -967,6 +978,16 @@ export function ConsequencesDrawer({
                 aria-disabled={false}
               >
                 Copy focused group status
+              </button>
+              <button
+                type="button"
+                onClick={onClearHashFocus}
+                className="text-xs underline ml-2 text-neutral-300"
+                aria-label="Clear hash focus"
+                aria-describedby={turnDiffStatusRegionId}
+                aria-disabled={false}
+              >
+                Clear hash focus
               </button>
             </div>
             <div className="text-xs">
