@@ -85,27 +85,42 @@ export default function Home() {
         <section style={{ width: "100%", marginTop: "1rem" }}>
           <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.75rem" }}>Turn Transcript</h2>
           <div style={{ display: "grid", gap: "0.75rem" }}>
-            {demoTurns.map((t) => (
-              <article
-                key={t.id}
-                style={{
-                  width: "100%",
-                  border: "1px solid #2b2b2b",
-                  borderRadius: 12,
-                  padding: "0.75rem",
-                  background: "rgba(10,10,10,0.25)",
-                }}
-              >
-                <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>You</div>
-                <div style={{ marginTop: 4 }}>{t.playerText}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-                  <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>Narrator</div>
-                  <ResolutionBadge outcome={t.outcome} />
-                </div>
-                <div style={{ marginTop: 4 }}>{t.assistantText}</div>
-                <ConsequencesDrawer stateDeltas={t.stateDeltas} ledgerAdds={t.ledgerAdds} />
-              </article>
-            ))}
+            {demoTurns.map((t, index) => {
+              const maybeEventId = (t as { eventId?: unknown }).eventId;
+              const stableTurnId =
+                typeof maybeEventId === "string" && maybeEventId.length > 0
+                  ? maybeEventId
+                  : typeof t.id === "string" && t.id.length > 0
+                    ? t.id
+                    : String(index);
+
+              return (
+                <article
+                  key={t.id}
+                  style={{
+                    width: "100%",
+                    border: "1px solid #2b2b2b",
+                    borderRadius: 12,
+                    padding: "0.75rem",
+                    background: "rgba(10,10,10,0.25)",
+                  }}
+                >
+                  <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>You</div>
+                  <div style={{ marginTop: 4 }}>{t.playerText}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+                    <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>Narrator</div>
+                    <ResolutionBadge outcome={t.outcome} />
+                  </div>
+                  <div style={{ marginTop: 4 }}>{t.assistantText}</div>
+                  <ConsequencesDrawer
+                    stateDeltas={t.stateDeltas}
+                    ledgerAdds={t.ledgerAdds}
+                    anchorId={`turn-${stableTurnId}-consequences`}
+                    detailsId={`details-turn-${stableTurnId}-consequences`}
+                  />
+                </article>
+              );
+            })}
           </div>
         </section>
       </main>

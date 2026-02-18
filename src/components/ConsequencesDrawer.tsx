@@ -7,6 +7,8 @@ import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 type Props = {
   stateDeltas?: readonly unknown[];
   ledgerAdds?: readonly unknown[];
+  detailsId?: string;
+  anchorId?: string;
 };
 
 const BEFORE_KEYS = ["before", "from", "oldValue", "previous", "prev"] as const;
@@ -28,7 +30,7 @@ function firstDefined(
   return undefined;
 }
 
-export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
+export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
   const deltas = Array.isArray(stateDeltas) ? stateDeltas : [];
   const ledger = Array.isArray(ledgerAdds) ? ledgerAdds : [];
   const deltaCount = deltas.length;
@@ -57,9 +59,11 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
   }
 
   return (
-    <details
-      className={`mt-3 rounded border p-3 ${hasCounts ? "border-neutral-600" : "border-neutral-800"}`}
-    >
+    <div id={anchorId}>
+      <details
+        id={detailsId}
+        className={`mt-3 rounded border p-3 ${hasCounts ? "border-neutral-600" : "border-neutral-800"}`}
+      >
       <summary
         className={`cursor-pointer text-sm ${hasCounts ? "text-neutral-100" : "text-neutral-300"}`}
       >
@@ -177,6 +181,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
           ) : null}
         </div>
       </div>
-    </details>
+      </details>
+    </div>
   );
 }
