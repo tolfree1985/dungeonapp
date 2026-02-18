@@ -347,8 +347,13 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                   type="button"
                   onClick={() => {
                     if (typeof window === "undefined") return;
+                    const hash = `#${item.anchorId}`;
+                    window.location.hash = hash;
                     const el = document.getElementById(item.anchorId);
-                    if (el) el.scrollIntoView({ block: "center" });
+                    if (el) {
+                      el.classList.add("ledger-highlight");
+                      el.scrollIntoView({ block: "center" });
+                    }
                   }}
                   className="flex items-center gap-2 text-xs underline"
                 >
