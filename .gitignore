@@ -51,3 +51,6 @@ src/generated/
 
 # local recovery workspace
 .db_quarantine/
+
+# local preserved untracked workspace
+_scratch/
