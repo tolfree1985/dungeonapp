@@ -70,6 +70,16 @@ function groupKeyFromLedgerHash(hash: string): string | null {
   return id.slice("ledger-".length) || null;
 }
 
+function focusedGroupAnchorFromHash(hash: string): string | null {
+  if (!hash) return null;
+  if (hash.startsWith("#ledger-group-")) return hash.slice(1);
+  if (!hash.startsWith("#ledger-")) return null;
+
+  const id = hash.slice(1);
+  if (id.startsWith("ledger-idx-")) return "ledger-group-ungrouped";
+  return `ledger-group-${id.slice("ledger-".length)}`;
+}
+
 function groupTitleFromKey(key: string): string {
   return key === "ungrouped" ? "Ungrouped" : `Event: ${key}`;
 }
@@ -149,6 +159,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [visibleLedgerCopyStatus, setVisibleLedgerCopyStatus] = useState<string | null>(null);
+  const [focusedViewCopyStatus, setFocusedViewCopyStatus] = useState<string | null>(null);
   const [entryCopyStatus, setEntryCopyStatus] = useState<Record<number, string>>({});
   const [entryLinkCopyStatus, setEntryLinkCopyStatus] = useState<Record<number, string>>({});
   const [groupLinkCopyStatus, setGroupLinkCopyStatus] = useState<Record<string, string>>({});
@@ -336,6 +347,60 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
           </button>
           {visibleLedgerCopyStatus ? (
             <span className="text-neutral-400">{visibleLedgerCopyStatus}</span>
+          ) : null}
+          <button
+            type="button"
+            className="rounded border border-neutral-700 px-2 py-1 text-neutral-200 hover:border-neutral-500"
+            onClick={async () => {
+              const nav: typeof navigator | undefined =
+                typeof navigator !== "undefined" ? navigator : undefined;
+              const canCopy =
+                !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+              if (!canCopy) {
+                setFocusedViewCopyStatus("Copy not supported");
+                return;
+              }
+
+              try {
+                const loc: Location | undefined =
+                  typeof location !== "undefined" ? location : undefined;
+                const sp = new URLSearchParams(loc?.search ?? "");
+                const pinnedFocus = sp.get("focus") === "1" || focusMode;
+                if (pinnedFocus) sp.set("focus", "1");
+                const mergedSearch = sp.toString();
+                const basePath = pinnedFocus
+                  ? `${loc?.pathname ?? ""}${mergedSearch ? `?${mergedSearch}` : ""}`
+                  : `${loc?.pathname ?? ""}${loc?.search ?? ""}`;
+                const focusedAnchorId = focusedGroupAnchorFromHash(loc?.hash ?? "");
+                if (!focusedAnchorId) {
+                  setFocusedViewCopyStatus("No focused group");
+                  return;
+                }
+                const focusedGroup = visibleLedgerGroups.find(
+                  (group) => group.anchorId === focusedAnchorId,
+                );
+                if (!focusedGroup) {
+                  setFocusedViewCopyStatus("No focused group");
+                  return;
+                }
+                const text = buildVisibleLedgerCopyText({
+                  filterKind,
+                  filterRuleId,
+                  pinnedFocus,
+                  basePath,
+                  groups: [focusedGroup],
+                });
+                await nav.clipboard.writeText(text);
+                setFocusedViewCopyStatus("Copied");
+              } catch {
+                setFocusedViewCopyStatus("Copy not supported");
+              }
+            }}
+          >
+            Copy focused view
+          </button>
+          {focusedViewCopyStatus ? (
+            <span className="text-neutral-400">{focusedViewCopyStatus}</span>
           ) : null}
         </div>
 
