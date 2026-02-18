@@ -78,19 +78,26 @@ async function postHandler(req: Request) {
 
     const now = new Date();
     const userId = typeof body.userId === "string" && body.userId.trim() ? body.userId.trim() : "anon";
-    const rateLimit = checkSoftRateLimit({
-      action: "turn_post",
-      actorKey: softRateActorKey(req, userId),
-      limitPerMinute: softRateLimitTurnPostPerMinute(),
-    });
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "RATE_LIMITED" },
-        {
-          status: 429,
-          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
-        },
-      );
+
+    // Dev-only: allow smoke harness to exercise billing cap paths deterministically without tripping soft rate limits.
+    const capOverrideHeader = req.headers.get("x-smoke-cap-override");
+    const smokeBypassRateLimit = process.env.NODE_ENV !== "production" && !!capOverrideHeader;
+
+    if (!smokeBypassRateLimit) {
+      const rateLimit = checkSoftRateLimit({
+        action: "turn_post",
+        actorKey: softRateActorKey(req, userId),
+        limitPerMinute: softRateLimitTurnPostPerMinute(),
+      });
+      if (!rateLimit.allowed) {
+        return NextResponse.json(
+          { error: "RATE_LIMITED" },
+          {
+            status: 429,
+            headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+          },
+        );
+      }
     }
     const tier = coerceTier(body.tier);
     const monthKey = monthKeyUtc(now);
@@ -133,7 +140,6 @@ async function postHandler(req: Request) {
 
     const estInputTokens = estimateTokens(playerText);
     // Dev-only: allow smoke harness to clamp monthly cap for deterministic cap-exceed test.
-    const capOverrideHeader = req.headers.get("x-smoke-cap-override");
     const capOverrideTokens =
       process.env.NODE_ENV !== "production" && capOverrideHeader ? Number(capOverrideHeader) : undefined;
 
