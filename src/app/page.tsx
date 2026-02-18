@@ -86,6 +86,7 @@ export default function Home() {
           <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.75rem" }}>Turn Transcript</h2>
           <div style={{ display: "grid", gap: "0.75rem" }}>
             {demoTurns.map((t, index) => {
+              const previousTurn = index > 0 ? demoTurns[index - 1] : undefined;
               const maybeEventId = (t as { eventId?: unknown }).eventId;
               const stableTurnId =
                 typeof maybeEventId === "string" && maybeEventId.length > 0
@@ -121,6 +122,7 @@ export default function Home() {
                   <div id={`turn-${stableTurnId}-consequences`}>
                     <ConsequencesDrawer
                       stateDeltas={t.stateDeltas}
+                      previousStateDeltas={previousTurn?.stateDeltas}
                       ledgerAdds={t.ledgerAdds}
                       anchorId={`turn-${stableTurnId}-consequences`}
                       detailsId={`details-turn-${stableTurnId}-consequences`}

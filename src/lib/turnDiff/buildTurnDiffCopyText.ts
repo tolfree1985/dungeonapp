@@ -35,6 +35,17 @@ export function getTurnDiffTopKeys(deltas: TurnDiffDelta[]): string[] {
   return keys;
 }
 
+export function compareTurnKeys(currentKeys: string[], previousKeys: string[]) {
+  const current = new Set(currentKeys);
+  const previous = new Set(previousKeys);
+
+  const added = [...current].filter((k) => !previous.has(k)).sort();
+  const removed = [...previous].filter((k) => !current.has(k)).sort();
+  const unchanged = [...current].filter((k) => previous.has(k)).sort();
+
+  return { added, removed, unchanged };
+}
+
 export function buildTurnDiffCopyText(args: {
   turnIndex: number | null;
   deltas: TurnDiffDelta[];

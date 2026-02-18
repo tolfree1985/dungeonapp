@@ -10,6 +10,7 @@ import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText
 import {
   buildFilteredDeltasCopyText,
   buildTurnDiffCopyText,
+  compareTurnKeys,
   getTurnDiffTopKeys,
 } from "@/lib/turnDiff/buildTurnDiffCopyText";
 import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
@@ -19,6 +20,7 @@ import { ResolutionBadge as OutcomeBadge } from "@/components/ResolutionBadge";
 type Props = {
   turnIndex?: number | null;
   stateDeltas?: readonly unknown[];
+  previousStateDeltas?: readonly unknown[];
   ledgerAdds?: readonly unknown[];
   detailsId?: string;
   anchorId?: string;
@@ -123,7 +125,14 @@ function timelineLabelFromEntry(entry: AnyEntry | null): string {
   return formatConsequenceValue(entry ?? "", 80);
 }
 
-export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
+export function ConsequencesDrawer({
+  turnIndex,
+  stateDeltas,
+  previousStateDeltas,
+  ledgerAdds,
+  detailsId,
+  anchorId,
+}: Props) {
   const searchParams = (() => {
     try {
       return useSearchParams();
@@ -241,6 +250,23 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
       [k: string]: unknown;
     }[],
   );
+  const hasPreviousTurn = previousStateDeltas !== undefined;
+  const previousTopKeys = getTurnDiffTopKeys(
+    (Array.isArray(previousStateDeltas) ? previousStateDeltas : []) as {
+      path?: string | string[];
+      op?: string;
+      before?: unknown;
+      after?: unknown;
+      [k: string]: unknown;
+    }[],
+  );
+  const previousTurnKeysLine = hasPreviousTurn
+    ? `Previous turn keys: ${previousTopKeys.length > 0 ? previousTopKeys.join(", ") : "(none)"}`
+    : "No previous turn";
+  const keyComparison = compareTurnKeys(allTopKeys, previousTopKeys);
+  const addedKeysLine = keyComparison.added.length > 0 ? keyComparison.added.join(", ") : "(none)";
+  const removedKeysLine = keyComparison.removed.length > 0 ? keyComparison.removed.join(", ") : "(none)";
+  const unchangedKeysLine = keyComparison.unchanged.length > 0 ? keyComparison.unchanged.join(", ") : "(none)";
   const normalizedDeltaKeyFilter = allTopKeys.includes(deltaKeyFilter)
     ? deltaKeyFilter
     : "";
@@ -613,6 +639,11 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
             <div className="mt-2 space-y-1 text-xs text-neutral-400">
               <div>State delta entries: {stateDeltasArray.length}</div>
               <div>{topKeysLine}</div>
+              <div>{previousTurnKeysLine}</div>
+              <div className="pt-1">Compared to previous turn</div>
+              <div>+ Added: {addedKeysLine}</div>
+              <div>– Removed: {removedKeysLine}</div>
+              <div>= Unchanged: {unchangedKeysLine}</div>
               <div>Active delta filter: {activeDeltaFilterLabel}</div>
               {turnDiffKeyChips.length > 0 ? (
                 <div className="mt-2 flex flex-wrap gap-1">
