@@ -1,5 +1,23 @@
 import Image from "next/image";
+import { ConsequencesDrawer } from "../components/ConsequencesDrawer";
 import styles from "./page.module.css";
+
+const demoTurns = [
+  {
+    id: "t1",
+    playerText: "Inspect the dock lantern.",
+    assistantText: "You find fresh oil and a hidden crest engraved in the base.",
+    stateDeltas: [{ op: "set", path: "/flags/crestSeen", value: true }],
+    ledgerAdds: [{ type: "clue", summary: "Hidden crest found in lantern base." }],
+  },
+  {
+    id: "t2",
+    playerText: "Ask the night guard who was here last.",
+    assistantText: "He mentions a courier in a dark coat heading east just before midnight.",
+    stateDeltas: [{ op: "set", path: "/flags/knowsCourierDirection", value: "east" }],
+    ledgerAdds: [{ type: "witness", summary: "Courier seen heading east before midnight." }],
+  },
+] as const;
 
 export default function Home() {
   return (
@@ -60,6 +78,30 @@ export default function Home() {
             Documentation
           </a>
         </div>
+
+        <section style={{ width: "100%", marginTop: "1rem" }}>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.75rem" }}>Turn Transcript</h2>
+          <div style={{ display: "grid", gap: "0.75rem" }}>
+            {demoTurns.map((t) => (
+              <article
+                key={t.id}
+                style={{
+                  width: "100%",
+                  border: "1px solid #2b2b2b",
+                  borderRadius: 12,
+                  padding: "0.75rem",
+                  background: "rgba(10,10,10,0.25)",
+                }}
+              >
+                <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>You</div>
+                <div style={{ marginTop: 4 }}>{t.playerText}</div>
+                <div style={{ fontSize: "0.875rem", color: "#94a3b8", marginTop: 12 }}>Narrator</div>
+                <div style={{ marginTop: 4 }}>{t.assistantText}</div>
+                <ConsequencesDrawer stateDeltas={t.stateDeltas as unknown[]} ledgerAdds={t.ledgerAdds as unknown[]} />
+              </article>
+            ))}
+          </div>
+        </section>
       </main>
     </div>
   );
