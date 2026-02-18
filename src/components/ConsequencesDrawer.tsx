@@ -309,9 +309,20 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
               }
 
               try {
+                const loc: Location | undefined =
+                  typeof location !== "undefined" ? location : undefined;
+                const sp = new URLSearchParams(loc?.search ?? "");
+                const pinnedFocus = sp.get("focus") === "1" || focusMode;
+                if (pinnedFocus) sp.set("focus", "1");
+                const mergedSearch = sp.toString();
+                const basePath = pinnedFocus
+                  ? `${loc?.pathname ?? ""}${mergedSearch ? `?${mergedSearch}` : ""}`
+                  : `${loc?.pathname ?? ""}${loc?.search ?? ""}`;
                 const text = buildVisibleLedgerCopyText({
                   filterKind,
                   filterRuleId,
+                  pinnedFocus,
+                  basePath,
                   groups: visibleLedgerGroups,
                 });
                 await nav.clipboard.writeText(text);

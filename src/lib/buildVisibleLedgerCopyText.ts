@@ -10,6 +10,8 @@ export type VisibleLedgerGroup = {
 export function buildVisibleLedgerCopyText(args: {
   filterKind: string;
   filterRuleId: string;
+  pinnedFocus: boolean;
+  basePath: string;
   groups: VisibleLedgerGroup[];
 }): string {
   const lines: string[] = [];
@@ -18,6 +20,7 @@ export function buildVisibleLedgerCopyText(args: {
 
   lines.push("Visible ledger");
   lines.push(`Filters: kind=${kind || ""} ruleId=${ruleId || ""}`);
+  lines.push(`PinnedFocus: ${args.pinnedFocus ? "true" : "false"}`);
   lines.push("");
 
   for (let gi = 0; gi < args.groups.length; gi++) {
@@ -29,7 +32,7 @@ export function buildVisibleLedgerCopyText(args: {
     }
 
     lines.push(`Group: ${g.title}`);
-    lines.push(`Anchor: #${g.anchorId}`);
+    lines.push(`Anchor: ${args.basePath}#${g.anchorId}`);
     lines.push(`State: ${g.state}`);
     lines.push("");
 

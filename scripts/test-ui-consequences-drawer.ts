@@ -43,6 +43,8 @@ function main() {
   const visibleLedgerCollapsed = buildVisibleLedgerCopyText({
     filterKind: "",
     filterRuleId: "",
+    pinnedFocus: false,
+    basePath: "/scenarios",
     groups: [
       {
         title: "Event: X",
