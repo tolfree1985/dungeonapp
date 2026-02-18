@@ -465,6 +465,16 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                 >
                   Focus mode: {focusMode ? "On" : "Off"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFocusMode(false);
+                    setOpenGroups({});
+                  }}
+                  className="underline opacity-80 hover:opacity-100"
+                >
+                  Clear focus
+                </button>
               </div>
               {groupOrder.map((key) => {
                 const entries = groups.get(key)!;
