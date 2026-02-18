@@ -2,6 +2,66 @@
 
 import { useMemo, useState } from "react";
 
+type ValidationIssue = { path: string; code: string; message: string };
+
+function validateScenarioContentJson(raw: string): {
+  ok: boolean;
+  parseError: string | null;
+  issues: ValidationIssue[];
+} {
+  const text = raw.trim();
+  if (!text) {
+    return {
+      ok: false,
+      parseError: null,
+      issues: [{ path: "/contentJson", code: "REQUIRED", message: "contentJson is required" }],
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, parseError: "Invalid JSON", issues: [] };
+  }
+
+  const issues: ValidationIssue[] = [];
+  const push = (path: string, code: string, message: string) => issues.push({ path, code, message });
+
+  if (!parsed || typeof parsed !== "object") {
+    push("", "TYPE", "Scenario must be an object");
+    return { ok: false, parseError: null, issues };
+  }
+
+  const s = parsed as any;
+
+  if (s.version !== "1") push("/version", "REQUIRED", 'version must be "1"');
+  if (typeof s.id !== "string" || !s.id.trim()) push("/id", "REQUIRED", "id must be a non-empty string");
+  if (typeof s.title !== "string" || !s.title.trim()) {
+    push("/title", "REQUIRED", "title must be a non-empty string");
+  }
+  if (typeof s.summary !== "string" || !s.summary.trim()) {
+    push("/summary", "REQUIRED", "summary must be a non-empty string");
+  }
+
+  if (!s.initialState || typeof s.initialState !== "object") {
+    push("/initialState", "REQUIRED", "initialState must be an object");
+  }
+
+  if (!s.start || typeof s.start !== "object") {
+    push("/start", "REQUIRED", "start must be an object");
+  } else {
+    if (typeof s.start.sceneId !== "string" || !s.start.sceneId.trim()) {
+      push("/start/sceneId", "REQUIRED", "start.sceneId must be non-empty");
+    }
+    if (typeof s.start.prompt !== "string" || !s.start.prompt.trim()) {
+      push("/start/prompt", "REQUIRED", "start.prompt must be non-empty");
+    }
+  }
+
+  return { ok: issues.length === 0, parseError: null, issues };
+}
+
 export default function CreatorPage() {
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
@@ -15,6 +75,8 @@ export default function CreatorPage() {
     }),
     [contentJson, summary, title],
   );
+
+  const validation = useMemo(() => validateScenarioContentJson(contentJson), [contentJson]);
 
   return (
     <main className="mx-auto max-w-4xl p-6">
@@ -68,6 +130,24 @@ export default function CreatorPage() {
         <div>Title: {emptyState.title ? "empty" : "ready"}</div>
         <div>Summary: {emptyState.summary ? "empty" : "ready"}</div>
         <div>Content JSON: {emptyState.contentJson ? "empty" : "ready"}</div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Scenario validation">
+        <h2 className="text-base font-semibold">Validation</h2>
+        <div className="mt-2">Status: {validation.ok ? "valid" : "invalid"}</div>
+        {validation.parseError ? <div className="mt-2">Parse error: {validation.parseError}</div> : null}
+        {!validation.parseError && validation.issues.length > 0 ? (
+          <ol className="mt-2 list-decimal space-y-1 pl-6">
+            {validation.issues.map((issue, i) => (
+              <li key={`${issue.path}:${issue.code}:${i}`}>
+                {issue.path} {issue.code}: {issue.message}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+        {!validation.parseError && validation.issues.length === 0 && validation.ok ? (
+          <div className="mt-2">No schema issues.</div>
+        ) : null}
       </section>
     </main>
   );
