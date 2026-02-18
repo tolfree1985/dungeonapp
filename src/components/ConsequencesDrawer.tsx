@@ -335,7 +335,8 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                             try {
                               const text = buildLedgerGroupCopyText(
                                 groupTitle,
-                                entries.map(({ entry }) => entry as AnyEntry),
+                                groupAnchorId,
+                                entries as any[],
                               );
                               await nav.clipboard.writeText(text);
                               setGroupSummaryCopyStatus((prev) => ({ ...prev, [key]: "Copied" }));

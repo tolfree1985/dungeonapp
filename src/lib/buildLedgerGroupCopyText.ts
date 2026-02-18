@@ -1,8 +1,13 @@
 type AnyRecord = Record<string, unknown>;
 
-export function buildLedgerGroupCopyText(groupTitle: string, entries: AnyRecord[]): string {
+export function buildLedgerGroupCopyText(
+  groupTitle: string,
+  groupAnchorId: string,
+  entries: AnyRecord[],
+): string {
   const lines: string[] = [];
   lines.push(`Group: ${groupTitle}`);
+  lines.push(`Anchor: #${groupAnchorId}`);
   lines.push("");
 
   const pushIf = (out: string[], label: string, v: unknown) => {
