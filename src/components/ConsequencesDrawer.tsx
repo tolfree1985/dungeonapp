@@ -1013,6 +1013,7 @@ export function ConsequencesDrawer({
             <div
               id={turnDiffStatusRegionId}
               className="mt-2 space-y-1 text-xs text-neutral-400"
+              role="status"
               aria-live="polite"
             >
               <div>State delta entries: {stateDeltasArray.length}</div>
