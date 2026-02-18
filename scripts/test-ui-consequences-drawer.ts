@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ConsequencesDrawer } from "../src/components/ConsequencesDrawer";
 import { ResolutionBadge } from "../src/components/ResolutionBadge";
 import { buildConsequencesExplanationText } from "../src/lib/buildConsequencesExplanationText";
+import { buildInspectorBundleCopyText } from "../src/lib/buildInspectorBundleCopyText";
 import { buildLedgerGroupCopyText } from "../src/lib/buildLedgerGroupCopyText";
 import { buildVisibleLedgerCopyText } from "../src/lib/buildVisibleLedgerCopyText";
 
@@ -68,6 +69,27 @@ function main() {
       },
     ],
   });
+  const bundleOut = buildInspectorBundleCopyText({
+    pinnedFocus: true,
+    filterKind: "",
+    filterRuleId: "",
+    targetHash: "#ledger-group-X",
+    basePath: "/x?focus=1",
+    visibleGroups: [
+      {
+        title: "Event: X",
+        anchorId: "ledger-group-X",
+        state: "expanded",
+        entries: [{ message: "m" }],
+      },
+    ],
+    focusedGroup: {
+      title: "Event: X",
+      anchorId: "ledger-group-X",
+      state: "expanded",
+      entries: [{ message: "m" }],
+    },
+  });
   const resolutionBadgeHtml = renderToStaticMarkup(
     React.createElement(ResolutionBadge, { outcome: "mixed" }),
   );
@@ -124,6 +146,7 @@ function main() {
   assert(html.includes("Copy group summary"), 'Expected "Copy group summary" to be present');
   assert(html.includes("Copy visible ledger"), 'Expected "Copy visible ledger" to be present');
   assert(html.includes("Copy focused view"), 'Expected "Copy focused view" to be present');
+  assert(html.includes("Copy inspector bundle"), 'Expected "Copy inspector bundle" to be present');
   assert(html.includes("ledger-group-"), 'Expected timeline/group anchor signal ("ledger-group-") to be present');
   assert(html.includes("ledger-"), 'Expected at least one ledger anchor id ("ledger-") to be present');
   assert(html.includes("Copy entry"), 'Expected "Copy entry" to be present');
@@ -152,6 +175,11 @@ function main() {
     visibleLedgerPinned.includes("?focus=1#ledger-group-"),
     "Expected focus query preserved in visible ledger anchor",
   );
+  for (const s of ["Inspector bundle", "==== Focused view ====", "==== Visible ledger ===="]) {
+    if (!bundleOut.includes(s)) {
+      throw new Error(`Expected bundle output to include: ${s}`);
+    }
+  }
   assert(
     explanation.indexOf("/flags/alpha") < explanation.indexOf("/flags/bravo"),
     "explanation delta order was not preserved",
