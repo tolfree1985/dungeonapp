@@ -15,6 +15,7 @@
     "scenario:validate": "node --import tsx scripts/validate-scenario.ts scenarios",
     "ci:creator": "npm run scenario:validate && npm run typecheck",
     "ci:all": "npm run ci:billing && npm run ci:creator",
+    "ci:smoke-prod-surface": "bash scripts/with-sqlite-env.sh node --import tsx scripts/smoke-prod-surface.ts",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "node scripts/seed-dev.js"
