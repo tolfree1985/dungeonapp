@@ -13,6 +13,7 @@ async function postHandler(req: Request, ctx: { params: { id: string } }) {
     if (isRequestBodyTooLargeError(error)) {
       return errorResponse(413, "Payload too large");
     }
+    console.error(error);
     return errorResponse(500, "Internal error");
   }
 
@@ -43,7 +44,8 @@ async function postHandler(req: Request, ctx: { params: { id: string } }) {
     });
 
     return NextResponse.json({ scenario: updated });
-  } catch {
+  } catch (err) {
+    console.error(err);
     return errorResponse(500, "Internal error");
   }
 }

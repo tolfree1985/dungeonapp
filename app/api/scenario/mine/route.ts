@@ -29,7 +29,8 @@ async function getHandler(req: Request) {
     const nextCursor = scenarios.length === take ? scenarios[scenarios.length - 1]?.id ?? null : null;
 
     return NextResponse.json({ scenarios, nextCursor });
-  } catch {
+  } catch (err) {
+    console.error(err);
     return errorResponse(500, "Internal error");
   }
 }

@@ -24,7 +24,8 @@ async function postHandler(req: Request) {
     if (isRequestBodyTooLargeError(error)) {
       return errorResponse(413, "Payload too large");
     }
-    return errorResponse(500, "Internal Server Error");
+    console.error(error);
+    return errorResponse(500, "Internal error");
   }
 
   const scenarioId = typeof body?.scenarioId === "string" ? body.scenarioId.trim() : "";
@@ -58,6 +59,10 @@ async function postHandler(req: Request) {
     const err = error as { code?: string; status?: number };
     if (err?.code === "SCENARIO_MISMATCH") {
       return errorResponse(409, "SCENARIO_MISMATCH");
+    }
+    if (typeof err?.status === "number" && err.status >= 500) {
+      console.error(error);
+      return errorResponse(500, "Internal error");
     }
     return errorResponse(typeof err?.status === "number" ? err.status : 400, "Invalid scenario request");
   }

@@ -282,8 +282,8 @@ async function postHandler(req: Request) {
       return errorResponse(409, "Duplicate request");
     }
 
-    console.error("POST /api/turn error:", err);
-    return errorResponse(500, "Internal Server Error");
+    console.error(err);
+    return errorResponse(500, "Internal error");
   }
 }
 
