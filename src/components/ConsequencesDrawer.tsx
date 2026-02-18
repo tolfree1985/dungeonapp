@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 
 type Props = {
   stateDeltas?: readonly unknown[];
@@ -24,20 +25,6 @@ function firstDefined(
     if (key in input) return input[key];
   }
   return undefined;
-}
-
-function formatValue(value: unknown): string {
-  if (typeof value === "string") {
-    const limit = 120;
-    if (value.length > limit) return `${value.slice(0, limit)}…(truncated)`;
-    return value;
-  }
-  if (value === undefined) return "undefined";
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
 }
 
 export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
@@ -80,7 +67,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
                       {op ? <span className="ml-2 text-neutral-500">({op})</span> : null}
                     </div>
                     <div className="text-neutral-400">
-                      {formatValue(before)} {"\u2192"} {formatValue(after)}
+                      {formatConsequenceValue(before)} {"\u2192"} {formatConsequenceValue(after)}
                     </div>
                   </li>
                 );
@@ -116,12 +103,14 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
                 return (
                   <li key={`ledger-${index}`} className="space-y-1">
                     {kind ? <div className="font-medium text-neutral-300">{kind}</div> : null}
-                    {message ? <div className="text-neutral-400">{formatValue(message)}</div> : null}
+                    {message ? (
+                      <div className="text-neutral-400">{formatConsequenceValue(message)}</div>
+                    ) : null}
                     {because ? (
-                      <div className="text-neutral-500">Because: {formatValue(because)}</div>
+                      <div className="text-neutral-500">Because: {formatConsequenceValue(because)}</div>
                     ) : null}
                     {!kind && !message && !because ? (
-                      <div className="text-neutral-400">{formatValue(entry)}</div>
+                      <div className="text-neutral-400">{formatConsequenceValue(entry)}</div>
                     ) : null}
                   </li>
                 );
