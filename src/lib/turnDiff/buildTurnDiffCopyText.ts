@@ -6,6 +6,17 @@ export type TurnDiffDelta = {
   [k: string]: unknown;
 };
 
+export function classifyTurnImpact(args: {
+  deltaCount: number;
+  ledgerCount: number;
+}): "Low" | "Medium" | "High" {
+  const { deltaCount, ledgerCount } = args;
+
+  if (deltaCount <= 2 && ledgerCount <= 2) return "Low";
+  if (deltaCount <= 8 && ledgerCount <= 8) return "Medium";
+  return "High";
+}
+
 function topLevelKeyFromPath(path: string | string[] | undefined): string | null {
   if (!path) return null;
   if (Array.isArray(path)) {

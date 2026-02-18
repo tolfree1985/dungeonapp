@@ -10,6 +10,7 @@ import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText
 import {
   buildFilteredDeltasCopyText,
   buildTurnDiffCopyText,
+  classifyTurnImpact,
   compareTurnKeys,
   getTurnDiffTopKeys,
 } from "@/lib/turnDiff/buildTurnDiffCopyText";
@@ -188,8 +189,13 @@ export function ConsequencesDrawer({
         label: timelineLabelFromEntry(firstEntry),
       };
     });
-  const deltaCount = deltas.length;
-  const ledgerCount = ledger.length;
+  const ledgerRows = filteredWithIndex;
+  const deltaCount = stateDeltasArray.length;
+  const ledgerCount = ledgerRows.length;
+  const impact = classifyTurnImpact({
+    deltaCount,
+    ledgerCount,
+  });
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
@@ -423,6 +429,7 @@ export function ConsequencesDrawer({
       ref={detailsRef}
       id={detailsId}
       data-timeline-count={timeline.length}
+      data-impact={impact}
       className={`mt-3 rounded border p-3 ${hasCounts ? "border-neutral-600" : "border-neutral-800"}`}
     >
       <summary
@@ -635,6 +642,9 @@ export function ConsequencesDrawer({
                   Copy filtered deltas
                 </button>
               ) : null}
+            </div>
+            <div className="text-xs">
+              Impact: {impact} (Deltas: {deltaCount}, Ledger: {ledgerCount})
             </div>
             <div className="mt-2 space-y-1 text-xs text-neutral-400">
               <div>State delta entries: {stateDeltasArray.length}</div>
