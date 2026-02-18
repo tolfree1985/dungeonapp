@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { buildConsequencesExplanationText } from "@/lib/buildConsequencesExplanationText";
 import { buildLedgerEntryCopyText } from "@/lib/buildLedgerEntryCopyText";
 import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
+import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 
@@ -62,6 +63,14 @@ function groupKeyFromLedgerHash(hash: string): string | null {
   return id.slice("ledger-".length) || null;
 }
 
+function groupTitleFromKey(key: string): string {
+  return key === "ungrouped" ? "Ungrouped" : `Event: ${key}`;
+}
+
+function groupAnchorIdFromKey(key: string): string {
+  return key === "ungrouped" ? "ledger-group-ungrouped" : `ledger-group-${key}`;
+}
+
 export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
   const deltas = Array.isArray(stateDeltas) ? stateDeltas : [];
   const ledger = Array.isArray(ledgerAdds) ? ledgerAdds : [];
@@ -93,11 +102,20 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [visibleLedgerCopyStatus, setVisibleLedgerCopyStatus] = useState<string | null>(null);
   const [entryCopyStatus, setEntryCopyStatus] = useState<Record<number, string>>({});
   const [entryLinkCopyStatus, setEntryLinkCopyStatus] = useState<Record<number, string>>({});
   const [groupLinkCopyStatus, setGroupLinkCopyStatus] = useState<Record<string, string>>({});
   const [groupSummaryCopyStatus, setGroupSummaryCopyStatus] = useState<Record<string, string>>({});
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const visibleLedgerGroups = groupOrder.map((key) => {
+    const entries = groups.get(key) ?? [];
+    return {
+      title: groupTitleFromKey(key),
+      anchorId: groupAnchorIdFromKey(key),
+      entries: entries.map(({ entry }) => entry as AnyEntry),
+    };
+  });
 
   useEffect(() => {
     if (!anchorId) return;
@@ -193,6 +211,37 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
             Copy explanation
           </button>
           {copyStatus ? <span className="text-neutral-400">{copyStatus}</span> : null}
+          <button
+            type="button"
+            className="rounded border border-neutral-700 px-2 py-1 text-neutral-200 hover:border-neutral-500"
+            onClick={async () => {
+              const nav: typeof navigator | undefined =
+                typeof navigator !== "undefined" ? navigator : undefined;
+              const canCopy =
+                !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+              if (!canCopy) {
+                setVisibleLedgerCopyStatus("Copy not supported");
+                return;
+              }
+
+              try {
+                const text = buildVisibleLedgerCopyText({
+                  filterKind,
+                  filterRuleId,
+                  groups: visibleLedgerGroups,
+                });
+                await nav.clipboard.writeText(text);
+                setVisibleLedgerCopyStatus("Copied");
+              } catch {
+                setVisibleLedgerCopyStatus("Copy not supported");
+              }
+            }}
+          >
+            Copy visible ledger
+          </button>
+          {visibleLedgerCopyStatus ? (
+            <span className="text-neutral-400">{visibleLedgerCopyStatus}</span>
+          ) : null}
         </div>
 
         <label className="flex items-center gap-2 text-neutral-400">
@@ -283,8 +332,8 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
             <div className="mt-2">
               {groupOrder.map((key) => {
                 const entries = groups.get(key)!;
-                const groupAnchorId = key === "ungrouped" ? "ledger-group-ungrouped" : `ledger-group-${key}`;
-                const groupTitle = key === "ungrouped" ? "Ungrouped" : `Event: ${key}`;
+                const groupAnchorId = groupAnchorIdFromKey(key);
+                const groupTitle = groupTitleFromKey(key);
                 return (
                   <div key={key} id={groupAnchorId} className="mb-3">
                     <div className="flex items-center justify-between gap-2 text-xs font-semibold opacity-70">
