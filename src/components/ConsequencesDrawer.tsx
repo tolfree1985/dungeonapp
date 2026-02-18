@@ -306,6 +306,12 @@ export function ConsequencesDrawer({
   const turnDiffKeyChips = turnDiffKeys.slice(0, 8);
   const turnDiffKeyOverflow = turnDiffKeys.length > 8 ? turnDiffKeys.length - 8 : 0;
   const turnDiffStatusRegionId = "turn-diff-status-region";
+  const turnDiffPanelId = "turn-diff-panel";
+  const stateDeltasPanelId = "state-deltas-panel";
+  const replayTimelinePanelId = "replay-timeline-panel";
+  const ledgerGroupsPanelId = "ledger-groups-panel";
+  const allGroupsExpanded = groupOrder.length > 0 && groupOrder.every((key) => isOpen(key));
+  const allGroupsCollapsed = groupOrder.length > 0 && groupOrder.every((key) => !isOpen(key));
   const canCopyTurnDiff = stateDeltasArray.length > 0;
   const canCopyAllTurnDiff = deltaCount > 0 || ledgerCount > 0 || hasPreviousTurn;
   const canCopyImpactSummary = deltaCount > 0 || ledgerCount > 0;
@@ -760,7 +766,11 @@ export function ConsequencesDrawer({
         </label>
 
         <div>
-          <section aria-label="Turn diff" className="mt-4 border-t border-neutral-800 pt-4">
+          <section
+            id={turnDiffPanelId}
+            aria-label="Turn diff"
+            className="mt-4 border-t border-neutral-800 pt-4"
+          >
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-neutral-300">Turn diff</h3>
               <button
@@ -772,6 +782,7 @@ export function ConsequencesDrawer({
                 aria-label="Copy turn diff for current turn"
                 aria-describedby={turnDiffStatusRegionId}
                 disabled={!canCopyTurnDiff}
+                aria-disabled={!canCopyTurnDiff}
               >
                 Copy turn diff
               </button>
@@ -784,6 +795,7 @@ export function ConsequencesDrawer({
                 aria-label="Copy all Turn Diff"
                 aria-describedby={turnDiffStatusRegionId}
                 disabled={!canCopyAllTurnDiff}
+                aria-disabled={!canCopyAllTurnDiff}
               >
                 Copy all Turn Diff
               </button>
@@ -796,6 +808,7 @@ export function ConsequencesDrawer({
                 aria-label="Copy impact summary for current turn"
                 aria-describedby={turnDiffStatusRegionId}
                 disabled={!canCopyImpactSummary}
+                aria-disabled={!canCopyImpactSummary}
               >
                 Copy impact summary
               </button>
@@ -808,6 +821,7 @@ export function ConsequencesDrawer({
                 aria-label="Copy comparison with previous turn"
                 disabled={!canCopyComparison}
                 aria-describedby={turnDiffStatusRegionId}
+                aria-disabled={!canCopyComparison}
               >
                 Copy comparison
               </button>
@@ -824,6 +838,7 @@ export function ConsequencesDrawer({
                   aria-label="Copy filtered deltas for current filter"
                   aria-describedby={turnDiffStatusRegionId}
                   disabled={!canCopyFiltered}
+                  aria-disabled={!canCopyFiltered}
                 >
                   Copy filtered deltas
                 </button>
@@ -836,6 +851,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy turn link for current page"
                 aria-describedby={turnDiffStatusRegionId}
+                aria-disabled={false}
               >
                 Copy turn link
               </button>
@@ -945,7 +961,7 @@ export function ConsequencesDrawer({
               {showNothingToCopy ? <div>Nothing to copy</div> : null}
             </div>
           </section>
-          <div className="font-semibold text-neutral-400">STATE DELTAS</div>
+          <div id={stateDeltasPanelId} className="font-semibold text-neutral-400">STATE DELTAS</div>
           <div className="mt-3">
             <label className="text-xs font-medium">
               Filter deltas
@@ -1010,7 +1026,7 @@ export function ConsequencesDrawer({
 
         <div>
           <div className="font-semibold text-neutral-400">CAUSAL LEDGER</div>
-          <div className="mb-4 border-b border-neutral-800 pb-2">
+          <div id={replayTimelinePanelId} className="mb-4 border-b border-neutral-800 pb-2">
             <div className="mb-2 text-xs font-semibold opacity-70">Replay timeline</div>
             {renderedGroupCount === 0 ? (
               <div className="text-xs text-neutral-500">No replay events</div>
@@ -1080,7 +1096,7 @@ export function ConsequencesDrawer({
             </div>
           </div>
           {ledger.length > 0 ? (
-            <div className="mt-2">
+            <div id={ledgerGroupsPanelId} className="mt-2">
               <div className="mb-2 flex gap-2 text-xs">
                 <button
                   type="button"
@@ -1088,6 +1104,8 @@ export function ConsequencesDrawer({
                     setOpenGroups({});
                   }}
                   className="underline opacity-80 hover:opacity-100"
+                  aria-pressed={allGroupsExpanded}
+                  aria-controls={ledgerGroupsPanelId}
                 >
                   Expand all
                 </button>
@@ -1102,6 +1120,8 @@ export function ConsequencesDrawer({
                     setOpenGroups(next);
                   }}
                   className="underline opacity-80 hover:opacity-100"
+                  aria-pressed={allGroupsCollapsed}
+                  aria-controls={ledgerGroupsPanelId}
                 >
                   Collapse all
                 </button>
@@ -1109,6 +1129,8 @@ export function ConsequencesDrawer({
                   type="button"
                   onClick={() => setFocusMode((v) => !v)}
                   className="underline opacity-80 hover:opacity-100"
+                  aria-pressed={focusMode}
+                  aria-controls={ledgerGroupsPanelId}
                 >
                   Focus mode: {focusMode ? "On" : "Off"}
                 </button>
@@ -1119,6 +1141,7 @@ export function ConsequencesDrawer({
                     setOpenGroups({});
                   }}
                   className="underline opacity-80 hover:opacity-100"
+                  aria-controls={ledgerGroupsPanelId}
                 >
                   Clear focus
                 </button>
