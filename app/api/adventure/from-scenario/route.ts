@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { prisma } from "@/lib/prisma";
 import { createAdventureFromScenarioId } from "@/lib/game/createAdventureFromScenario";
 
@@ -14,7 +15,16 @@ function newAdventureId() {
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => null)) as PostBody | null;
+  let body: PostBody | null;
+  try {
+    body = (await readJsonWithLimitOrNull<PostBody>(req)) as PostBody | null;
+  } catch (error) {
+    if (isRequestBodyTooLargeError(error)) {
+      return NextResponse.json({ error: { type: "PAYLOAD_TOO_LARGE" } }, { status: 413 });
+    }
+    throw error;
+  }
+
   const scenarioId = typeof body?.scenarioId === "string" ? body.scenarioId.trim() : "";
   const adventureIdRaw = typeof body?.adventureId === "string" ? body.adventureId.trim() : "";
   const adventureId = adventureIdRaw || newAdventureId();

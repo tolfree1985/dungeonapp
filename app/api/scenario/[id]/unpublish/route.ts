@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
+import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request, ctx: { params: { id: string } }) {
   const id = ctx.params.id;
-  const body = await req.json().catch(() => null);
+  let body: any;
+  try {
+    body = await readJsonWithLimitOrNull(req);
+  } catch (error) {
+    if (isRequestBodyTooLargeError(error)) {
+      return NextResponse.json({ error: { type: "PAYLOAD_TOO_LARGE" } }, { status: 413 });
+    }
+    throw error;
+  }
+
   const ownerId = body?.ownerId ?? null;
 
   if (typeof ownerId !== "string") {

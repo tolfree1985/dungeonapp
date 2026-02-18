@@ -1,9 +1,18 @@
 import { NextResponse } from "next/server";
+import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { prisma } from "@/lib/prisma";
 import { createScenario } from "@/lib/scenario/scenarioRepo";
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
+  let body: any;
+  try {
+    body = await readJsonWithLimitOrNull(req);
+  } catch (error) {
+    if (isRequestBodyTooLargeError(error)) {
+      return NextResponse.json({ error: { type: "PAYLOAD_TOO_LARGE" } }, { status: 413 });
+    }
+    throw error;
+  }
 
   const id = body?.id;
   const title = body?.title;

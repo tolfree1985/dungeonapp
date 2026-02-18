@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { PrismaClient } from "../../../src/generated/prisma";
+import { isRequestBodyTooLargeError, readJsonWithLimit } from "@/lib/api/readJsonWithLimit";
 import { BillingError } from "../../../src/lib/billing/errors";
 import { estimateTokens } from "../../../src/lib/billing/estimate";
 import {
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
   let leaseKeyForCleanup = "";
 
   try {
-    const body = (await req.json()) as Partial<PostBody>;
+    const body = (await readJsonWithLimit<Partial<PostBody>>(req)) as Partial<PostBody>;
 
     if (!body?.adventureId || typeof body.adventureId !== "string") {
       return NextResponse.json({ ok: false, error: "Missing/invalid adventureId" }, { status: 400 });
@@ -288,6 +289,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, ...finalized }, { status: 200 });
   } catch (err: unknown) {
+    if (isRequestBodyTooLargeError(err)) {
+      return NextResponse.json({ ok: false, error: "Payload Too Large" }, { status: 413 });
+    }
+
     if (holdKey && leaseKeyForCleanup) {
       await releaseUsageAndLeaseBestEffort(prisma, { holdKey, leaseKey: leaseKeyForCleanup, now: new Date() });
     }
