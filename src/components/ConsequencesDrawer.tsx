@@ -6,7 +6,11 @@ import { buildLedgerEntryCopyText } from "@/lib/buildLedgerEntryCopyText";
 import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
 import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText";
-import { buildTurnDiffCopyText, getTurnDiffTopKeys } from "@/lib/turnDiff/buildTurnDiffCopyText";
+import {
+  buildFilteredDeltasCopyText,
+  buildTurnDiffCopyText,
+  getTurnDiffTopKeys,
+} from "@/lib/turnDiff/buildTurnDiffCopyText";
 import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 import { ResolutionBadge as OutcomeBadge } from "@/components/ResolutionBadge";
@@ -331,6 +335,26 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
     }
   }
 
+  async function onCopyFiltered(): Promise<void> {
+    if (
+      typeof navigator === "undefined"
+      || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== "function"
+    ) {
+      setTurnDiffCopyStatus("unsupported");
+      return;
+    }
+
+    const text = buildFilteredDeltasCopyText({
+      turnIndex: typeof turnIndex === "number" ? turnIndex : null,
+      deltas: visibleDeltas as any,
+      activeFilter: activeDeltaFilterLabel,
+    });
+
+    await navigator.clipboard.writeText(text);
+    setTurnDiffCopyStatus("copied");
+  }
+
   return (
     <details
       ref={detailsRef}
@@ -536,6 +560,18 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
               >
                 Copy turn diff
               </button>
+              {deltaKeyFilter !== "" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onCopyFiltered();
+                  }}
+                  className="text-xs underline ml-2 text-neutral-300"
+                  aria-label="Copy filtered deltas"
+                >
+                  Copy filtered deltas
+                </button>
+              ) : null}
             </div>
             <div className="mt-2 space-y-1 text-xs text-neutral-400">
               <div>State delta entries: {stateDeltasArray.length}</div>

@@ -53,3 +53,30 @@ export function buildTurnDiffCopyText(args: {
 
   return lines.join("\n");
 }
+
+export function buildFilteredDeltasCopyText(args: {
+  turnIndex: number | null;
+  deltas: TurnDiffDelta[];
+  activeFilter: string;
+}): string {
+  const { turnIndex, deltas, activeFilter } = args;
+
+  const header =
+    "Filtered deltas"
+    + (typeof turnIndex === "number" ? ` (turn ${turnIndex})` : "");
+
+  const lines: string[] = [
+    header,
+    `Active filter: ${activeFilter}`,
+    `Entries: ${deltas.length}`,
+  ];
+
+  for (const d of deltas) {
+    const path = Array.isArray(d.path)
+      ? d.path.join(".")
+      : String(d.path ?? "");
+    lines.push(`- ${path}`);
+  }
+
+  return lines.join("\n");
+}
