@@ -110,6 +110,12 @@ export default function Home() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
                     <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>Narrator</div>
                     <ResolutionBadge outcome={t.outcome} />
+                    <a
+                      href={`#turn-${stableTurnId}-consequences`}
+                      className="ml-2 text-xs text-neutral-400 underline hover:text-neutral-200"
+                    >
+                      See why
+                    </a>
                   </div>
                   <div style={{ marginTop: 4 }}>{t.assistantText}</div>
                   <ConsequencesDrawer
