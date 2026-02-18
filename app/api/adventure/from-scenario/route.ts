@@ -22,7 +22,7 @@ async function postHandler(req: Request) {
     body = (await readJsonWithLimitOrNull<PostBody>(req)) as PostBody | null;
   } catch (error) {
     if (isRequestBodyTooLargeError(error)) {
-      return errorResponse(413, "Payload Too Large");
+      return errorResponse(413, "Payload too large");
     }
     return errorResponse(500, "Internal Server Error");
   }

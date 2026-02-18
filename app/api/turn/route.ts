@@ -267,7 +267,7 @@ async function postHandler(req: Request) {
     return NextResponse.json({ ok: true, ...finalized }, { status: 200 });
   } catch (err: unknown) {
     if (isRequestBodyTooLargeError(err)) {
-      return errorResponse(413, "Payload Too Large");
+      return errorResponse(413, "Payload too large");
     }
 
     if (holdKey && leaseKeyForCleanup) {
