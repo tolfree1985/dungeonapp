@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ConsequencesDrawer } from "../src/components/ConsequencesDrawer";
 import { ResolutionBadge } from "../src/components/ResolutionBadge";
 import { buildConsequencesExplanationText } from "../src/lib/buildConsequencesExplanationText";
+import { buildLedgerGroupCopyText } from "../src/lib/buildLedgerGroupCopyText";
 
 function main() {
   const longText = "x".repeat(220);
@@ -24,6 +25,11 @@ function main() {
     ledgerAdds,
     maxLen: 24,
   });
+  const groupSummary = buildLedgerGroupCopyText(
+    "Event: X",
+    "ledger-group-X",
+    [{ message: "m" }],
+  );
   const resolutionBadgeHtml = renderToStaticMarkup(
     React.createElement(ResolutionBadge, { outcome: "mixed" }),
   );
@@ -79,6 +85,10 @@ function main() {
   assert(html.includes("<summary"), "missing summary element");
   assert(explanation.includes("State Deltas ("), "missing explanation state deltas section");
   assert(explanation.includes("Causal Ledger ("), "missing explanation causal ledger section");
+  assert(
+    groupSummary.includes("Anchor: #ledger-group-X"),
+    "missing group summary anchor line",
+  );
   assert(
     explanation.indexOf("/flags/alpha") < explanation.indexOf("/flags/bravo"),
     "explanation delta order was not preserved",
