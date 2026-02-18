@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "prisma:validate": "bash scripts/with-sqlite-env.sh npx prisma validate",
     "smoke:billing": "BILLING_TEST_CAP=2000 bash scripts/with-sqlite-env.sh node --import tsx scripts/smoke-budget-local.ts",
-    "ci:billing": "bash scripts/with-sqlite-env.sh npm run smoke:billing",
+    "ci:billing": "bash scripts/with-sqlite-env.sh sh -lc 'npx prisma generate && npm run smoke:billing'",
     "scenario:bootstrap:test": "SCENARIO_ID=mystery-docks node --import tsx scripts/test-scenario-bootstrap.ts",
     "scenario:validate": "node --import tsx scripts/validate-scenario.ts scenarios",
     "ci:creator": "npm run scenario:validate && npm run typecheck",
