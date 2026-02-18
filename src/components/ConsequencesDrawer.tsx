@@ -60,6 +60,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [entryCopyStatus, setEntryCopyStatus] = useState<Record<number, string>>({});
+  const [entryLinkCopyStatus, setEntryLinkCopyStatus] = useState<Record<number, string>>({});
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
 
   useEffect(() => {
@@ -222,6 +223,10 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
             <ol className="mt-2 list-decimal space-y-2 pl-5">
               {filtered.map((entry, index) => {
                 const row = asRecord(entry);
+                const rowId =
+                  typeof (entry as any).refEventId === "string" && (entry as any).refEventId
+                    ? `ledger-${(entry as any).refEventId}`
+                    : `ledger-idx-${index}`;
                 const kind = typeof row?.kind === "string"
                   ? row.kind
                   : typeof row?.type === "string"
@@ -234,7 +239,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                     : null;
                 const because = typeof row?.because === "string" ? row.because : null;
                 return (
-                  <li key={index} className="space-y-1">
+                  <li id={rowId} key={index} className="space-y-1">
                     {kind ? <div className="font-medium text-neutral-300">{kind}</div> : null}
                     {message ? (
                       <div className="text-neutral-400">{formatConsequenceValue(message)}</div>
@@ -245,7 +250,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                     {!kind && !message && !because ? (
                       <div className="text-neutral-400">{formatConsequenceValue(entry)}</div>
                     ) : null}
-                    <div>
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         className="text-xs underline opacity-80 hover:opacity-100"
@@ -273,6 +278,35 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                       </button>
                       {entryCopyStatus[index] ? (
                         <span className="ml-2 text-xs opacity-70">{entryCopyStatus[index]}</span>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="text-xs underline opacity-80 hover:opacity-100"
+                        onClick={async () => {
+                          const nav: typeof navigator | undefined =
+                            typeof navigator !== "undefined" ? navigator : undefined;
+                          const canCopy =
+                            !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+                          if (!canCopy) {
+                            setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                            return;
+                          }
+
+                          try {
+                            const loc: Location | undefined =
+                              typeof location !== "undefined" ? location : undefined;
+                            const path = `${loc?.pathname ?? ""}${loc?.search ?? ""}#${rowId}`;
+                            await nav.clipboard.writeText(path);
+                            setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
+                          } catch {
+                            setEntryLinkCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                          }
+                        }}
+                      >
+                        Copy link
+                      </button>
+                      {entryLinkCopyStatus[index] ? (
+                        <span className="text-xs opacity-70">{entryLinkCopyStatus[index]}</span>
                       ) : null}
                     </div>
                     <details className="mt-2">
