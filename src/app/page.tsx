@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { ConsequencesDrawer } from "@/components/ConsequencesDrawer";
+import { ResolutionBadge } from "@/components/ResolutionBadge";
 import styles from "./page.module.css";
 
 const demoTurns = [
@@ -7,6 +8,7 @@ const demoTurns = [
     id: "t1",
     playerText: "Inspect the dock lantern.",
     assistantText: "You find fresh oil and a hidden crest engraved in the base.",
+    outcome: "success",
     stateDeltas: [{ op: "set", path: "/flags/crestSeen", value: true }],
     ledgerAdds: [{ type: "clue", summary: "Hidden crest found in lantern base." }],
   },
@@ -14,6 +16,7 @@ const demoTurns = [
     id: "t2",
     playerText: "Ask the night guard who was here last.",
     assistantText: "He mentions a courier in a dark coat heading east just before midnight.",
+    outcome: "mixed",
     stateDeltas: [{ op: "set", path: "/flags/knowsCourierDirection", value: "east" }],
     ledgerAdds: [{ type: "witness", summary: "Courier seen heading east before midnight." }],
   },
@@ -95,7 +98,10 @@ export default function Home() {
               >
                 <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>You</div>
                 <div style={{ marginTop: 4 }}>{t.playerText}</div>
-                <div style={{ fontSize: "0.875rem", color: "#94a3b8", marginTop: 12 }}>Narrator</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+                  <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>Narrator</div>
+                  <ResolutionBadge outcome={t.outcome} />
+                </div>
                 <div style={{ marginTop: 4 }}>{t.assistantText}</div>
                 <ConsequencesDrawer stateDeltas={t.stateDeltas} ledgerAdds={t.ledgerAdds} />
               </article>

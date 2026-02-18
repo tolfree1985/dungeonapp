@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ConsequencesDrawer } from "../src/components/ConsequencesDrawer";
+import { ResolutionBadge } from "../src/components/ResolutionBadge";
 import { buildConsequencesExplanationText } from "../src/lib/buildConsequencesExplanationText";
 
 function main() {
@@ -23,6 +24,9 @@ function main() {
     ledgerAdds,
     maxLen: 24,
   });
+  const resolutionBadgeHtml = renderToStaticMarkup(
+    React.createElement(ResolutionBadge, { outcome: "mixed" }),
+  );
 
   assert(html.includes("STATE DELTAS"), "missing STATE DELTAS heading");
   assert(html.includes("CAUSAL LEDGER"), "missing CAUSAL LEDGER heading");
@@ -43,6 +47,7 @@ function main() {
     "explanation delta order was not preserved",
   );
   assert(explanation.includes("…(truncated)"), "missing explanation truncation marker");
+  assert(resolutionBadgeHtml.includes("⚠ Success w/ cost"), "missing resolution badge text");
 
   console.log("UI CONSEQUENCES DRAWER OK");
 }
