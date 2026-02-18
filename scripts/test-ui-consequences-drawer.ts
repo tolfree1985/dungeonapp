@@ -13,7 +13,14 @@ function main() {
     { op: "set", path: "/flags/alpha", before: false, after: true },
     { op: "set", path: "/flags/bravo", before: false, after: true },
   ] as const;
-  const ledgerAdds = [{ type: "clue", summary: `Found key under mat. ${longText}` }] as const;
+  const ledgerAdds = [
+    {
+      type: "clue",
+      summary: `Found key under mat. ${longText}`,
+      refEventId: "evt-1",
+      outcome: "success",
+    },
+  ] as const;
 
   const html = renderToStaticMarkup(
     React.createElement(ConsequencesDrawer, {
@@ -68,6 +75,8 @@ function main() {
 
   assert(html.includes("STATE DELTAS"), "missing STATE DELTAS heading");
   assert(html.includes("CAUSAL LEDGER"), "missing CAUSAL LEDGER heading");
+  assert(html.includes("Replay timeline"), 'Expected "Replay timeline" to be present');
+  assert(html.includes("✓ Success"), "Expected at least one replay timeline item");
   assert(html.includes("Δ 2"), "missing delta count badge");
   assert(html.includes("⚡ 1"), "missing ledger count badge");
   assert(html.includes("/flags/alpha"), "missing expected first state delta");
