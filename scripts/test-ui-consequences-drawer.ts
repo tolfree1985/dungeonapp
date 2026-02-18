@@ -35,6 +35,29 @@ function main() {
       ledgerAdds,
     })
   );
+  const noOpHtml = renderToStaticMarkup(
+    React.createElement(ConsequencesDrawer, {
+      stateDeltas: [],
+      ledgerAdds: [],
+    }),
+  );
+  const highImpactDeltas = [
+    { op: "set", path: "/flags/h0", before: false, after: true },
+    { op: "set", path: "/flags/h1", before: false, after: true },
+    { op: "set", path: "/flags/h2", before: false, after: true },
+    { op: "set", path: "/flags/h3", before: false, after: true },
+    { op: "set", path: "/flags/h4", before: false, after: true },
+    { op: "set", path: "/flags/h5", before: false, after: true },
+    { op: "set", path: "/flags/h6", before: false, after: true },
+    { op: "set", path: "/flags/h7", before: false, after: true },
+    { op: "set", path: "/flags/h8", before: false, after: true },
+  ] as const;
+  const highImpactHtml = renderToStaticMarkup(
+    React.createElement(ConsequencesDrawer, {
+      stateDeltas: highImpactDeltas,
+      ledgerAdds,
+    }),
+  );
   const explanation = buildConsequencesExplanationText({
     stateDeltas,
     ledgerAdds,
@@ -187,6 +210,12 @@ function main() {
   assert(html.includes("Removed keys"), 'Expected "Removed keys" to be present');
   assert(html.includes("Unchanged keys"), 'Expected "Unchanged keys" to be present');
   assert(html.includes("Low-signal turn"), 'Expected "Low-signal turn" to be present');
+  assert(noOpHtml.includes("No-op turn"), 'Expected "No-op turn" in no-op fixture');
+  assert(!noOpHtml.includes("Low-signal turn"), 'Did not expect "Low-signal turn" in no-op fixture');
+  assert(!noOpHtml.includes("High-impact turn"), 'Did not expect "High-impact turn" in no-op fixture');
+  assert(highImpactHtml.includes("High-impact turn"), 'Expected "High-impact turn" in high-impact fixture');
+  assert(!highImpactHtml.includes("No-op turn"), 'Did not expect "No-op turn" in high-impact fixture');
+  assert(!highImpactHtml.includes("Low-signal turn"), 'Did not expect "Low-signal turn" in high-impact fixture');
   assert(html.includes("ledger-group-"), 'Expected timeline/group anchor signal ("ledger-group-") to be present');
   assert(html.includes("ledger-"), 'Expected at least one ledger anchor id ("ledger-") to be present');
   assert(html.includes("Copy entry"), 'Expected "Copy entry" to be present');
