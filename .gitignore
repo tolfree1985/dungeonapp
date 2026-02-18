@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local prisma sqlite artifacts
+prisma/dev.db
+prisma/dev.db.bak.*
+prisma/prisma/dev.db
+prisma/prisma/dev.db-journal
+
+# generated prisma client
+src/generated/
+
+# local recovery workspace
+.db_quarantine/
