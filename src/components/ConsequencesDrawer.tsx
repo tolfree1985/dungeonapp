@@ -137,6 +137,7 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
     .sort();
   const [filterKind, setFilterKind] = useState<string>("");
   const [filterRuleId, setFilterRuleId] = useState<string>("");
+  const [deltaKeyFilter, setDeltaKeyFilter] = useState<string>("");
   const [focusMode, setFocusMode] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const isOpen = (key: string) => openGroups[key] !== false;
@@ -193,12 +194,7 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
       [k: string]: unknown;
     }[],
   });
-  const topKeysLine = (() => {
-    const lines = turnDiffText.split("\n");
-    const keysLine = lines.find((line) => line.startsWith("Keys: "));
-    return keysLine ?? "Keys: (none)";
-  })();
-  const turnDiffKeys = getTurnDiffTopKeys(
+  const allTopKeys = getTurnDiffTopKeys(
     stateDeltasArray as {
       path?: string | string[];
       op?: string;
@@ -207,6 +203,19 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
       [k: string]: unknown;
     }[],
   );
+  const visibleDeltas =
+    deltaKeyFilter === ""
+      ? stateDeltasArray
+      : stateDeltasArray.filter((d: any) => {
+          const key = getTurnDiffTopKeys([d])[0];
+          return key === deltaKeyFilter;
+        });
+  const topKeysLine = (() => {
+    const lines = turnDiffText.split("\n");
+    const keysLine = lines.find((line) => line.startsWith("Keys: "));
+    return keysLine ?? "Keys: (none)";
+  })();
+  const turnDiffKeys = allTopKeys;
   const turnDiffKeyChips = turnDiffKeys.slice(0, 8);
 
   useEffect(() => {
@@ -550,9 +559,27 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
             </div>
           </section>
           <div className="font-semibold text-neutral-400">STATE DELTAS</div>
-          {deltas.length > 0 ? (
+          <div className="mt-3">
+            <label className="text-xs font-medium">
+              Filter deltas
+            </label>
+            <select
+              value={deltaKeyFilter}
+              onChange={(e) => setDeltaKeyFilter(e.target.value)}
+              className="ml-2 text-xs"
+              aria-label="Filter deltas"
+            >
+              <option value="">All</option>
+              {allTopKeys.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </div>
+          {visibleDeltas.length > 0 ? (
             <ol className="mt-2 list-decimal space-y-2 pl-5">
-              {deltas.map((delta, index) => {
+              {visibleDeltas.map((delta, index) => {
                 const row = asRecord(delta);
                 const path = typeof row?.path === "string" && row.path.length > 0
                   ? row.path
@@ -578,7 +605,7 @@ export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, details
           )}
           {showRawJson ? (
             <pre className="mt-2 overflow-auto bg-black/40 p-2">
-              {JSON.stringify(deltas, null, 2)}
+              {JSON.stringify(visibleDeltas, null, 2)}
             </pre>
           ) : null}
         </div>
