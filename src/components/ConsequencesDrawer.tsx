@@ -7,6 +7,7 @@ import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
 import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
+import { ResolutionBadge as OutcomeBadge } from "@/components/ResolutionBadge";
 
 type Props = {
   stateDeltas?: readonly unknown[];
@@ -15,6 +16,12 @@ type Props = {
   anchorId?: string;
 };
 type AnyEntry = Record<string, unknown>;
+type TimelineItem = {
+  turnKey: string;
+  anchorId: string;
+  outcome: "success" | "mixed" | "failure";
+  label: string;
+};
 
 const BEFORE_KEYS = ["before", "from", "oldValue", "previous", "prev"] as const;
 const AFTER_KEYS = ["after", "to", "newValue", "next", "value"] as const;
@@ -71,6 +78,33 @@ function groupAnchorIdFromKey(key: string): string {
   return key === "ungrouped" ? "ledger-group-ungrouped" : `ledger-group-${key}`;
 }
 
+function timelineOutcomeFromEntry(entry: AnyEntry | null): "success" | "mixed" | "failure" {
+  const raw =
+    typeof entry?.outcome === "string"
+      ? entry.outcome
+      : typeof entry?.tier === "string"
+        ? entry.tier
+        : typeof entry?.result === "string"
+          ? entry.result
+          : "";
+  const normalized = raw.toLowerCase();
+
+  if (normalized === "success" || normalized === "hit" || normalized === "crit") return "success";
+  if (normalized === "mixed" || normalized === "cost" || normalized === "partial") return "mixed";
+  return "failure";
+}
+
+function timelineLabelFromEntry(entry: AnyEntry | null): string {
+  const message =
+    typeof entry?.message === "string" && entry.message.length > 0
+      ? entry.message
+      : typeof entry?.summary === "string" && entry.summary.length > 0
+        ? entry.summary
+        : "";
+  if (message) return formatConsequenceValue(message, 80);
+  return formatConsequenceValue(entry ?? "", 80);
+}
+
 export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
   const deltas = Array.isArray(stateDeltas) ? stateDeltas : [];
   const ledger = Array.isArray(ledgerAdds) ? ledgerAdds : [];
@@ -97,6 +131,17 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   });
   const filteredWithIndex = filtered.map((entry, index) => ({ entry, index }));
   const { order: groupOrder, map: groups } = groupLedger(filteredWithIndex);
+  const timeline: TimelineItem[] = groupOrder
+    .filter((key) => key !== "ungrouped")
+    .map((key) => {
+      const firstEntry = groups.get(key)?.[0]?.entry ?? null;
+      return {
+        turnKey: key,
+        anchorId: groupAnchorIdFromKey(key),
+        outcome: timelineOutcomeFromEntry(firstEntry),
+        label: timelineLabelFromEntry(firstEntry),
+      };
+    });
   const deltaCount = deltas.length;
   const ledgerCount = ledger.length;
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
@@ -183,6 +228,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
     <details
       ref={detailsRef}
       id={detailsId}
+      data-timeline-count={timeline.length}
       className={`mt-3 rounded border p-3 ${hasCounts ? "border-neutral-600" : "border-neutral-800"}`}
     >
       <summary
@@ -292,6 +338,28 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
 
         <div>
           <div className="font-semibold text-neutral-400">CAUSAL LEDGER</div>
+          <div className="mb-4 border-b border-neutral-800 pb-2">
+            <div className="mb-2 text-xs font-semibold opacity-70">Replay timeline</div>
+            <div className="space-y-1">
+              {timeline.map((item) => (
+                <button
+                  key={item.turnKey}
+                  type="button"
+                  onClick={() => {
+                    if (typeof window === "undefined") return;
+                    const el = document.getElementById(item.anchorId);
+                    if (el) el.scrollIntoView({ block: "center" });
+                  }}
+                  className="flex items-center gap-2 text-xs underline"
+                >
+                  <OutcomeBadge
+                    outcome={item.outcome === "failure" ? "fail" : item.outcome}
+                  />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <label className="text-neutral-400">
               <span className="mb-1 block text-[11px]">Filter kind</span>
