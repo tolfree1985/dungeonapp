@@ -731,6 +731,41 @@ export function ConsequencesDrawer({
               <div>+ Added: {addedKeysLine}</div>
               <div>– Removed: {removedKeysLine}</div>
               <div>= Unchanged: {unchangedKeysLine}</div>
+              <div className="mt-2 space-y-1">
+                <div>Added keys</div>
+                <div className="flex flex-wrap gap-1">
+                  {keyComparison.added.length > 0 ? keyComparison.added.map((key) => (
+                    <span
+                      key={`added-${key}`}
+                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300"
+                    >
+                      {key}
+                    </span>
+                  )) : <span>(none)</span>}
+                </div>
+                <div>Removed keys</div>
+                <div className="flex flex-wrap gap-1">
+                  {keyComparison.removed.length > 0 ? keyComparison.removed.map((key) => (
+                    <span
+                      key={`removed-${key}`}
+                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300"
+                    >
+                      {key}
+                    </span>
+                  )) : <span>(none)</span>}
+                </div>
+                <div>Unchanged keys</div>
+                <div className="flex flex-wrap gap-1">
+                  {keyComparison.unchanged.length > 0 ? keyComparison.unchanged.map((key) => (
+                    <span
+                      key={`unchanged-${key}`}
+                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300"
+                    >
+                      {key}
+                    </span>
+                  )) : <span>(none)</span>}
+                </div>
+              </div>
               <div>Active delta filter: {activeDeltaFilterLabel}</div>
               {turnDiffKeyChips.length > 0 ? (
                 <div className="mt-2 flex flex-wrap gap-1">
