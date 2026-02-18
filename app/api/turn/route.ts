@@ -52,6 +52,17 @@ function parseRetryAt(value: unknown): Date | null {
   return null;
 }
 
+function asUnknownArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function coalesceUnknownArray(...values: unknown[]): unknown[] {
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
 async function runModelStub(args: { prompt: string; max_tokens: number }): Promise<StubModelResult> {
   const scene = `You pause at the cellar door. (Stub model, max_tokens=${args.max_tokens})`;
   const resolution = { notes: "Stub response.", max_tokens: args.max_tokens };
@@ -79,11 +90,9 @@ async function postHandler(req: Request) {
     const now = new Date();
     const userId = typeof body.userId === "string" && body.userId.trim() ? body.userId.trim() : "anon";
 
-    // Dev-only: allow smoke harness to exercise billing cap paths deterministically without tripping soft rate limits.
-    const capOverrideHeader = req.headers.get("x-smoke-cap-override");
-    // We bypass if the harness signals cap override OR the request is anon (common in smoke).
-    const smokeBypassRateLimit =
-      process.env.NODE_ENV !== "production" && (!!capOverrideHeader || userId === "anon");
+    // Dev-only bypass for smoke/budget harness traffic.
+    const smokeBypassHeader = req.headers.get("x-smoke-bypass-soft-rate-limit");
+    const smokeBypassRateLimit = process.env.NODE_ENV !== "production" && smokeBypassHeader === "1";
 
     if (!smokeBypassRateLimit) {
       const rateLimit = checkSoftRateLimit({
@@ -124,11 +133,40 @@ async function postHandler(req: Request) {
     if (prevApplied?.turnJson) {
       try {
         const parsed = JSON.parse(prevApplied.turnJson as string) as Record<string, unknown>;
-        return NextResponse.json({ ok: true, replayed: true, ...parsed }, { status: 200 });
+        const replayStateDeltas = coalesceUnknownArray(parsed.stateDeltas, (parsed as any)?.turn?.stateDeltas);
+        const replayLedgerAdds = coalesceUnknownArray(parsed.ledgerAdds, (parsed as any)?.turn?.ledgerAdds);
+
+        const parsedTurn =
+          parsed.turn && typeof parsed.turn === "object"
+            ? {
+                ...(parsed.turn as Record<string, unknown>),
+                stateDeltas: asUnknownArray((parsed as any)?.turn?.stateDeltas),
+                ledgerAdds: asUnknownArray((parsed as any)?.turn?.ledgerAdds),
+              }
+            : undefined;
+
+        return NextResponse.json(
+          {
+            ok: true,
+            replayed: true,
+            ...parsed,
+            ...(parsedTurn ? { turn: parsedTurn } : {}),
+            stateDeltas: replayStateDeltas,
+            ledgerAdds: replayLedgerAdds,
+          },
+          { status: 200 }
+        );
       } catch {
         // If turnJson is unexpectedly not JSON, still return a safe replay response.
         return NextResponse.json(
-          { ok: true, replayed: true, idempotencyKey, turnEventId: prevApplied.eventId },
+          {
+            ok: true,
+            replayed: true,
+            idempotencyKey,
+            turnEventId: prevApplied.eventId,
+            stateDeltas: [],
+            ledgerAdds: [],
+          },
           { status: 200 }
         );
       }
@@ -142,6 +180,7 @@ async function postHandler(req: Request) {
 
     const estInputTokens = estimateTokens(playerText);
     // Dev-only: allow smoke harness to clamp monthly cap for deterministic cap-exceed test.
+    const capOverrideHeader = req.headers.get("x-smoke-cap-override");
     const capOverrideTokens =
       process.env.NODE_ENV !== "production" && capOverrideHeader ? Number(capOverrideHeader) : undefined;
 
@@ -240,11 +279,15 @@ async function postHandler(req: Request) {
           max_tokens: preflight.perTurnMaxOutputTokens,
         })
       );
+      const stateDeltas = asUnknownArray((turn as any).stateDeltas);
+      const ledgerAdds = asUnknownArray((turn as any).ledgerAdds);
       const turnPayload = {
         turnId: turn.id,
         turnIndex: turn.turnIndex,
         scene: turn.scene,
         resolution: turn.resolution,
+        stateDeltas: stateDeltas as any,
+        ledgerAdds: ledgerAdds as any,
       };
       const eventHash = hashHex(
         JSON.stringify({
@@ -287,7 +330,23 @@ async function postHandler(req: Request) {
       return { turn, billing: committed, idempotencyKey };
     });
 
-    return NextResponse.json({ ok: true, ...finalized }, { status: 200 });
+    const turnStateDeltas = asUnknownArray((finalized as any)?.turn?.stateDeltas);
+    const turnLedgerAdds = asUnknownArray((finalized as any)?.turn?.ledgerAdds);
+
+    return NextResponse.json(
+      {
+        ok: true,
+        ...finalized,
+        turn: {
+          ...(finalized as any).turn,
+          stateDeltas: turnStateDeltas,
+          ledgerAdds: turnLedgerAdds,
+        },
+        stateDeltas: turnStateDeltas,
+        ledgerAdds: turnLedgerAdds,
+      },
+      { status: 200 }
+    );
   } catch (err: unknown) {
     if (isRequestBodyTooLargeError(err)) {
       return errorResponse(413, "Payload too large");

@@ -389,12 +389,37 @@ export async function handleTurn(body: any) {
       options,
     };
 
-    return { rejected: false as const, turn: t, view, engine };
+    return {
+      rejected: false as const,
+      turn: t,
+      view,
+      engine,
+      stateDeltas,
+      ledgerAdds,
+      turnJson: {
+        stateDeltas,
+        ledgerAdds,
+      },
+    };
   });
 
   if ((result as any).rejected) {
     return { status: (result as any).status, json: (result as any).json };
   }
+
+  const turnJson = (result as any)?.turnJson;
+  const stateDeltas =
+    ((result as any)?.stateDeltas ??
+      turnJson?.stateDeltas ??
+      []) as unknown[];
+
+  const ledgerAdds =
+    ((result as any)?.ledgerAdds ??
+      turnJson?.ledgerAdds ??
+      []) as unknown[];
+
+  if (!Array.isArray(stateDeltas)) throw new Error("stateDeltas must be array");
+  if (!Array.isArray(ledgerAdds)) throw new Error("ledgerAdds must be array");
 
   return {
     status: 200,
@@ -405,8 +430,8 @@ export async function handleTurn(body: any) {
       turn: {
         ...(result as any).turn,
         engine: (result as any).engine,
-        stateDeltas: Array.isArray((result as any)?.engine?.stateDeltas) ? (result as any).engine.stateDeltas : [],
-        ledgerAdds: Array.isArray((result as any)?.engine?.ledgerAdds) ? (result as any).engine.ledgerAdds : [],
+        stateDeltas,
+        ledgerAdds,
       },
       view: (result as any).view,
     },
