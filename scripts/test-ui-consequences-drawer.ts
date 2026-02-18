@@ -70,6 +70,7 @@ function main() {
     html.includes("Collapse") || html.includes("Expand"),
     'Expected ledger group toggle label ("Collapse" or "Expand") to be present',
   );
+  assert(html.includes("ledger-"), 'Expected at least one ledger anchor id ("ledger-") to be present');
   assert(html.includes("Copy entry"), 'Expected "Copy entry" to be present');
   assert(html.includes("Copy link"), 'Expected "Copy link" to be present');
   assert(html.includes(">Details<"), "missing Details expander label");
