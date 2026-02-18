@@ -867,6 +867,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline text-neutral-300"
                 aria-label="Copy turn diff for current turn"
                 aria-describedby={turnDiffStatusRegionId}
+                aria-controls={turnDiffPanelId}
                 disabled={!canCopyTurnDiff}
                 aria-disabled={!canCopyTurnDiff}
               >
@@ -880,6 +881,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy all Turn Diff"
                 aria-describedby={turnDiffStatusRegionId}
+                aria-controls={turnDiffPanelId}
                 disabled={!canCopyAllTurnDiff}
                 aria-disabled={!canCopyAllTurnDiff}
               >
@@ -893,6 +895,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy impact summary for current turn"
                 aria-describedby={turnDiffStatusRegionId}
+                aria-controls={turnDiffPanelId}
                 disabled={!canCopyImpactSummary}
                 aria-disabled={!canCopyImpactSummary}
               >
@@ -906,6 +909,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy previous turn keys"
                 aria-describedby={turnDiffStatusRegionId}
+                aria-controls={turnDiffPanelId}
                 disabled={!hasPreviousTurn}
                 aria-disabled={!hasPreviousTurn}
               >
@@ -920,6 +924,7 @@ export function ConsequencesDrawer({
                 aria-label="Copy comparison with previous turn"
                 disabled={!canCopyComparison}
                 aria-describedby={turnDiffStatusRegionId}
+                aria-controls={turnDiffPanelId}
                 aria-disabled={!canCopyComparison}
               >
                 Copy comparison
@@ -936,6 +941,7 @@ export function ConsequencesDrawer({
                   className="text-xs underline ml-2 text-neutral-300"
                   aria-label="Copy filtered deltas for current filter"
                   aria-describedby={turnDiffStatusRegionId}
+                  aria-controls={turnDiffPanelId}
                   disabled={!canCopyFiltered}
                   aria-disabled={!canCopyFiltered}
                 >
@@ -950,6 +956,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy turn link for current page"
                 aria-describedby={turnDiffStatusRegionId}
+                aria-controls={turnDiffPanelId}
                 aria-disabled={false}
               >
                 Copy turn link
@@ -962,6 +969,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy replay timeline"
                 aria-describedby={turnDiffStatusRegionId}
+                aria-controls={turnDiffPanelId}
                 disabled={!canCopyReplayTimeline}
                 aria-disabled={!canCopyReplayTimeline}
               >
@@ -975,6 +983,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy focused group status"
                 aria-describedby={turnDiffStatusRegionId}
+                aria-controls={turnDiffPanelId}
                 aria-disabled={false}
               >
                 Copy focused group status
@@ -1112,6 +1121,7 @@ export function ConsequencesDrawer({
               onChange={(e) => updateDeltaFilter(e.target.value)}
               className="ml-2 text-xs"
               aria-label="Filter deltas"
+              aria-controls={stateDeltasPanelId}
             >
               <option value="">All</option>
               {allTopKeys.map((k) => (
@@ -1125,6 +1135,7 @@ export function ConsequencesDrawer({
               className="ml-2 text-xs underline text-neutral-300"
               onClick={() => updateDeltaFilter("")}
               aria-label="Clear delta filter"
+              aria-controls={stateDeltasPanelId}
             >
               Clear delta filter
             </button>
