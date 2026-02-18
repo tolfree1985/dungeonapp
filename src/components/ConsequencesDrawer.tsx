@@ -174,7 +174,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                     : null;
                 const because = typeof row?.because === "string" ? row.because : null;
                 return (
-                  <li key={`ledger-${index}`} className="space-y-1">
+                  <li key={index} className="space-y-1">
                     {kind ? <div className="font-medium text-neutral-300">{kind}</div> : null}
                     {message ? (
                       <div className="text-neutral-400">{formatConsequenceValue(message)}</div>
@@ -185,6 +185,14 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                     {!kind && !message && !because ? (
                       <div className="text-neutral-400">{formatConsequenceValue(entry)}</div>
                     ) : null}
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-200">
+                        Details
+                      </summary>
+                      <pre className="mt-2 overflow-auto rounded bg-black/40 p-2 text-[11px] text-neutral-200">
+                        {JSON.stringify(entry, null, 2)}
+                      </pre>
+                    </details>
                   </li>
                 );
               })}

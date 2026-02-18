@@ -59,6 +59,8 @@ function main() {
   );
   assert(html.includes("Found key under mat."), "missing expected ledger snippet");
   assert(html.includes("…(truncated)"), "missing truncation marker");
+  assert(html.includes(">Details<"), "missing Details expander label");
+  assert(html.includes("<summary"), "missing summary element");
   assert(explanation.includes("State Deltas ("), "missing explanation state deltas section");
   assert(explanation.includes("Causal Ledger ("), "missing explanation causal ledger section");
   assert(
