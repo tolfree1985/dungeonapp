@@ -6,11 +6,13 @@ import { buildLedgerEntryCopyText } from "@/lib/buildLedgerEntryCopyText";
 import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
 import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
 import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText";
+import { buildTurnDiffCopyText } from "@/lib/turnDiff/buildTurnDiffCopyText";
 import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 import { ResolutionBadge as OutcomeBadge } from "@/components/ResolutionBadge";
 
 type Props = {
+  turnIndex?: number | null;
   stateDeltas?: readonly unknown[];
   ledgerAdds?: readonly unknown[];
   detailsId?: string;
@@ -116,8 +118,9 @@ function timelineLabelFromEntry(entry: AnyEntry | null): string {
   return formatConsequenceValue(entry ?? "", 80);
 }
 
-export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
+export function ConsequencesDrawer({ turnIndex, stateDeltas, ledgerAdds, detailsId, anchorId }: Props) {
   const deltas = Array.isArray(stateDeltas) ? stateDeltas : [];
+  const stateDeltasArray = deltas;
   const ledger = Array.isArray(ledgerAdds) ? ledgerAdds : [];
   const ledgerRecords = ledger.filter(
     (entry): entry is Record<string, unknown> =>
@@ -159,6 +162,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [turnDiffCopyStatus, setTurnDiffCopyStatus] = useState<"" | "copied" | "unsupported">("");
   const [visibleLedgerCopyStatus, setVisibleLedgerCopyStatus] = useState<string | null>(null);
   const [focusedViewCopyStatus, setFocusedViewCopyStatus] = useState<string | null>(null);
   const [inspectorBundleCopyStatus, setInspectorBundleCopyStatus] = useState<string | null>(null);
@@ -179,6 +183,21 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
       entries: expanded ? entries.map(({ entry }) => entry as AnyEntry) : [],
     };
   });
+  const turnDiffText = buildTurnDiffCopyText({
+    turnIndex: typeof turnIndex === "number" ? turnIndex : null,
+    deltas: stateDeltasArray as {
+      path?: string | string[];
+      op?: string;
+      before?: unknown;
+      after?: unknown;
+      [k: string]: unknown;
+    }[],
+  });
+  const topKeysLine = (() => {
+    const lines = turnDiffText.split("\n");
+    const keysLine = lines.find((line) => line.startsWith("Keys: "));
+    return keysLine ?? "Keys: (none)";
+  })();
 
   useEffect(() => {
     focusModeRef.current = focusMode;
@@ -270,6 +289,23 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
       setCopyStatus("Copied!");
     } catch {
       setCopyStatus("Copy failed");
+    }
+  }
+
+  async function onCopyTurnDiff(): Promise<void> {
+    if (
+      typeof navigator === "undefined"
+      || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== "function"
+    ) {
+      setTurnDiffCopyStatus("unsupported");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(turnDiffText);
+      setTurnDiffCopyStatus("copied");
+    } catch {
+      setTurnDiffCopyStatus("unsupported");
     }
   }
 
@@ -465,6 +501,27 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
         </label>
 
         <div>
+          <section aria-label="Turn diff" className="mt-4 border-t border-neutral-800 pt-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-neutral-300">Turn diff</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  void onCopyTurnDiff();
+                }}
+                className="text-xs underline text-neutral-300"
+                aria-label="Copy turn diff"
+              >
+                Copy turn diff
+              </button>
+            </div>
+            <div className="mt-2 space-y-1 text-xs text-neutral-400">
+              <div>State delta entries: {stateDeltasArray.length}</div>
+              <div>{topKeysLine}</div>
+              {turnDiffCopyStatus === "copied" ? <div>Copied</div> : null}
+              {turnDiffCopyStatus === "unsupported" ? <div>Copy not supported</div> : null}
+            </div>
+          </section>
           <div className="font-semibold text-neutral-400">STATE DELTAS</div>
           {deltas.length > 0 ? (
             <ol className="mt-2 list-decimal space-y-2 pl-5">

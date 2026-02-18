@@ -1,0 +1,51 @@
+export type TurnDiffDelta = {
+  path?: string | string[];
+  op?: string;
+  before?: unknown;
+  after?: unknown;
+  [k: string]: unknown;
+};
+
+function topLevelKeyFromPath(path: string | string[] | undefined): string | null {
+  if (!path) return null;
+  if (Array.isArray(path)) {
+    const first = path[0];
+    return typeof first === "string" && first.length ? first : null;
+  }
+  const p = String(path).trim();
+  if (!p) return null;
+  const cleaned = p.startsWith("/") ? p.slice(1) : p;
+  const first = cleaned.split(/[./[\]]+/).filter(Boolean)[0];
+  return first ? first : null;
+}
+
+export function buildTurnDiffCopyText(args: {
+  turnIndex: number | null;
+  deltas: TurnDiffDelta[];
+}): string {
+  const { turnIndex, deltas } = args;
+
+  const keys: string[] = [];
+  const seen = new Set<string>();
+
+  for (const d of deltas) {
+    const k = topLevelKeyFromPath(d.path as string | string[] | undefined);
+    if (k && !seen.has(k)) {
+      seen.add(k);
+      keys.push(k);
+    }
+  }
+
+  keys.sort((a, b) => a.localeCompare(b));
+
+  const header = `Turn diff${typeof turnIndex === "number" ? ` (turn ${turnIndex})` : ""}`;
+  const lines: string[] = [header, `State delta entries: ${deltas.length}`, `Top-level keys: ${keys.length}`];
+
+  if (keys.length) {
+    lines.push(`Keys: ${keys.join(", ")}`);
+  } else {
+    lines.push("Keys: (none)");
+  }
+
+  return lines.join("\n");
+}
