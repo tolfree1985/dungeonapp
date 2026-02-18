@@ -196,6 +196,13 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
     if (typeof window === "undefined") return;
 
     const handleHash = () => {
+      const pinnedFocus =
+        new URLSearchParams(window.location.search).get("focus") === "1";
+      if (pinnedFocus) {
+        focusModeRef.current = true;
+        setFocusMode(true);
+      }
+
       const hash = window.location.hash;
       if (!hash || !hash.startsWith("#ledger-")) return;
 
@@ -501,8 +508,11 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                             try {
                               const loc: Location | undefined =
                                 typeof location !== "undefined" ? location : undefined;
-                              const path = `${loc?.pathname ?? ""}${loc?.search ?? ""}#${groupAnchorId}`;
-                              await nav.clipboard.writeText(path);
+                              const sp = new URLSearchParams(loc?.search ?? "");
+                              if (focusMode) sp.set("focus", "1");
+                              const search = sp.toString();
+                              const href = `${loc?.pathname ?? ""}${search ? `?${search}` : ""}#${groupAnchorId}`;
+                              await nav.clipboard.writeText(href);
                               setGroupLinkCopyStatus((prev) => ({ ...prev, [key]: "Copied" }));
                             } catch {
                               setGroupLinkCopyStatus((prev) => ({ ...prev, [key]: "Copy not supported" }));
