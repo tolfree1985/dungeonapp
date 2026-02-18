@@ -303,6 +303,20 @@ export function ConsequencesDrawer({
   const turnDiffKeyChips = turnDiffKeys.slice(0, 8);
   const turnDiffKeyOverflow = turnDiffKeys.length > 8 ? turnDiffKeys.length - 8 : 0;
   const turnDiffStatusRegionId = "turn-diff-status-region";
+  const canCopyTurnDiff = stateDeltasArray.length > 0;
+  const canCopyAllTurnDiff = deltaCount > 0 || ledgerCount > 0 || hasPreviousTurn;
+  const canCopyImpactSummary = deltaCount > 0 || ledgerCount > 0;
+  const canCopyComparison = hasPreviousTurn && (
+    keyComparison.added.length > 0
+    || keyComparison.removed.length > 0
+    || keyComparison.unchanged.length > 0
+  );
+  const canCopyFiltered = normalizedDeltaKeyFilter !== "" && visibleDeltas.length > 0;
+  const showNothingToCopy = (
+    (deltaCount === 0 && ledgerCount === 0 && !hasPreviousTurn)
+    || (normalizedDeltaKeyFilter !== "" && visibleDeltas.length === 0)
+    || (hasPreviousTurn && !canCopyComparison)
+  );
 
   useEffect(() => {
     focusModeRef.current = focusMode;
@@ -747,6 +761,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline text-neutral-300"
                 aria-label="Copy turn diff for current turn"
                 aria-describedby={turnDiffStatusRegionId}
+                disabled={!canCopyTurnDiff}
               >
                 Copy turn diff
               </button>
@@ -758,6 +773,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy all Turn Diff"
                 aria-describedby={turnDiffStatusRegionId}
+                disabled={!canCopyAllTurnDiff}
               >
                 Copy all Turn Diff
               </button>
@@ -769,6 +785,7 @@ export function ConsequencesDrawer({
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy impact summary for current turn"
                 aria-describedby={turnDiffStatusRegionId}
+                disabled={!canCopyImpactSummary}
               >
                 Copy impact summary
               </button>
@@ -779,7 +796,7 @@ export function ConsequencesDrawer({
                 }}
                 className="text-xs underline ml-2 text-neutral-300"
                 aria-label="Copy comparison with previous turn"
-                disabled={!hasPreviousTurn}
+                disabled={!canCopyComparison}
                 aria-describedby={turnDiffStatusRegionId}
               >
                 Copy comparison
@@ -796,6 +813,7 @@ export function ConsequencesDrawer({
                   className="text-xs underline ml-2 text-neutral-300"
                   aria-label="Copy filtered deltas for current filter"
                   aria-describedby={turnDiffStatusRegionId}
+                  disabled={!canCopyFiltered}
                 >
                   Copy filtered deltas
                 </button>
@@ -913,6 +931,7 @@ export function ConsequencesDrawer({
               {turnLinkCopyStatus === "unsupported" ? (
                 <div className="text-xs">Copy not supported</div>
               ) : null}
+              {showNothingToCopy ? <div>Nothing to copy</div> : null}
             </div>
           </section>
           <div className="font-semibold text-neutral-400">STATE DELTAS</div>
