@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
+import { checkSoftRateLimit, softRateActorKey, softRateLimitForkPerMinute } from "@/lib/api/softRateLimit";
 import { prisma } from "@/lib/prisma";
 import { forkScenario } from "@/lib/scenario/scenarioRepo";
 
@@ -22,6 +23,23 @@ async function postHandler(req: Request, ctx: { params: { id: string } }) {
 
   if (typeof newId !== "string") {
     return errorResponse(400, "newId required");
+  }
+
+  const rateLimit = checkSoftRateLimit({
+    action: "scenario_fork",
+    actorKey: softRateActorKey(req, typeof ownerId === "string" ? ownerId : null),
+    limitPerMinute: softRateLimitForkPerMinute(),
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "RATE_LIMITED" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(rateLimit.retryAfterSeconds),
+        },
+      },
+    );
   }
 
   try {
