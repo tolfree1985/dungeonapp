@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { ConsequencesDrawer } from "../components/ConsequencesDrawer";
+import { ConsequencesDrawer } from "@/components/ConsequencesDrawer";
 import styles from "./page.module.css";
 
 const demoTurns = [
@@ -97,7 +97,7 @@ export default function Home() {
                 <div style={{ marginTop: 4 }}>{t.playerText}</div>
                 <div style={{ fontSize: "0.875rem", color: "#94a3b8", marginTop: 12 }}>Narrator</div>
                 <div style={{ marginTop: 4 }}>{t.assistantText}</div>
-                <ConsequencesDrawer stateDeltas={t.stateDeltas as unknown[]} ledgerAdds={t.ledgerAdds as unknown[]} />
+                <ConsequencesDrawer stateDeltas={t.stateDeltas} ledgerAdds={t.ledgerAdds} />
               </article>
             ))}
           </div>

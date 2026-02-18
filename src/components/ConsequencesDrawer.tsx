@@ -1,39 +1,32 @@
-type ConsequencesDrawerProps = {
-  stateDeltas?: unknown[];
-  ledgerAdds?: unknown[];
+type Props = {
+  stateDeltas?: readonly unknown[];
+  ledgerAdds?: readonly unknown[];
 };
 
-function JsonBlock({ value }: { value: unknown }) {
-  return (
-    <pre className="mt-2 overflow-auto rounded-md bg-black/40 p-2 text-[11px] leading-snug text-neutral-200">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
-}
-
-export function ConsequencesDrawer(props: ConsequencesDrawerProps) {
-  const stateDeltas = Array.isArray(props.stateDeltas) ? props.stateDeltas : [];
-  const ledgerAdds = Array.isArray(props.ledgerAdds) ? props.ledgerAdds : [];
-
-  const hasAnything = stateDeltas.length > 0 || ledgerAdds.length > 0;
+export function ConsequencesDrawer({ stateDeltas, ledgerAdds }: Props) {
+  const deltas = Array.isArray(stateDeltas) ? stateDeltas : [];
+  const ledger = Array.isArray(ledgerAdds) ? ledgerAdds : [];
 
   return (
-    <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950/30 p-3">
-      <summary className="cursor-pointer select-none text-sm text-neutral-200">
+    <details className="mt-3 rounded border border-neutral-800 p-3">
+      <summary className="cursor-pointer text-sm text-neutral-300">
         Why did this happen?
-        {!hasAnything ? <span className="ml-2 text-xs text-neutral-500">(no changes)</span> : null}
       </summary>
 
-      <div className="mt-3 space-y-4">
-        <section>
-          <div className="text-xs font-semibold tracking-wide text-neutral-300">STATE DELTAS</div>
-          {stateDeltas.length ? <JsonBlock value={stateDeltas} /> : <div className="mt-2 text-xs text-neutral-500">None.</div>}
-        </section>
+      <div className="mt-3 space-y-4 text-xs">
+        <div>
+          <div className="font-semibold text-neutral-400">STATE DELTAS</div>
+          <pre className="mt-1 overflow-auto bg-black/40 p-2">
+            {JSON.stringify(deltas, null, 2)}
+          </pre>
+        </div>
 
-        <section>
-          <div className="text-xs font-semibold tracking-wide text-neutral-300">CAUSAL LEDGER</div>
-          {ledgerAdds.length ? <JsonBlock value={ledgerAdds} /> : <div className="mt-2 text-xs text-neutral-500">None.</div>}
-        </section>
+        <div>
+          <div className="font-semibold text-neutral-400">CAUSAL LEDGER</div>
+          <pre className="mt-1 overflow-auto bg-black/40 p-2">
+            {JSON.stringify(ledger, null, 2)}
+          </pre>
+        </div>
       </div>
     </details>
   );
