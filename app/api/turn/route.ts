@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { PrismaClient } from "../../../src/generated/prisma";
+import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimit } from "@/lib/api/readJsonWithLimit";
 import { BillingError } from "../../../src/lib/billing/errors";
 import { estimateTokens } from "../../../src/lib/billing/estimate";
@@ -40,23 +41,6 @@ function shortKey(prefix: string, input: string): string {
   return `${prefix}_${hashHex(input).slice(0, 24)}`;
 }
 
-function budgetExceeded429(params: {
-  code: BudgetExceededCode;
-  idempotencyKey: string;
-  retryAt: Date;
-  message?: string;
-}) {
-  return {
-    error: {
-      type: "BUDGET_EXCEEDED" as const,
-      code: params.code,
-      message: params.message ?? "Budget exceeded",
-      idempotencyKey: params.idempotencyKey,
-      retryAt: params.retryAt.toISOString(),
-    },
-  };
-}
-
 function parseRetryAt(value: unknown): Date | null {
   if (value instanceof Date && Number.isFinite(value.getTime())) return value;
   if (typeof value === "string") {
@@ -81,10 +65,10 @@ export async function POST(req: Request) {
     const body = (await readJsonWithLimit<Partial<PostBody>>(req)) as Partial<PostBody>;
 
     if (!body?.adventureId || typeof body.adventureId !== "string") {
-      return NextResponse.json({ ok: false, error: "Missing/invalid adventureId" }, { status: 400 });
+      return errorResponse(400, "Missing/invalid adventureId");
     }
     if (!body?.playerText || typeof body.playerText !== "string") {
-      return NextResponse.json({ ok: false, error: "Missing/invalid playerText" }, { status: 400 });
+      return errorResponse(400, "Missing/invalid playerText");
     }
 
     const adventureId: string = body.adventureId;
@@ -163,26 +147,18 @@ export async function POST(req: Request) {
           (code === "MONTHLY_TOKEN_CAP_EXCEEDED"
             ? new Date(new Date().getTime() + 60_000)
             : new Date(new Date().getTime() + 1_000));
-        const shaped = budgetExceeded429({
-          code,
-          idempotencyKey,
-          retryAt,
-          message: be.message,
-        });
-
         return NextResponse.json(
           {
-            ok: false,
-            error: {
-              ...shaped.error,
-              tier,
-              monthKey,
-              cap: details?.cap ?? null,
-              used: details?.used ?? null,
-              reserved: details?.reserved ?? null,
-              requestedReserve: details?.requestedReserve ?? null,
-            },
+            error: "BUDGET_EXCEEDED",
+            code,
+            retryAt: retryAt.toISOString(),
             idempotencyKey,
+            tier,
+            monthKey,
+            cap: details?.cap ?? null,
+            used: details?.used ?? null,
+            reserved: details?.reserved ?? null,
+            requestedReserve: details?.requestedReserve ?? null,
           },
           { status: 429 }
         );
@@ -290,7 +266,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, ...finalized }, { status: 200 });
   } catch (err: unknown) {
     if (isRequestBodyTooLargeError(err)) {
-      return NextResponse.json({ ok: false, error: "Payload Too Large" }, { status: 413 });
+      return errorResponse(413, "Payload Too Large");
     }
 
     if (holdKey && leaseKeyForCleanup) {
@@ -299,16 +275,13 @@ export async function POST(req: Request) {
 
     const e = err as { code?: string; message?: string };
     if (e?.code === "P2025") {
-      return NextResponse.json({ ok: false, error: "Adventure not found" }, { status: 404 });
+      return errorResponse(404, "Adventure not found");
     }
     if (e?.code === "P2002") {
-      return NextResponse.json({ ok: false, error: "Duplicate request" }, { status: 409 });
+      return errorResponse(409, "Duplicate request");
     }
 
     console.error("POST /api/turn error:", err);
-    return NextResponse.json(
-      { ok: false, error: "Internal Server Error", details: String(e?.message ?? err) },
-      { status: 500 }
-    );
+    return errorResponse(500, "Internal Server Error");
   }
 }

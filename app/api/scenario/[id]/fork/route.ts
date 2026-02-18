@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { prisma } from "@/lib/prisma";
 import { forkScenario } from "@/lib/scenario/scenarioRepo";
@@ -10,19 +11,16 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     body = await readJsonWithLimitOrNull(req);
   } catch (error) {
     if (isRequestBodyTooLargeError(error)) {
-      return NextResponse.json({ error: { type: "PAYLOAD_TOO_LARGE" } }, { status: 413 });
+      return errorResponse(413, "Payload Too Large");
     }
-    throw error;
+    return errorResponse(500, "Internal Server Error");
   }
 
   const newId = body?.newId;
   const ownerId = body?.ownerId ?? null;
 
   if (typeof newId !== "string") {
-    return NextResponse.json(
-      { error: { type: "BAD_REQUEST", message: "newId required" } },
-      { status: 400 }
-    );
+    return errorResponse(400, "newId required");
   }
 
   try {
@@ -33,24 +31,14 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     return NextResponse.json({ scenario: forked });
   } catch (e: any) {
     if (e?.code === "SCENARIO_NOT_FOUND") {
-      return NextResponse.json(
-        { error: { type: "NOT_FOUND", code: "SCENARIO_NOT_FOUND" } },
-        { status: 404 }
-      );
+      return errorResponse(404, "SCENARIO_NOT_FOUND");
     }
     if (e?.code === "SCENARIO_CAP_EXCEEDED") {
       return NextResponse.json(
-        {
-          error: {
-            type: "LIMIT_EXCEEDED",
-            code: "SCENARIO_CAP_EXCEEDED",
-            cap: e?.details?.cap ?? null,
-            used: e?.details?.used ?? null,
-          },
-        },
+        { error: "SCENARIO_CAP_EXCEEDED", code: "SCENARIO_CAP_EXCEEDED", cap: e?.details?.cap ?? null, used: e?.details?.used ?? null },
         { status: 429 },
       );
     }
-    throw e;
+    return errorResponse(500, "Internal Server Error");
   }
 }

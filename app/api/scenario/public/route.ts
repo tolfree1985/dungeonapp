@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/api/errorResponse";
 import { prisma } from "@/lib/prisma";
 import { listPublicScenarios } from "@/lib/scenario/scenarioRepo";
 
@@ -14,11 +15,15 @@ export async function GET(req?: Request) {
   const cursorRaw = params.get("cursor");
   const cursor = cursorRaw && cursorRaw.trim() ? cursorRaw : undefined;
 
-  const scenarios = await prisma.$transaction(async (tx) => {
-    return listPublicScenarios(tx as any, { take, cursor });
-  });
+  try {
+    const scenarios = await prisma.$transaction(async (tx) => {
+      return listPublicScenarios(tx as any, { take, cursor });
+    });
 
-  const nextCursor = scenarios.length === take ? scenarios[scenarios.length - 1]?.id ?? null : null;
+    const nextCursor = scenarios.length === take ? scenarios[scenarios.length - 1]?.id ?? null : null;
 
-  return NextResponse.json({ scenarios, nextCursor });
+    return NextResponse.json({ scenarios, nextCursor });
+  } catch {
+    return errorResponse(500, "Internal Server Error");
+  }
 }

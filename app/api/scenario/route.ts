@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { prisma } from "@/lib/prisma";
 import { createScenario } from "@/lib/scenario/scenarioRepo";
@@ -9,9 +10,9 @@ export async function POST(req: Request) {
     body = await readJsonWithLimitOrNull(req);
   } catch (error) {
     if (isRequestBodyTooLargeError(error)) {
-      return NextResponse.json({ error: { type: "PAYLOAD_TOO_LARGE" } }, { status: 413 });
+      return errorResponse(413, "Payload Too Large");
     }
-    throw error;
+    return errorResponse(500, "Internal Server Error");
   }
 
   const id = body?.id;
@@ -22,10 +23,7 @@ export async function POST(req: Request) {
   const ownerId = body?.ownerId ?? null;
 
   if (typeof id !== "string" || typeof title !== "string" || contentJson == null) {
-    return NextResponse.json(
-      { error: { type: "BAD_REQUEST", message: "id, title, contentJson required" } },
-      { status: 400 },
-    );
+    return errorResponse(400, "id, title, contentJson required");
   }
 
   try {
@@ -37,17 +35,10 @@ export async function POST(req: Request) {
   } catch (e: any) {
     if (e?.code === "SCENARIO_CAP_EXCEEDED") {
       return NextResponse.json(
-        {
-          error: {
-            type: "LIMIT_EXCEEDED",
-            code: "SCENARIO_CAP_EXCEEDED",
-            cap: e?.details?.cap ?? null,
-            used: e?.details?.used ?? null,
-          },
-        },
+        { error: "SCENARIO_CAP_EXCEEDED", code: "SCENARIO_CAP_EXCEEDED", cap: e?.details?.cap ?? null, used: e?.details?.used ?? null },
         { status: 429 },
       );
     }
-    throw e;
+    return errorResponse(500, "Internal Server Error");
   }
 }

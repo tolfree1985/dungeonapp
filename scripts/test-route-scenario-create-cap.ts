@@ -62,14 +62,14 @@ async function main() {
 
   const r1 = await callCreate({ id: attempt1, ownerId });
   assert(r1.status === 429, `expected 429 for create cap, got ${r1.status}`);
-  assert(r1.json?.error?.code === "SCENARIO_CAP_EXCEEDED", "expected SCENARIO_CAP_EXCEEDED code");
+  assert(r1.json?.error === "SCENARIO_CAP_EXCEEDED", "expected SCENARIO_CAP_EXCEEDED error");
 
   const after1 = await prisma.scenario.count({ where: { ownerId } });
   assert(after1 === 2, `owner count must remain 2 after first cap failure, got ${after1}`);
 
   const r2 = await callCreate({ id: attempt2, ownerId });
   assert(r2.status === 429, `expected 429 for second create cap, got ${r2.status}`);
-  assert(r2.json?.error?.code === "SCENARIO_CAP_EXCEEDED", "expected SCENARIO_CAP_EXCEEDED code on second call");
+  assert(r2.json?.error === "SCENARIO_CAP_EXCEEDED", "expected SCENARIO_CAP_EXCEEDED error on second call");
 
   const after2 = await prisma.scenario.count({ where: { ownerId } });
   assert(after2 === 2, `owner count must remain 2 after second cap failure, got ${after2}`);

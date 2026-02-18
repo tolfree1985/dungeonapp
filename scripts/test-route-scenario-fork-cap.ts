@@ -68,14 +68,14 @@ async function main() {
 
   const r1 = await callFork({ sourceScenarioId: sourceId, newId: attempt1, ownerId: targetOwner });
   assert(r1.status === 429, `expected 429 for fork cap, got ${r1.status}`);
-  assert(r1.json?.error?.code === "SCENARIO_CAP_EXCEEDED", "expected SCENARIO_CAP_EXCEEDED code");
+  assert(r1.json?.error === "SCENARIO_CAP_EXCEEDED", "expected SCENARIO_CAP_EXCEEDED error");
 
   const after1 = await prisma.scenario.count({ where: { ownerId: targetOwner } });
   assert(after1 === 2, `owner count must remain 2 after first fork cap failure, got ${after1}`);
 
   const r2 = await callFork({ sourceScenarioId: sourceId, newId: attempt2, ownerId: targetOwner });
   assert(r2.status === 429, `expected 429 for second fork cap, got ${r2.status}`);
-  assert(r2.json?.error?.code === "SCENARIO_CAP_EXCEEDED", "expected SCENARIO_CAP_EXCEEDED code on second call");
+  assert(r2.json?.error === "SCENARIO_CAP_EXCEEDED", "expected SCENARIO_CAP_EXCEEDED error on second call");
 
   const after2 = await prisma.scenario.count({ where: { ownerId: targetOwner } });
   assert(after2 === 2, `owner count must remain 2 after second fork cap failure, got ${after2}`);

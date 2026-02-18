@@ -53,17 +53,16 @@ function assertBudgetExceeded429(
   }
 ) {
   assert(body && typeof body === "object", "429 body must be an object");
-  assert(body.error && typeof body.error === "object", "429 body.error must exist");
-
-  assert(body.error.type === "BUDGET_EXCEEDED", "error.type must be BUDGET_EXCEEDED");
-  assert(body.error.code === expected.code, `error.code must be ${expected.code}`);
+  assert(typeof body.error === "string", "429 body.error must be a string");
+  assert(body.error === "BUDGET_EXCEEDED", "error must be BUDGET_EXCEEDED");
+  assert(body.code === expected.code, `code must be ${expected.code}`);
 
   assert(
-    body.error.idempotencyKey === expected.idempotencyKey,
-    "error.idempotencyKey must equal request idempotencyKey"
+    body.idempotencyKey === expected.idempotencyKey,
+    "idempotencyKey must equal request idempotencyKey"
   );
 
-  assert(isISODateString(body.error.retryAt), "error.retryAt must be an ISO date string");
+  assert(isISODateString(body.retryAt), "retryAt must be an ISO date string");
 }
 
 async function resetTestState(prisma: PrismaClient, args: { adventureId: string; userId: string }) {
@@ -175,8 +174,8 @@ async function main() {
     }
     const usage = await prisma.userUsage.findFirst({ where: { userId } });
     debug("usage after spam", usage);
-    debug("cap-hit", hit?.status ?? "none", hit?.json?.error?.code ?? null);
-    if (!(hit && hit.status === 429 && hit.json?.error?.type === "BUDGET_EXCEEDED")) {
+    debug("cap-hit", hit?.status ?? "none", hit?.json?.code ?? null);
+    if (!(hit && hit.status === 429 && hit.json?.error === "BUDGET_EXCEEDED")) {
       debug("cap-hit body", JSON.stringify(hit?.json ?? null, null, 2));
     }
     assert(hit, "should hit cap and get 429 budget error");

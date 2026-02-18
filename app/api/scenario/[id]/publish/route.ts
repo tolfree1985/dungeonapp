@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { prisma } from "@/lib/prisma";
 
@@ -9,44 +10,39 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     body = await readJsonWithLimitOrNull(req);
   } catch (error) {
     if (isRequestBodyTooLargeError(error)) {
-      return NextResponse.json({ error: { type: "PAYLOAD_TOO_LARGE" } }, { status: 413 });
+      return errorResponse(413, "Payload Too Large");
     }
-    throw error;
+    return errorResponse(500, "Internal Server Error");
   }
 
   const ownerId = body?.ownerId ?? null;
 
   if (typeof ownerId !== "string") {
-    return NextResponse.json(
-      { error: { type: "BAD_REQUEST", message: "ownerId required" } },
-      { status: 400 }
-    );
+    return errorResponse(400, "ownerId required");
   }
 
-  const existing = await prisma.scenario.findUnique({
-    where: { id },
-    select: { id: true, ownerId: true },
-  });
+  try {
+    const existing = await prisma.scenario.findUnique({
+      where: { id },
+      select: { id: true, ownerId: true },
+    });
 
-  if (!existing) {
-    return NextResponse.json(
-      { error: { type: "NOT_FOUND", code: "SCENARIO_NOT_FOUND" } },
-      { status: 404 }
-    );
+    if (!existing) {
+      return errorResponse(404, "SCENARIO_NOT_FOUND");
+    }
+
+    if (existing.ownerId !== ownerId) {
+      return errorResponse(403, "NOT_OWNER");
+    }
+
+    const updated = await prisma.scenario.update({
+      where: { id },
+      data: { visibility: "PUBLIC" },
+      select: { id: true, visibility: true, ownerId: true },
+    });
+
+    return NextResponse.json({ scenario: updated });
+  } catch {
+    return errorResponse(500, "Internal Server Error");
   }
-
-  if (existing.ownerId !== ownerId) {
-    return NextResponse.json(
-      { error: { type: "FORBIDDEN", code: "NOT_OWNER" } },
-      { status: 403 }
-    );
-  }
-
-  const updated = await prisma.scenario.update({
-    where: { id },
-    data: { visibility: "PUBLIC" },
-    select: { id: true, visibility: true, ownerId: true },
-  });
-
-  return NextResponse.json({ scenario: updated });
 }

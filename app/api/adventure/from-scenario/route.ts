@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { prisma } from "@/lib/prisma";
 import { createAdventureFromScenarioId } from "@/lib/game/createAdventureFromScenario";
@@ -20,9 +21,9 @@ export async function POST(req: Request) {
     body = (await readJsonWithLimitOrNull<PostBody>(req)) as PostBody | null;
   } catch (error) {
     if (isRequestBodyTooLargeError(error)) {
-      return NextResponse.json({ error: { type: "PAYLOAD_TOO_LARGE" } }, { status: 413 });
+      return errorResponse(413, "Payload Too Large");
     }
-    throw error;
+    return errorResponse(500, "Internal Server Error");
   }
 
   const scenarioId = typeof body?.scenarioId === "string" ? body.scenarioId.trim() : "";
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   const ownerId = typeof body?.ownerId === "string" && body.ownerId.trim() ? body.ownerId.trim() : null;
 
   if (!scenarioId) {
-    return NextResponse.json({ error: { type: "BAD_REQUEST", message: "scenarioId required" } }, { status: 400 });
+    return errorResponse(400, "scenarioId required");
   }
 
   try {
@@ -53,7 +54,10 @@ export async function POST(req: Request) {
       { status: 200 },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: { type: "BAD_REQUEST", message } }, { status: 400 });
+    const err = error as { code?: string; status?: number };
+    if (err?.code === "SCENARIO_MISMATCH") {
+      return errorResponse(409, "SCENARIO_MISMATCH");
+    }
+    return errorResponse(typeof err?.status === "number" ? err.status : 400, "Invalid scenario request");
   }
 }
