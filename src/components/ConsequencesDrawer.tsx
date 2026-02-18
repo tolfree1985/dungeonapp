@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { buildConsequencesExplanationText } from "@/lib/buildConsequencesExplanationText";
+import { buildLedgerEntryCopyText } from "@/lib/buildLedgerEntryCopyText";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 
 type Props = {
@@ -38,6 +39,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const hasCounts = deltaCount > 0 || ledgerCount > 0;
   const [showRawJson, setShowRawJson] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [entryCopyStatus, setEntryCopyStatus] = useState<Record<number, string>>({});
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
 
   useEffect(() => {
@@ -185,6 +187,36 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                     {!kind && !message && !because ? (
                       <div className="text-neutral-400">{formatConsequenceValue(entry)}</div>
                     ) : null}
+                    <div>
+                      <button
+                        type="button"
+                        className="text-xs underline opacity-80 hover:opacity-100"
+                        onClick={async () => {
+                          const nav: typeof navigator | undefined =
+                            typeof navigator !== "undefined" ? navigator : undefined;
+                          const canCopy =
+                            !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+
+                          if (!canCopy) {
+                            setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                            return;
+                          }
+
+                          try {
+                            const text = buildLedgerEntryCopyText(entry as Record<string, unknown>);
+                            await nav.clipboard.writeText(text);
+                            setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copied" }));
+                          } catch {
+                            setEntryCopyStatus((prev) => ({ ...prev, [index]: "Copy not supported" }));
+                          }
+                        }}
+                      >
+                        Copy entry
+                      </button>
+                      {entryCopyStatus[index] ? (
+                        <span className="ml-2 text-xs opacity-70">{entryCopyStatus[index]}</span>
+                      ) : null}
+                    </div>
                     <details className="mt-2">
                       <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-200">
                         Details
