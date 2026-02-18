@@ -5,6 +5,7 @@ import { buildConsequencesExplanationText } from "@/lib/buildConsequencesExplana
 import { buildLedgerEntryCopyText } from "@/lib/buildLedgerEntryCopyText";
 import { buildLedgerGroupCopyText } from "@/lib/buildLedgerGroupCopyText";
 import { buildVisibleLedgerCopyText } from "@/lib/buildVisibleLedgerCopyText";
+import { buildInspectorBundleCopyText } from "@/lib/buildInspectorBundleCopyText";
 import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
 import { ResolutionBadge as OutcomeBadge } from "@/components/ResolutionBadge";
@@ -160,6 +161,7 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [visibleLedgerCopyStatus, setVisibleLedgerCopyStatus] = useState<string | null>(null);
   const [focusedViewCopyStatus, setFocusedViewCopyStatus] = useState<string | null>(null);
+  const [inspectorBundleCopyStatus, setInspectorBundleCopyStatus] = useState<string | null>(null);
   const [entryCopyStatus, setEntryCopyStatus] = useState<Record<number, string>>({});
   const [entryLinkCopyStatus, setEntryLinkCopyStatus] = useState<Record<number, string>>({});
   const [groupLinkCopyStatus, setGroupLinkCopyStatus] = useState<Record<string, string>>({});
@@ -401,6 +403,55 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
           </button>
           {focusedViewCopyStatus ? (
             <span className="text-neutral-400">{focusedViewCopyStatus}</span>
+          ) : null}
+          <button
+            type="button"
+            className="rounded border border-neutral-700 px-2 py-1 text-neutral-200 hover:border-neutral-500"
+            onClick={async () => {
+              const nav: typeof navigator | undefined =
+                typeof navigator !== "undefined" ? navigator : undefined;
+              const canCopy =
+                !!nav?.clipboard && typeof nav.clipboard.writeText === "function";
+              if (!canCopy) {
+                setInspectorBundleCopyStatus("Copy not supported");
+                return;
+              }
+
+              try {
+                const loc: Location | undefined =
+                  typeof location !== "undefined" ? location : undefined;
+                const sp = new URLSearchParams(loc?.search ?? "");
+                const pinnedFocus = sp.get("focus") === "1" || focusMode;
+                if (pinnedFocus) sp.set("focus", "1");
+                const mergedSearch = sp.toString();
+                const basePath = pinnedFocus
+                  ? `${loc?.pathname ?? ""}${mergedSearch ? `?${mergedSearch}` : ""}`
+                  : `${loc?.pathname ?? ""}${loc?.search ?? ""}`;
+                const targetHash = loc?.hash ?? "";
+                const focusedAnchorId = focusedGroupAnchorFromHash(targetHash);
+                const focusedGroup = focusedAnchorId
+                  ? visibleLedgerGroups.find((group) => group.anchorId === focusedAnchorId) ?? null
+                  : null;
+                const text = buildInspectorBundleCopyText({
+                  pinnedFocus,
+                  filterKind,
+                  filterRuleId,
+                  targetHash,
+                  basePath,
+                  visibleGroups: visibleLedgerGroups,
+                  focusedGroup,
+                });
+                await nav.clipboard.writeText(text);
+                setInspectorBundleCopyStatus("Copied");
+              } catch {
+                setInspectorBundleCopyStatus("Copy not supported");
+              }
+            }}
+          >
+            Copy inspector bundle
+          </button>
+          {inspectorBundleCopyStatus ? (
+            <span className="text-neutral-400">{inspectorBundleCopyStatus}</span>
           ) : null}
         </div>
 

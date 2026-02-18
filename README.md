@@ -67,3 +67,7 @@ Those come after real usage data.
 - Deterministic scripts: `scripts/test-route-scenario-mine.ts`, `scripts/test-route-scenario-public-page.ts`, `scripts/test-route-scenario-mine-page.ts`.
 - Ordering invariant: `updatedAt desc`, then `id desc`.
 - UI rule: no merge, dedupe, reorder, or local filter client-side.
+
+## Sprint Notes
+
+- 9.29 — Copy focused view export + deterministic UI test
