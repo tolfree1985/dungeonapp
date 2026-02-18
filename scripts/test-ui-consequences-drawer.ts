@@ -54,6 +54,20 @@ function main() {
       },
     ],
   });
+  const visibleLedgerPinned = buildVisibleLedgerCopyText({
+    filterKind: "",
+    filterRuleId: "",
+    pinnedFocus: true,
+    basePath: "/x?focus=1",
+    groups: [
+      {
+        title: "Event: X",
+        anchorId: "ledger-group-X",
+        state: "expanded",
+        entries: [{ message: "m", because: "b" }],
+      },
+    ],
+  });
   const resolutionBadgeHtml = renderToStaticMarkup(
     React.createElement(ResolutionBadge, { outcome: "mixed" }),
   );
@@ -128,6 +142,14 @@ function main() {
   assert(
     !visibleLedgerCollapsed.includes("raw:"),
     "Collapsed group should not include entries",
+  );
+  assert(
+    visibleLedgerPinned.includes("PinnedFocus: true"),
+    "Expected pinned focus signal in visible ledger export",
+  );
+  assert(
+    visibleLedgerPinned.includes("?focus=1#ledger-group-"),
+    "Expected focus query preserved in visible ledger anchor",
   );
   assert(
     explanation.indexOf("/flags/alpha") < explanation.indexOf("/flags/bravo"),
