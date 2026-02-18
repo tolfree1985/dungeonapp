@@ -25,7 +25,7 @@ async function getHandler(req?: Request) {
 
     return NextResponse.json({ scenarios, nextCursor });
   } catch {
-    return errorResponse(500, "Internal Server Error");
+    return errorResponse(500, "Internal error");
   }
 }
 

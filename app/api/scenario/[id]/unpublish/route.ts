@@ -13,7 +13,7 @@ async function postHandler(req: Request, ctx: { params: { id: string } }) {
     if (isRequestBodyTooLargeError(error)) {
       return errorResponse(413, "Payload Too Large");
     }
-    return errorResponse(500, "Internal Server Error");
+    return errorResponse(500, "Internal error");
   }
 
   const ownerId = body?.ownerId ?? null;
@@ -44,7 +44,7 @@ async function postHandler(req: Request, ctx: { params: { id: string } }) {
 
     return NextResponse.json({ scenario: updated });
   } catch {
-    return errorResponse(500, "Internal Server Error");
+    return errorResponse(500, "Internal error");
   }
 }
 
