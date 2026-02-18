@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ConsequencesDrawer } from "../src/components/ConsequencesDrawer";
@@ -136,6 +138,22 @@ function main() {
     seeWhyHtml.includes(`id=\"${anchorId}\"`),
     "missing matching consequences drawer container id",
   );
+
+  const drawerPath = path.join(
+    process.cwd(),
+    "src",
+    "components",
+    "ConsequencesDrawer.tsx",
+  );
+  const drawerSource = fs.readFileSync(drawerPath, "utf8");
+  const mustInclude = ["hashchange", "ledger-highlight", "addEventListener(\"hashchange\""];
+  for (const signal of mustInclude) {
+    if (!drawerSource.includes(signal)) {
+      throw new Error(
+        `Expected ConsequencesDrawer.tsx to include "${signal}" (hash-reactive highlight signal)`,
+      );
+    }
+  }
 
   console.log("UI CONSEQUENCES DRAWER OK");
 }
