@@ -66,6 +66,9 @@ export default function CreatorPage() {
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [contentJson, setContentJson] = useState("");
+  const [lastValidation, setLastValidation] = useState<ReturnType<typeof validateScenarioContentJson> | null>(
+    null,
+  );
 
   const emptyState = useMemo(
     () => ({
@@ -77,6 +80,7 @@ export default function CreatorPage() {
   );
 
   const validation = useMemo(() => validateScenarioContentJson(contentJson), [contentJson]);
+  const validationView = lastValidation ?? validation;
 
   return (
     <main className="mx-auto max-w-4xl p-6">
@@ -134,18 +138,30 @@ export default function CreatorPage() {
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Scenario validation">
         <h2 className="text-base font-semibold">Validation</h2>
-        <div className="mt-2">Status: {validation.ok ? "valid" : "invalid"}</div>
-        {validation.parseError ? <div className="mt-2">Parse error: {validation.parseError}</div> : null}
-        {!validation.parseError && validation.issues.length > 0 ? (
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setLastValidation(validateScenarioContentJson(contentJson))}
+            className="rounded border px-2 py-1 text-xs"
+          >
+            Validate scenario
+          </button>
+          <div>
+            Status: {validationView.ok ? "valid" : "invalid"}
+            {lastValidation ? " (manual)" : " (live)"}
+          </div>
+        </div>
+        {validationView.parseError ? <div className="mt-2">Parse error: {validationView.parseError}</div> : null}
+        {!validationView.parseError && validationView.issues.length > 0 ? (
           <ol className="mt-2 list-decimal space-y-1 pl-6">
-            {validation.issues.map((issue, i) => (
+            {validationView.issues.map((issue, i) => (
               <li key={`${issue.path}:${issue.code}:${i}`}>
                 {issue.path} {issue.code}: {issue.message}
               </li>
             ))}
           </ol>
         ) : null}
-        {!validation.parseError && validation.issues.length === 0 && validation.ok ? (
+        {!validationView.parseError && validationView.issues.length === 0 && validationView.ok ? (
           <div className="mt-2">No schema issues.</div>
         ) : null}
       </section>
