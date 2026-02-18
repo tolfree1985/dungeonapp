@@ -4,6 +4,7 @@ import { PrismaClient } from "../../../src/generated/prisma";
 import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimit } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
+import { checkSoftRateLimit, softRateActorKey, softRateLimitTurnPostPerMinute } from "@/lib/api/softRateLimit";
 import { BillingError } from "../../../src/lib/billing/errors";
 import { estimateTokens } from "../../../src/lib/billing/estimate";
 import {
@@ -77,6 +78,20 @@ async function postHandler(req: Request) {
 
     const now = new Date();
     const userId = typeof body.userId === "string" && body.userId.trim() ? body.userId.trim() : "anon";
+    const rateLimit = checkSoftRateLimit({
+      action: "turn_post",
+      actorKey: softRateActorKey(req, userId),
+      limitPerMinute: softRateLimitTurnPostPerMinute(),
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "RATE_LIMITED" },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
     const tier = coerceTier(body.tier);
     const monthKey = monthKeyUtc(now);
 

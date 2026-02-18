@@ -1,4 +1,4 @@
-type RateLimitAction = "scenario_create" | "scenario_fork";
+export type RateLimitAction = "scenario_create" | "scenario_fork" | "turn_post";
 
 type Bucket = {
   windowStartMs: number;
@@ -75,4 +75,8 @@ export function softRateLimitCreatePerMinute() {
 
 export function softRateLimitForkPerMinute() {
   return parsePositiveInt(process.env.SOFT_RATE_LIMIT_SCENARIO_FORK_PER_MIN, 60);
+}
+
+export function softRateLimitTurnPostPerMinute() {
+  return parsePositiveInt(process.env.SOFT_RATE_LIMIT_TURN_POST_PER_MIN, 30);
 }
