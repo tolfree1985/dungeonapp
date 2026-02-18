@@ -71,3 +71,5 @@ Those come after real usage data.
 ## Sprint Notes
 
 - 9.29 — Copy focused view export + deterministic UI test
+- 9.58 — Replay/focused export controls + deterministic status signal assertions
+- Sprint 9 complete — Deterministic Inspector + Replay + Accessibility + Export Hardening
