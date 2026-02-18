@@ -80,6 +80,21 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
     };
   }, [anchorId]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const hash = window.location.hash;
+    if (!hash) return;
+    if (!hash.startsWith("#ledger-")) return;
+
+    const id = hash.slice(1);
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    el.classList.add("ledger-highlight");
+    el.scrollIntoView({ block: "center" });
+  }, []);
+
   async function handleCopyExplanation(): Promise<void> {
     const text = buildConsequencesExplanationText({
       stateDeltas: deltas,
@@ -239,7 +254,11 @@ export function ConsequencesDrawer({ stateDeltas, ledgerAdds, detailsId, anchorI
                     : null;
                 const because = typeof row?.because === "string" ? row.because : null;
                 return (
-                  <li id={rowId} key={index} className="space-y-1">
+                  <li
+                    id={rowId}
+                    key={index}
+                    className="space-y-1 rounded border border-transparent p-1"
+                  >
                     {kind ? <div className="font-medium text-neutral-300">{kind}</div> : null}
                     {message ? (
                       <div className="text-neutral-400">{formatConsequenceValue(message)}</div>

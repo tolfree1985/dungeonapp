@@ -1,12 +1,14 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --accent: #f59e0b;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --accent: #fbbf24;
   }
 }
 
@@ -33,6 +35,11 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+.ledger-highlight {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 @media (prefers-color-scheme: dark) {
