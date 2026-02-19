@@ -19,6 +19,7 @@ type ScenarioListItem = {
   updatedAt: string;
 };
 type MineViewItem = ScenarioListItem & { visibilityBadge: "DRAFT" | "PUBLIC" };
+type CreatorTier = "NOMAD" | "TRAILBLAZOR" | "CHRONICLER" | "LOREMASTER";
 
 function validateScenarioContentJson(raw: string): {
   ok: boolean;
@@ -86,6 +87,7 @@ export default function CreatorPage() {
     null,
   );
   const [ownerId, setOwnerId] = useState("");
+  const [creatorTier, setCreatorTier] = useState<CreatorTier>("NOMAD");
   const [myScenarios, setMyScenarios] = useState<MineViewItem[]>([]);
   const [mineStatus, setMineStatus] = useState("My scenarios not loaded.");
   const [draftCopyStatus, setDraftCopyStatus] = useState("");
@@ -237,6 +239,7 @@ export default function CreatorPage() {
           contentJson: preview,
           visibility: "PRIVATE",
           ownerId: trimmedOwnerId,
+          tier: creatorTier,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -393,6 +396,24 @@ export default function CreatorPage() {
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Publish controls">
         <h2 className="text-base font-semibold">Publish</h2>
+        <div className="mt-2 flex items-center gap-3">
+          <label htmlFor="creator-tier" className="text-xs">
+            Tier
+          </label>
+          <select
+            id="creator-tier"
+            value={creatorTier}
+            onChange={(e) => setCreatorTier(e.target.value as CreatorTier)}
+            className="rounded border px-2 py-1 text-xs"
+          >
+            <option value="NOMAD">NOMAD</option>
+            <option value="TRAILBLAZOR">TRAILBLAZOR</option>
+            <option value="CHRONICLER">CHRONICLER</option>
+            <option value="LOREMASTER">LOREMASTER</option>
+          </select>
+          <span>Request tier: {creatorTier}</span>
+        </div>
+        <div className="mt-1 text-xs">Tier selection is deterministic and attached to creator requests.</div>
         <div className="mt-2 flex items-center gap-3">
           <button type="button" disabled={!publishEnabled} className="rounded border px-2 py-1 text-xs disabled:opacity-50">
             Publish scenario
