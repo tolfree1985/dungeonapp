@@ -23,6 +23,7 @@ type ScenarioListItem = {
 type MineViewItem = ScenarioListItem & { visibilityBadge: "DRAFT" | "PUBLIC" };
 type CreatorTier = "NOMAD" | "TRAILBLAZOR" | "CHRONICLER" | "LOREMASTER";
 type CreatorSnapshot = { title: string; summary: string; contentJson: string };
+type LintWarning = { code: string; message: string };
 
 function compareText(a: string, b: string): number {
   if (a === b) return 0;
@@ -69,6 +70,42 @@ function normalizeJsonForDisplay(value: unknown): unknown {
 
 function stableJsonDisplay(value: unknown): string {
   return JSON.stringify(normalizeJsonForDisplay(value), null, 2);
+}
+
+function lintScenario(parsed: unknown): LintWarning[] {
+  if (!parsed || typeof parsed !== "object") return [];
+  const s = parsed as any;
+  const warnings: LintWarning[] = [];
+
+  if (typeof s.id === "string" && /\s/.test(s.id)) {
+    warnings.push({
+      code: "ID_WHITESPACE",
+      message: "id contains whitespace; prefer hyphenated ids for stable linking.",
+    });
+  }
+
+  if (typeof s.summary === "string" && s.summary.trim().length > 0 && s.summary.trim().length < 24) {
+    warnings.push({
+      code: "SUMMARY_SHORT",
+      message: "summary is very short; include one concrete risk or hook.",
+    });
+  }
+
+  if (typeof s.start?.prompt === "string" && s.start.prompt.trim().length > 0 && s.start.prompt.trim().length < 40) {
+    warnings.push({
+      code: "START_PROMPT_SHORT",
+      message: "start.prompt is short; consider adding immediate context and stakes.",
+    });
+  }
+
+  if (!s.initialState || typeof s.initialState !== "object" || !("memory" in s.initialState)) {
+    warnings.push({
+      code: "INITIAL_MEMORY_MISSING",
+      message: "initialState.memory is missing; memory preview and recall may be limited.",
+    });
+  }
+
+  return warnings;
 }
 
 function validateScenarioContentJson(raw: string): {
@@ -232,6 +269,7 @@ export default function CreatorPage() {
       return null;
     }
   }, [preview]);
+  const lintWarnings = useMemo(() => lintScenario(preview), [preview]);
   useEffect(() => {
     setBillingBanner("");
     setLastMappedError("");
@@ -664,6 +702,22 @@ export default function CreatorPage() {
         {!validationView.parseError && validationView.issues.length === 0 && validationView.ok ? (
           <div className="mt-2">No schema issues.</div>
         ) : null}
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Scenario lint warnings">
+        <h2 className="text-base font-semibold">Scenario lint warnings</h2>
+        <div className="mt-1 text-xs">Non-blocking guidance only.</div>
+        {lintWarnings.length === 0 ? (
+          <div className="mt-2">No lint warnings.</div>
+        ) : (
+          <ol className="mt-2 list-decimal space-y-1 pl-6">
+            {lintWarnings.map((warning) => (
+              <li key={warning.code}>
+                {warning.code}: {warning.message}
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Scenario preview">
