@@ -270,6 +270,9 @@ function main() {
   assert(supportPackagePathLine.length > 0, "expected SUPPORT_PACKAGE_PATH from package builder");
   const supportPackagePath = supportPackagePathLine.replace(/^SUPPORT_PACKAGE_PATH\s+/, "").trim();
   assert(fs.existsSync(supportPackagePath), "expected support package file to exist");
+  const supportPackageBytes = fs.readFileSync(supportPackagePath);
+  const expectedSupportPackSourceHash = crypto.createHash("sha256").update(supportPackageBytes).digest("hex");
+  const supportPackageJson = JSON.parse(supportPackageBytes.toString("utf8"));
 
   const replaySupportPackage = spawnSync(
     process.execPath,
@@ -299,6 +302,39 @@ function main() {
   assert(outSupportPackage.includes("TELEMETRY_MATCH: true"), "expected telemetry parity");
   assert(outSupportPackage.includes("DRIFT_SEVERITY: NONE"), "expected deterministic drift severity");
   assert(!outSupportPackage.includes("DRIFT_PARITY_MISMATCH"), "did not expect drift parity mismatch");
+  const sourceHashLine =
+    outSupportPackage.split(/\r?\n/).find((line) => line.startsWith("REPRO_PACK_SOURCE_HASH ")) ?? "";
+  assert(sourceHashLine.length > 0, "expected REPRO_PACK_SOURCE_HASH line");
+  assert.equal(
+    sourceHashLine.replace(/^REPRO_PACK_SOURCE_HASH\s+/, "").trim(),
+    expectedSupportPackSourceHash,
+    "expected REPRO_PACK_SOURCE_HASH to match package file hash",
+  );
+  const summarySection = extractSection(outSupportPackage, "REPRO_PACK_SUMMARY");
+  for (const expectedLine of [
+    "PACKAGE_VERSION:",
+    "MANIFEST_VERSION:",
+    "MANIFEST_HASH:",
+    "FINAL_STATE_HASH:",
+    "DRIFT_SEVERITY:",
+  ]) {
+    assert(summarySection.includes(expectedLine), `expected summary line: ${expectedLine}`);
+  }
+  const summaryOrder = [
+    "REPRO_PACK_SUMMARY",
+    "PACKAGE_VERSION:",
+    "MANIFEST_VERSION:",
+    "MANIFEST_HASH:",
+    "FINAL_STATE_HASH:",
+    "DRIFT_SEVERITY:",
+  ];
+  const summaryPositions = summaryOrder.map((line) => summarySection.indexOf(line));
+  for (let i = 0; i < summaryPositions.length - 1; i++) {
+    assert(
+      summaryPositions[i] >= 0 && summaryPositions[i + 1] >= 0 && summaryPositions[i] < summaryPositions[i + 1],
+      `expected deterministic summary order for ${summaryOrder[i]} before ${summaryOrder[i + 1]}`,
+    );
+  }
 
   const supportLines = outSupportPackage.split(/\r?\n/);
   const idxTelemetryVersion = supportLines.findIndex((line) => line.startsWith("TELEMETRY_VERSION "));
@@ -306,14 +342,18 @@ function main() {
   const idxPerTurn = supportLines.findIndex((line) => line.trim() === "PER_TURN_TELEMETRY");
   const idxManifestJson = supportLines.findIndex((line) => line.startsWith("SUPPORT_MANIFEST_JSON "));
   const idxManifestHash = supportLines.findIndex((line) => line.startsWith("MANIFEST_HASH "));
+  const idxPackSourceHash = supportLines.findIndex((line) => line.startsWith("REPRO_PACK_SOURCE_HASH "));
   const idxPackValidation = supportLines.findIndex((line) => line.trim() === "REPRO_PACK_VALIDATION");
+  const idxPackSummary = supportLines.findIndex((line) => line.trim() === "REPRO_PACK_SUMMARY");
   assert(
     idxTelemetryVersion >= 0 &&
       idxTelemetry >= 0 &&
       idxPerTurn >= 0 &&
       idxManifestJson >= 0 &&
       idxManifestHash >= 0 &&
-      idxPackValidation >= 0,
+      idxPackSourceHash >= 0 &&
+      idxPackValidation >= 0 &&
+      idxPackSummary >= 0,
     "expected ordered output markers in support package replay mode",
   );
   assert(
@@ -321,7 +361,9 @@ function main() {
       idxTelemetry < idxPerTurn &&
       idxPerTurn < idxManifestJson &&
       idxManifestJson < idxManifestHash &&
-      idxManifestHash < idxPackValidation,
+      idxManifestHash < idxPackSourceHash &&
+      idxPackSourceHash < idxPackValidation &&
+      idxPackValidation < idxPackSummary,
     "expected deterministic output section ordering",
   );
   assert(
@@ -346,9 +388,62 @@ function main() {
     0,
     `second replay script (--support-package-path) failed: ${replaySupportPackage2.stderr || replaySupportPackage2.stdout}`,
   );
-  const validationA = extractSection(outSupportPackage, "REPRO_PACK_VALIDATION");
-  const validationB = extractSection(replaySupportPackage2.stdout ?? "", "REPRO_PACK_VALIDATION");
-  assert.equal(validationA, validationB, "support package validation section should be stable across runs");
+  const outSupportPackage2 = replaySupportPackage2.stdout ?? "";
+  assert.equal(outSupportPackage, outSupportPackage2, "support package replay output should be byte-stable across runs");
+
+  const supportPackageWithoutDriftPath = path.join(tempDir, "support-package-without-drift.json");
+  const supportPackageWithoutDrift = JSON.parse(JSON.stringify(supportPackageJson));
+  delete supportPackageWithoutDrift.drift;
+  fs.writeFileSync(supportPackageWithoutDriftPath, JSON.stringify(supportPackageWithoutDrift), "utf8");
+
+  const replaySupportPackageMissingDrift = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=test-bundle",
+      "--manifest-json",
+      `--support-package-path=${supportPackageWithoutDriftPath}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(
+    replaySupportPackageMissingDrift.status,
+    0,
+    `replay script (missing drift block) failed: ${replaySupportPackageMissingDrift.stderr || replaySupportPackageMissingDrift.stdout}`,
+  );
+  const outMissingDrift = replaySupportPackageMissingDrift.stdout ?? "";
+  assert(outMissingDrift.includes("DRIFT_BLOCK_MISSING"), "expected DRIFT_BLOCK_MISSING warning");
+
+  const supportPackageCorruptedPath = path.join(tempDir, "support-package-corrupted.json");
+  const supportPackageCorrupted = JSON.parse(JSON.stringify(supportPackageJson));
+  supportPackageCorrupted.manifestHash = "deadbeef";
+  fs.writeFileSync(supportPackageCorruptedPath, JSON.stringify(supportPackageCorrupted), "utf8");
+
+  const replaySupportPackageCorrupted = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=test-bundle",
+      "--manifest-json",
+      `--support-package-path=${supportPackageCorruptedPath}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(
+    replaySupportPackageCorrupted.status,
+    1,
+    `expected replay script to exit 1 for corrupted support package, got ${String(replaySupportPackageCorrupted.status)}`,
+  );
+  const outCorrupted = replaySupportPackageCorrupted.stdout ?? "";
+  assert(outCorrupted.includes("MANIFEST_HASH_MATCH: false"), "expected manifest hash mismatch in corrupted replay");
+  assert(
+    (replaySupportPackageCorrupted.stderr ?? "").includes("REPRO_PACK_VALIDATION_FAILED"),
+    "expected deterministic failure marker for corrupted support package replay",
+  );
 
   const corruptedManifest = JSON.parse(JSON.stringify(manifestJson));
   corruptedManifest.perTurn = [];

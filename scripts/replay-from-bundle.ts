@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 import {
   SUPPORT_MANIFEST_VERSION,
   TELEMETRY_VERSION,
@@ -7,6 +8,10 @@ import {
   serializeSupportManifest,
 } from "../src/lib/support/supportManifest";
 import { SUPPORT_PACKAGE_VERSION, type DriftSeverity, type SupportPackageV1 } from "../src/lib/support/supportPackage";
+
+type ReplaySupportPackage = Omit<SupportPackageV1, "drift"> & {
+  drift?: SupportPackageV1["drift"];
+};
 
 function stableStringify(value: unknown): string {
   const normalize = (input: unknown): unknown => {
@@ -46,7 +51,7 @@ function parseArgs(argv: string[]): Record<string, string> {
   return out;
 }
 
-function asSupportPackageV1(value: unknown): SupportPackageV1 | null {
+function asReplaySupportPackage(value: unknown): ReplaySupportPackage | null {
   if (!isRecord(value)) return null;
   const packageVersion = value.packageVersion;
   const manifestHash = value.manifestHash;
@@ -58,11 +63,19 @@ function asSupportPackageV1(value: unknown): SupportPackageV1 | null {
 
   if (typeof packageVersion !== "number") return null;
   if (typeof manifestHash !== "string") return null;
-  if (!isRecord(manifest) || !isRecord(replay) || !isRecord(drift) || !isRecord(integrity) || !isRecord(runbook)) {
+  if (!isRecord(manifest) || !isRecord(replay) || !isRecord(integrity) || !isRecord(runbook)) {
     return null;
   }
+  if (!isRecord(manifest.replay) || !isRecord(manifest.telemetry) || !Array.isArray(manifest.perTurn)) return null;
+  if (typeof manifest.manifestVersion !== "number") return null;
+  if (!isRecord(replay.telemetry) || !Array.isArray(replay.perTurn)) return null;
+  if (typeof replay.finalStateHash !== "string") return null;
+  if (typeof integrity.manifestHashMatches !== "boolean") return null;
+  if (typeof integrity.replayFinalStateMatchesManifest !== "boolean") return null;
+  if (typeof integrity.telemetryConsistent !== "boolean") return null;
+  if (drift !== undefined && (!isRecord(drift) || typeof drift.severity !== "string")) return null;
   if (!("originalBundle" in value)) return null;
-  return value as SupportPackageV1;
+  return value as ReplaySupportPackage;
 }
 
 function readPath(value: unknown, pathParts: string[]): unknown {
@@ -131,7 +144,7 @@ function readPathPerTurn(value: unknown, candidates: string[][]): PerTurnRefRow[
 }
 
 function findFirstPerTurnDrift(
-  derived: SupportPackageV1["manifest"]["perTurn"],
+  derived: ReplaySupportPackage["manifest"]["perTurn"],
   reference: PerTurnRefRow[],
 ): { turnIndex: number | null; metric: string } | null {
   if (reference.length === 0) return null;
@@ -148,7 +161,7 @@ function findFirstPerTurnDrift(
   return null;
 }
 
-function classifyDriftSeverity(bundle: unknown, manifest: SupportPackageV1["manifest"]): DriftSeverity {
+function classifyDriftSeverity(bundle: unknown, manifest: ReplaySupportPackage["manifest"]): DriftSeverity {
   const refHash = readPathString(bundle, [
     ["telemetry", "finalStateHash"],
     ["telemetry", "FINAL_STATE_HASH"],
@@ -178,11 +191,17 @@ function classifyDriftSeverity(bundle: unknown, manifest: SupportPackageV1["mani
   return "NONE";
 }
 
-function readBundle(args: Record<string, string>): { bundle: unknown; supportPackage: SupportPackageV1 | null } {
+function readBundle(args: Record<string, string>): {
+  bundle: unknown;
+  supportPackage: ReplaySupportPackage | null;
+  supportPackageSourceHash: string | null;
+} {
   const supportPackagePath = args["support-package-path"];
   if (supportPackagePath) {
-    const supportPackageJson = JSON.parse(fs.readFileSync(supportPackagePath, "utf8"));
-    const supportPackage = asSupportPackageV1(supportPackageJson);
+    const supportPackageBytes = fs.readFileSync(supportPackagePath);
+    const supportPackageSourceHash = crypto.createHash("sha256").update(supportPackageBytes).digest("hex");
+    const supportPackageJson = JSON.parse(supportPackageBytes.toString("utf8"));
+    const supportPackage = asReplaySupportPackage(supportPackageJson);
     if (!supportPackage) {
       throw new Error("Invalid support package JSON");
     }
@@ -192,18 +211,18 @@ function readBundle(args: Record<string, string>): { bundle: unknown; supportPac
     if (supportPackage.manifest.manifestVersion !== SUPPORT_MANIFEST_VERSION) {
       throw new Error("SUPPORT_MANIFEST_VERSION_MISMATCH");
     }
-    return { bundle: supportPackage.originalBundle, supportPackage };
+    return { bundle: supportPackage.originalBundle, supportPackage, supportPackageSourceHash };
   }
 
   const jsonArg = args["bundle-json"];
   const pathArg = args["bundle-path"];
 
   if (jsonArg) {
-    return { bundle: JSON.parse(jsonArg), supportPackage: null };
+    return { bundle: JSON.parse(jsonArg), supportPackage: null, supportPackageSourceHash: null };
   }
 
   if (pathArg) {
-    return { bundle: JSON.parse(fs.readFileSync(pathArg, "utf8")), supportPackage: null };
+    return { bundle: JSON.parse(fs.readFileSync(pathArg, "utf8")), supportPackage: null, supportPackageSourceHash: null };
   }
 
   throw new Error("Missing --bundle-path or --bundle-json");
@@ -220,7 +239,7 @@ function isSeqContiguous(turnIndexes: number[]): boolean {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const { bundle, supportPackage } = readBundle(args);
+  const { bundle, supportPackage, supportPackageSourceHash } = readBundle(args);
   const turnLimitArg = args.turn;
   const turnLimit = turnLimitArg && /^-?\d+$/.test(turnLimitArg) ? Number(turnLimitArg) : undefined;
 
@@ -285,6 +304,9 @@ async function main() {
   console.log(`MANIFEST_HASH ${manifestHash}`);
 
   if (supportPackage) {
+    if (!supportPackageSourceHash) {
+      throw new Error("SUPPORT_PACKAGE_SOURCE_HASH_MISSING");
+    }
     const manifestHashMatch = supportPackage.manifestHash === manifestHash;
     const finalStateHashMatch = supportPackage.manifest.replay.finalStateHash === manifest.replay.finalStateHash;
     const telemetryMatch =
@@ -294,20 +316,40 @@ async function main() {
       supportPackage.replay.telemetry.avgDeltaPerTurn === manifest.telemetry.avgDeltaPerTurn &&
       supportPackage.replay.telemetry.maxLedgerPerTurn === manifest.telemetry.maxLedgerPerTurn;
     const computedDriftSeverity = classifyDriftSeverity(supportPackage.originalBundle, manifest);
+    const driftBlockMissing = !supportPackage.drift;
+    const driftParityMismatch = !driftBlockMissing && supportPackage.drift.severity !== computedDriftSeverity;
 
+    console.log(`REPRO_PACK_SOURCE_HASH ${supportPackageSourceHash}`);
     console.log("REPRO_PACK_VALIDATION");
     console.log(`PACKAGE_VERSION: ${supportPackage.packageVersion}`);
     console.log(`MANIFEST_HASH_MATCH: ${manifestHashMatch}`);
     console.log(`FINAL_STATE_HASH_MATCH: ${finalStateHashMatch}`);
     console.log(`TELEMETRY_MATCH: ${telemetryMatch}`);
     console.log(`DRIFT_SEVERITY: ${computedDriftSeverity}`);
-    if (supportPackage.drift.severity !== computedDriftSeverity) {
+    if (driftBlockMissing) {
+      console.log("DRIFT_BLOCK_MISSING");
+    }
+    if (driftParityMismatch) {
       console.log("DRIFT_PARITY_MISMATCH");
+    }
+
+    console.log("REPRO_PACK_SUMMARY");
+    console.log(`PACKAGE_VERSION: ${supportPackage.packageVersion}`);
+    console.log(`MANIFEST_VERSION: ${supportPackage.manifest.manifestVersion}`);
+    console.log(`MANIFEST_HASH: ${manifestHash}`);
+    console.log(`FINAL_STATE_HASH: ${manifest.replay.finalStateHash}`);
+    console.log(`DRIFT_SEVERITY: ${computedDriftSeverity}`);
+
+    const validationPass =
+      manifestHashMatch && finalStateHashMatch && telemetryMatch && !driftParityMismatch;
+    if (!validationPass) {
+      console.error("REPRO_PACK_VALIDATION_FAILED");
+      process.exit(1);
     }
   }
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 });
