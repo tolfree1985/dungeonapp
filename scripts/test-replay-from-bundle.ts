@@ -126,6 +126,7 @@ function main() {
       scriptPath,
       "--bundle-id=test-bundle",
       "--telemetry-json",
+      "--manifest-json",
       `--bundle-json=${JSON.stringify(bundle)}`,
     ],
     { encoding: "utf8" },
@@ -133,6 +134,7 @@ function main() {
   assert.equal(withJson.status, 0, `replay script (--telemetry-json) failed: ${withJson.stderr || withJson.stdout}`);
   const outJson = withJson.stdout ?? "";
   assert(outJson.includes("TELEMETRY_JSON "), "expected TELEMETRY_JSON output when flag is present");
+  assert(outJson.includes("SUPPORT_MANIFEST_JSON "), "expected SUPPORT_MANIFEST_JSON output when flag is present");
   const telemetryJsonLine =
     outJson.split(/\r?\n/).find((line) => line.startsWith("TELEMETRY_JSON ")) ?? "";
   assert(telemetryJsonLine.length > 0, "expected TELEMETRY_JSON line");
@@ -140,6 +142,47 @@ function main() {
     !/timestamp|duration|token|random|seed|Date\.now|performance\.now/i.test(telemetryJsonLine),
     "telemetry JSON should not include timing/entropy fields",
   );
+
+  const baseHashLine = (out.split(/\r?\n/).find((line) => line.startsWith("FINAL_STATE_HASH ")) ?? "").trim();
+  const baseHash = baseHashLine.split(" ")[1] ?? "";
+  const manifestLine =
+    outJson.split(/\r?\n/).find((line) => line.startsWith("SUPPORT_MANIFEST_JSON ")) ?? "";
+  assert(manifestLine.length > 0, "expected SUPPORT_MANIFEST_JSON line");
+  const manifestJson = JSON.parse(manifestLine.replace(/^SUPPORT_MANIFEST_JSON\s+/, ""));
+  assert.equal(manifestJson.manifestVersion, 1, "manifestVersion should be 1");
+  assert.equal(manifestJson.replay?.telemetryVersion, 1, "replay.telemetryVersion should be 1");
+  assert.equal(
+    manifestJson.perTurn?.length,
+    manifestJson.replay?.turnCount,
+    "manifest perTurn length should match replay.turnCount",
+  );
+  assert.equal(
+    manifestJson.replay?.finalStateHash,
+    baseHash,
+    "manifest replay.finalStateHash should match base FINAL_STATE_HASH",
+  );
+
+  const withManifest2 = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=test-bundle",
+      "--manifest-json",
+      `--bundle-json=${JSON.stringify(bundle)}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(
+    withManifest2.status,
+    0,
+    `second replay script (--manifest-json) failed: ${withManifest2.stderr || withManifest2.stdout}`,
+  );
+  const manifestLine2 =
+    (withManifest2.stdout ?? "").split(/\r?\n/).find((line) => line.startsWith("SUPPORT_MANIFEST_JSON ")) ?? "";
+  assert(manifestLine2.length > 0, "expected SUPPORT_MANIFEST_JSON line in second manifest run");
+  assert.equal(manifestLine, manifestLine2, "manifest json output should be stable across runs");
 
   console.log("REPLAY FROM BUNDLE OK");
 }

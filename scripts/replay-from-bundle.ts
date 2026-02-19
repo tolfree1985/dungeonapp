@@ -1,25 +1,5 @@
 import fs from "node:fs";
-import crypto from "node:crypto";
-import { replayStateFromTurnJson } from "../src/lib/game/replay";
-
-type ReplayEvent = { seq: number; turnJson: any };
-type PerTurnTelemetryRow = {
-  turnIndex: number;
-  deltaCount: number;
-  ledgerCount: number;
-  hasResolution: boolean;
-};
-type ReplayTelemetry = {
-  telemetryVersion: number;
-  turnCount: number;
-  totalLedgerEntries: number;
-  totalStateDeltaCount: number;
-  maxDeltaPerTurn: number;
-  avgDeltaPerTurn: number;
-  maxLedgerPerTurn: number;
-  finalStateHash: string;
-  perTurn: PerTurnTelemetryRow[];
-};
+import { buildSupportManifestFromBundle, serializeSupportManifest } from "../src/lib/support/supportManifest";
 
 function stableStringify(value: unknown): string {
   const normalize = (input: unknown): unknown => {
@@ -39,10 +19,6 @@ function stableStringify(value: unknown): string {
   };
 
   return JSON.stringify(normalize(value));
-}
-
-function sha256Hex(input: string): string {
-  return crypto.createHash("sha256").update(input).digest("hex");
 }
 
 function parseArgs(argv: string[]): Record<string, string> {
@@ -74,181 +50,75 @@ function readBundle(args: Record<string, string>): any {
   throw new Error("Missing --bundle-path or --bundle-json");
 }
 
-function asSeq(value: unknown, fallback: number): number {
-  if (typeof value === "number" && Number.isInteger(value)) return value;
-  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return Number(value.trim());
-  return fallback;
-}
-
-function toTurnJson(source: any): any {
-  const direct = source?.turnJson;
-  if (direct && typeof direct === "object") {
-    const deltas = Array.isArray(direct.deltas)
-      ? direct.deltas
-      : Array.isArray(source?.deltas)
-        ? source.deltas
-        : Array.isArray(source?.stateDeltas)
-          ? source.stateDeltas
-          : [];
-    return { ...direct, deltas, resolution: direct?.resolution ?? source?.resolution };
-  }
-
-  const deltas = Array.isArray(source?.deltas)
-    ? source.deltas
-    : Array.isArray(source?.stateDeltas)
-      ? source.stateDeltas
-      : [];
-
-  return {
-    deltas,
-    ledgerAdds: Array.isArray(source?.ledgerAdds) ? source.ledgerAdds : [],
-    resolution: source?.resolution,
-  };
-}
-
-function extractEvents(bundle: any): ReplayEvent[] {
-  const rawEvents = Array.isArray(bundle?.events)
-    ? bundle.events
-    : Array.isArray(bundle?.turns)
-      ? bundle.turns
-      : [];
-
-  const events = rawEvents.map((raw: any, index: number) => {
-    const seq = asSeq(raw?.seq ?? raw?.turnIndex, index);
-    const turnJson = toTurnJson(raw);
-    return { seq, turnJson };
-  });
-
-  events.sort((a, b) => a.seq - b.seq);
-  return events;
-}
-
-function isSeqContiguous(events: ReplayEvent[]): boolean {
-  if (events.length === 0) return false;
-  const start = events[0].seq;
-  for (let i = 0; i < events.length; i++) {
-    if (events[i].seq !== start + i) return false;
+function isSeqContiguous(turnIndexes: number[]): boolean {
+  if (turnIndexes.length === 0) return false;
+  const start = turnIndexes[0];
+  for (let i = 0; i < turnIndexes.length; i++) {
+    if (turnIndexes[i] !== start + i) return false;
   }
   return true;
 }
 
-function sumLedgerAdds(events: ReplayEvent[]): number {
-  return events.reduce((sum, event) => {
-    const count = Array.isArray(event?.turnJson?.ledgerAdds) ? event.turnJson.ledgerAdds.length : 0;
-    return sum + count;
-  }, 0);
-}
-
-function sumDeltas(events: ReplayEvent[]): number {
-  return events.reduce((sum, event) => {
-    const count = Array.isArray(event?.turnJson?.deltas) ? event.turnJson.deltas.length : 0;
-    return sum + count;
-  }, 0);
-}
-
-function maxDeltasPerTurn(events: ReplayEvent[]): number {
-  return events.reduce((max, event) => {
-    const count = Array.isArray(event?.turnJson?.deltas) ? event.turnJson.deltas.length : 0;
-    return count > max ? count : max;
-  }, 0);
-}
-
-function maxLedgerEntriesPerTurn(events: ReplayEvent[]): number {
-  return events.reduce((max, event) => {
-    const count = Array.isArray(event?.turnJson?.ledgerAdds) ? event.turnJson.ledgerAdds.length : 0;
-    return count > max ? count : max;
-  }, 0);
-}
-
-function deriveTelemetry(events: ReplayEvent[], finalStateHash: string): ReplayTelemetry {
-  const turnCount = events.length;
-  const totalLedgerEntries = sumLedgerAdds(events);
-  const totalStateDeltaCount = sumDeltas(events);
-  const maxDeltaPerTurn = maxDeltasPerTurn(events);
-  const maxLedgerPerTurn = maxLedgerEntriesPerTurn(events);
-  const avgDeltaPerTurn = Number((totalStateDeltaCount / Math.max(turnCount, 1)).toFixed(6));
-  const perTurn = events
-    .map((event) => {
-      const deltaCount = Array.isArray(event?.turnJson?.deltas) ? event.turnJson.deltas.length : 0;
-      const ledgerCount = Array.isArray(event?.turnJson?.ledgerAdds) ? event.turnJson.ledgerAdds.length : 0;
-      const hasResolution = event?.turnJson?.resolution !== undefined && event?.turnJson?.resolution !== null;
-      return {
-        turnIndex: event.seq,
-        deltaCount,
-        ledgerCount,
-        hasResolution,
-      };
-    })
-    .sort((a, b) => a.turnIndex - b.turnIndex);
-
-  return {
-    telemetryVersion: 1,
-    turnCount,
-    totalLedgerEntries,
-    totalStateDeltaCount,
-    maxDeltaPerTurn,
-    avgDeltaPerTurn,
-    maxLedgerPerTurn,
-    finalStateHash,
-    perTurn,
-  };
-}
-
-function main() {
+async function main() {
   const args = parseArgs(process.argv.slice(2));
   const bundle = readBundle(args);
-
-  let events = extractEvents(bundle);
   const turnLimitArg = args.turn;
-  if (turnLimitArg && /^-?\d+$/.test(turnLimitArg)) {
-    const turnLimit = Number(turnLimitArg);
-    events = events.filter((event) => event.seq <= turnLimit);
-  }
+  const turnLimit = turnLimitArg && /^-?\d+$/.test(turnLimitArg) ? Number(turnLimitArg) : undefined;
 
-  if (events.length === 0) {
+  const manifest = await buildSupportManifestFromBundle(bundle, { turnLimit });
+  if (manifest.replay.turnCount === 0) {
     throw new Error("No replayable turns/events in bundle");
   }
 
-  const orderedEvents = [...events].sort((a, b) => a.seq - b.seq);
-  const state = replayStateFromTurnJson(orderedEvents);
-  const finalStateHash = sha256Hex(stableStringify(state));
-  const telemetry = deriveTelemetry(orderedEvents, finalStateHash);
-
   const bundleId = args["bundle-id"] ?? "(none)";
-  const contiguous = isSeqContiguous(orderedEvents);
-  const ledgerCount = sumLedgerAdds(orderedEvents);
-  const deltaCount = sumDeltas(orderedEvents);
+  const perTurn = [...manifest.perTurn].sort((a, b) => a.turnIndex - b.turnIndex);
+  const contiguous = isSeqContiguous(perTurn.map((row) => row.turnIndex));
+  const ledgerCount = manifest.telemetry.totalLedgerEntries;
+  const deltaCount = manifest.telemetry.totalStateDeltas;
 
   console.log(`BUNDLE_ID ${bundleId}`);
-  console.log(`TURNS ${orderedEvents.length}`);
+  console.log(`TURNS ${manifest.replay.turnCount}`);
   console.log(`INVARIANT_SEQ_CONTIGUOUS ${contiguous ? "PASS" : "FAIL"}`);
   console.log(`INVARIANT_LEDGER_COUNT ${ledgerCount}`);
   console.log(`INVARIANT_DELTA_COUNT ${deltaCount}`);
-  console.log(`FINAL_STATE_HASH ${finalStateHash}`);
+  console.log(`FINAL_STATE_HASH ${manifest.replay.finalStateHash}`);
   console.log("REPLAY COMPLETE");
-  console.log(`TELEMETRY_VERSION ${telemetry.telemetryVersion}`);
+  console.log(`TELEMETRY_VERSION ${manifest.replay.telemetryVersion}`);
   console.log("TELEMETRY");
-  console.log(`TURN_COUNT: ${telemetry.turnCount}`);
-  console.log(`TOTAL_LEDGER_ENTRIES: ${telemetry.totalLedgerEntries}`);
-  console.log(`TOTAL_STATE_DELTAS: ${telemetry.totalStateDeltaCount}`);
-  console.log(`MAX_DELTA_PER_TURN: ${telemetry.maxDeltaPerTurn}`);
-  console.log(`AVG_DELTA_PER_TURN: ${telemetry.avgDeltaPerTurn}`);
-  console.log(`MAX_LEDGER_PER_TURN: ${telemetry.maxLedgerPerTurn}`);
-  console.log(`FINAL_STATE_HASH: ${telemetry.finalStateHash}`);
+  console.log(`TURN_COUNT: ${manifest.replay.turnCount}`);
+  console.log(`TOTAL_LEDGER_ENTRIES: ${manifest.telemetry.totalLedgerEntries}`);
+  console.log(`TOTAL_STATE_DELTAS: ${manifest.telemetry.totalStateDeltas}`);
+  console.log(`MAX_DELTA_PER_TURN: ${manifest.telemetry.maxDeltaPerTurn}`);
+  console.log(`AVG_DELTA_PER_TURN: ${manifest.telemetry.avgDeltaPerTurn}`);
+  console.log(`MAX_LEDGER_PER_TURN: ${manifest.telemetry.maxLedgerPerTurn}`);
+  console.log(`FINAL_STATE_HASH: ${manifest.replay.finalStateHash}`);
   console.log("PER_TURN_TELEMETRY");
-  telemetry.perTurn.forEach((row) => {
+  perTurn.forEach((row) => {
     console.log(
       `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution}`,
     );
   });
   if (args["telemetry-json"] === "true") {
-    console.log(`TELEMETRY_JSON ${stableStringify(telemetry)}`);
+    console.log(
+      `TELEMETRY_JSON ${stableStringify({
+        telemetryVersion: manifest.replay.telemetryVersion,
+        turnCount: manifest.replay.turnCount,
+        totalLedgerEntries: manifest.telemetry.totalLedgerEntries,
+        totalStateDeltas: manifest.telemetry.totalStateDeltas,
+        maxDeltaPerTurn: manifest.telemetry.maxDeltaPerTurn,
+        avgDeltaPerTurn: manifest.telemetry.avgDeltaPerTurn,
+        maxLedgerPerTurn: manifest.telemetry.maxLedgerPerTurn,
+        finalStateHash: manifest.replay.finalStateHash,
+        perTurn,
+      })}`,
+    );
+  }
+  if (args["manifest-json"] === "true") {
+    console.log(`SUPPORT_MANIFEST_JSON ${serializeSupportManifest(manifest)}`);
   }
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err) => {
   console.error(err);
   process.exit(1);
-}
+});

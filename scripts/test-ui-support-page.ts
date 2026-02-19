@@ -120,6 +120,11 @@ function main() {
   assert(dashboardSource.includes("PER_TURN_DRIFT"), "Expected drift severity taxonomy");
   assert(dashboardSource.includes("PER_TURN_TELEMETRY"), "Expected per-turn telemetry marker");
   assert(dashboardSource.includes("Copy Drift Report"), "Expected copy drift report control");
+  assert(dashboardSource.includes("Canonical Manifest (V1)"), "Expected canonical manifest panel");
+  assert(dashboardSource.includes("Manifest version:"), "Expected manifest version field");
+  assert(dashboardSource.includes("Replay telemetryVersion:"), "Expected manifest replay telemetry version field");
+  assert(dashboardSource.includes("Per-turn rows:"), "Expected manifest per-turn row count field");
+  assert(dashboardSource.includes("Copy Manifest JSON"), "Expected copy manifest json control");
 
   console.log("UI SUPPORT PAGE OK");
 }

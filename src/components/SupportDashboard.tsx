@@ -5,7 +5,11 @@ import { categorizeDeltaPath } from "@/lib/support/deltaPathMeaningMap";
 import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministicReproCliText";
 import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
 import { buildSupportTurnReproBlockText } from "@/lib/support/buildSupportTurnReproBlockText";
-import { replayStateFromTurnJson } from "@/lib/game/replay";
+import {
+  buildSupportManifestFromBundle,
+  serializeSupportManifest,
+  type SupportManifestV1,
+} from "@/lib/support/supportManifest";
 
 type RunbookLink = {
   label: string;
@@ -654,6 +658,9 @@ export function SupportDashboard({
   const [turnReproCopyStatus, setTurnReproCopyStatus] = useState("");
   const [finalStateHash, setFinalStateHash] = useState("");
   const [finalStateHashCopyStatus, setFinalStateHashCopyStatus] = useState("");
+  const [supportManifest, setSupportManifest] = useState<SupportManifestV1 | null>(null);
+  const [supportManifestJson, setSupportManifestJson] = useState("");
+  const [manifestCopyStatus, setManifestCopyStatus] = useState("");
   const [driftReportCopyStatus, setDriftReportCopyStatus] = useState("");
   const [runbookCopyStatus, setRunbookCopyStatus] = useState<Record<string, string>>({});
   const [leftCompareJson, setLeftCompareJson] = useState("");
@@ -793,6 +800,18 @@ export function SupportDashboard({
   }, [missingNonCriticalFields.length, missingRequiredFields.length, reproCliText, sequenceIntegrity.isGreen]);
 
   const replayTelemetry = useMemo<ReplayTelemetryDerived>(() => {
+    if (supportManifest) {
+      return {
+        turnCount: supportManifest.replay.turnCount,
+        totalLedgerEntries: supportManifest.telemetry.totalLedgerEntries,
+        totalStateDeltaCount: supportManifest.telemetry.totalStateDeltas,
+        maxDeltaPerTurn: supportManifest.telemetry.maxDeltaPerTurn,
+        avgDeltaPerTurn: supportManifest.telemetry.avgDeltaPerTurn,
+        maxLedgerPerTurn: supportManifest.telemetry.maxLedgerPerTurn,
+        finalStateHash: supportManifest.replay.finalStateHash,
+      };
+    }
+
     const turnCount = turnRows.length;
     const totalLedgerEntries = turnRows.reduce((sum, row) => sum + row.ledgerAdds.length, 0);
     const totalStateDeltaCount = turnRows.reduce((sum, row) => sum + row.stateDeltas.length, 0);
@@ -809,9 +828,15 @@ export function SupportDashboard({
       maxLedgerPerTurn,
       finalStateHash,
     };
-  }, [finalStateHash, turnRows]);
+  }, [finalStateHash, supportManifest, turnRows]);
 
   const perTurnTelemetry = useMemo<PerTurnTelemetryRow[]>(() => {
+    if (supportManifest) {
+      return [...supportManifest.perTurn].sort((a, b) =>
+        a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1,
+      );
+    }
+
     const rows = turnRows.map((row, index) => ({
       turnIndex: parseTurnIndex(row.turnIndex, index),
       deltaCount: row.stateDeltas.length,
@@ -820,7 +845,7 @@ export function SupportDashboard({
     }));
     rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
     return rows;
-  }, [turnRows]);
+  }, [supportManifest, turnRows]);
 
   const telemetryReference = useMemo(() => extractTelemetryReference(bundleData), [bundleData]);
   const telemetryReferencePerTurn = useMemo(
@@ -1053,46 +1078,37 @@ export function SupportDashboard({
   useEffect(() => {
     let cancelled = false;
 
-    async function computeFinalStateHash() {
-      if (turnRows.length === 0) {
-        if (!cancelled) setFinalStateHash("");
+    async function computeSupportManifest() {
+      if (bundleData == null) {
+        if (!cancelled) {
+          setSupportManifest(null);
+          setSupportManifestJson("");
+          setFinalStateHash("");
+        }
         return;
       }
 
       try {
-        if (typeof window === "undefined" || !window.crypto?.subtle) {
-          if (!cancelled) setFinalStateHash("UNAVAILABLE");
-          return;
+        const manifest = await buildSupportManifestFromBundle(bundleData);
+        if (!cancelled) {
+          setSupportManifest(manifest);
+          setSupportManifestJson(serializeSupportManifest(manifest));
+          setFinalStateHash(manifest.replay.finalStateHash);
         }
-
-        const events = turnRows
-          .map((row, index) => ({
-            seq: parseTurnIndex(row.turnIndex, index),
-            turnJson: {
-              deltas: row.stateDeltas,
-              ledgerAdds: row.ledgerAdds,
-            },
-          }))
-          .sort((a, b) => a.seq - b.seq);
-
-        const replayState = replayStateFromTurnJson(events);
-        const source = stableStringify(replayState);
-        const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
-        const hash = Array.from(new Uint8Array(digest))
-          .map((part) => part.toString(16).padStart(2, "0"))
-          .join("");
-
-        if (!cancelled) setFinalStateHash(hash);
       } catch {
-        if (!cancelled) setFinalStateHash("ERROR");
+        if (!cancelled) {
+          setSupportManifest(null);
+          setSupportManifestJson("");
+          setFinalStateHash("ERROR");
+        }
       }
     }
 
-    void computeFinalStateHash();
+    void computeSupportManifest();
     return () => {
       cancelled = true;
     };
-  }, [turnRows]);
+  }, [bundleData]);
 
   const anomalies = useMemo(() => {
     const rows: string[] = [];
@@ -1207,6 +1223,14 @@ export function SupportDashboard({
       return;
     }
     await copyText(finalStateHash, setFinalStateHashCopyStatus);
+  }
+
+  async function onCopyManifestJson() {
+    if (!supportManifestJson) {
+      setManifestCopyStatus("Copy not supported");
+      return;
+    }
+    await copyText(supportManifestJson, setManifestCopyStatus);
   }
 
   async function onCopyDriftReport() {
@@ -1456,6 +1480,41 @@ export function SupportDashboard({
               )}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Canonical Manifest (V1)">
+        <h2 className="text-base font-semibold">Canonical Manifest (V1)</h2>
+        <div className="mt-2 text-xs">
+          Manifest version: {supportManifest?.manifestVersion ?? 1}
+        </div>
+        <div className="text-xs">Replay turnCount: {supportManifest?.replay.turnCount ?? 0}</div>
+        <div className="text-xs">
+          Replay telemetryVersion: {supportManifest?.replay.telemetryVersion ?? 1}
+        </div>
+        <div className="text-xs">
+          Replay finalStateHash: {supportManifest?.replay.finalStateHash || "(none)"}
+        </div>
+        <div className="mt-1 text-xs">
+          Telemetry: deltas={supportManifest?.telemetry.totalStateDeltas ?? 0} ledger=
+          {supportManifest?.telemetry.totalLedgerEntries ?? 0} maxDelta=
+          {supportManifest?.telemetry.maxDeltaPerTurn ?? 0} avgDelta=
+          {supportManifest?.telemetry.avgDeltaPerTurn ?? 0} maxLedger=
+          {supportManifest?.telemetry.maxLedgerPerTurn ?? 0}
+        </div>
+        <div className="text-xs">Per-turn rows: {supportManifest?.perTurn.length ?? 0}</div>
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
+            onClick={onCopyManifestJson}
+            disabled={!supportManifestJson}
+          >
+            Copy Manifest JSON
+          </button>
+          <span role="status" aria-live="polite">
+            {manifestCopyStatus}
+          </span>
         </div>
       </section>
 
