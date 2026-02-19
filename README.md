@@ -73,3 +73,4 @@ Those come after real usage data.
 - 9.29 — Copy focused view export + deterministic UI test
 - 9.58 — Replay/focused export controls + deterministic status signal assertions
 - Sprint 9 complete — Deterministic Inspector + Replay + Accessibility + Export Hardening
+- Sprint 10A complete — Creator tools MVP with deterministic editor validation, preview, publish gating, and creator UX safety checks
