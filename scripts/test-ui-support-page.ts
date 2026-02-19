@@ -132,6 +132,28 @@ function main() {
     dashboardSource.includes("scripts/build-support-package.ts"),
     "Expected build-support-package CLI guidance",
   );
+  assert(dashboardSource.includes("Import Support Package"), "Expected import support package panel");
+  assert(dashboardSource.includes("Load .support.json file"), "Expected support package file load control");
+  assert(dashboardSource.includes("Manifest Integrity Badge"), "Expected manifest integrity badge section");
+  assert(dashboardSource.includes("GREEN: All true"), "Expected manifest integrity green text");
+  assert(dashboardSource.includes("RED: Any false"), "Expected manifest integrity red text");
+  assert(dashboardSource.includes("Structured Incident Checklist"), "Expected structured checklist section");
+  assert(dashboardSource.includes("Manifest integrity verified"), "Expected checklist row: manifest integrity verified");
+  assert(dashboardSource.includes("Replay telemetry consistent"), "Expected checklist row: replay telemetry consistent");
+  assert(dashboardSource.includes("Drift severity reviewed"), "Expected checklist row: drift severity reviewed");
+  assert(dashboardSource.includes("First drift turn inspected"), "Expected checklist row: first drift turn inspected");
+  assert(dashboardSource.includes("Repro CLI validated"), "Expected checklist row: repro cli validated");
+  assert(dashboardSource.includes("Package hash verified"), "Expected checklist row: package hash verified");
+  assert(
+    dashboardSource.includes("Deterministic Issue Draft Generator (Package-aware)"),
+    "Expected package-aware issue draft section",
+  );
+  assert(dashboardSource.includes("### Support Package"), "Expected issue draft header: Support Package");
+  assert(dashboardSource.includes("### Drift Severity:"), "Expected issue draft header: Drift Severity");
+  assert(dashboardSource.includes("### First Drift:"), "Expected issue draft header: First Drift");
+  assert(dashboardSource.includes("### Replay Invariants:"), "Expected issue draft header: Replay Invariants");
+  assert(dashboardSource.includes("PACKAGE_VERSION:"), "Expected package summary package version line");
+  assert(dashboardSource.includes("MANIFEST_HASH:"), "Expected package summary manifest hash line");
 
   console.log("UI SUPPORT PAGE OK");
 }

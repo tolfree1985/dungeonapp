@@ -11,9 +11,14 @@ import {
   buildSupportManifestFromBundle,
   hashSupportManifest,
   serializeSupportManifest,
+  sha256HexFromText,
   type SupportManifestV1,
 } from "@/lib/support/supportManifest";
-import { SUPPORT_PACKAGE_VERSION } from "@/lib/support/supportPackage";
+import {
+  SUPPORT_PACKAGE_VERSION,
+  serializeSupportPackage,
+  type SupportPackageV1,
+} from "@/lib/support/supportPackage";
 
 type RunbookLink = {
   label: string;
@@ -119,6 +124,18 @@ type DriftLocator = {
   reference: PerTurnTelemetryRow | null;
 } | null;
 
+type SupportPackageParseResult = {
+  pkg: SupportPackageV1 | null;
+  error: string;
+};
+
+type SupportPackageDiffRow = {
+  label: string;
+  left: string;
+  right: string;
+  same: boolean;
+};
+
 const LARGE_DELTA_THRESHOLD = 8;
 
 const METADATA_FIELD_SPECS: MetadataFieldSpec[] = [
@@ -161,6 +178,146 @@ function compareText(a: string, b: string): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeHash(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function readSupportPackageHashCandidate(value: unknown): string {
+  if (!isRecord(value)) return "";
+  const candidateKeys = ["PACKAGE_HASH", "packageHash", "package_hash"];
+  for (const key of candidateKeys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim().length > 0) return candidate.trim();
+  }
+  return "";
+}
+
+function asSupportPackageV1(value: unknown): SupportPackageV1 | null {
+  if (!isRecord(value)) return null;
+  const packageVersion = value.packageVersion;
+  const manifestHash = value.manifestHash;
+  const manifest = value.manifest;
+  const replay = value.replay;
+  const drift = value.drift;
+  const integrity = value.integrity;
+  const runbook = value.runbook;
+
+  if (typeof packageVersion !== "number") return null;
+  if (typeof manifestHash !== "string" || manifestHash.trim().length === 0) return null;
+  if (!isRecord(manifest) || !isRecord(replay) || !isRecord(drift) || !isRecord(integrity) || !isRecord(runbook)) {
+    return null;
+  }
+
+  const manifestReplay = manifest.replay;
+  const manifestTelemetry = manifest.telemetry;
+  const manifestPerTurn = manifest.perTurn;
+  const replayTelemetry = replay.telemetry;
+  const replayPerTurn = replay.perTurn;
+
+  if (!isRecord(manifestReplay) || !isRecord(manifestTelemetry) || !Array.isArray(manifestPerTurn)) return null;
+  if (!isRecord(replayTelemetry) || !Array.isArray(replayPerTurn)) return null;
+  if (typeof replay.finalStateHash !== "string") return null;
+  if (typeof drift.severity !== "string") return null;
+  if (typeof integrity.manifestHashMatches !== "boolean") return null;
+  if (typeof integrity.replayFinalStateMatchesManifest !== "boolean") return null;
+  if (typeof integrity.telemetryConsistent !== "boolean") return null;
+  if (!("originalBundle" in value)) return null;
+
+  return value as SupportPackageV1;
+}
+
+function parseSupportPackageJson(raw: string): SupportPackageParseResult {
+  const text = raw.trim();
+  if (!text) {
+    return { pkg: null, error: "No support package JSON pasted." };
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    const pkg = asSupportPackageV1(parsed);
+    if (!pkg) {
+      return {
+        pkg: null,
+        error: "Support package JSON invalid: required fields packageVersion, manifest, manifestHash.",
+      };
+    }
+    return { pkg, error: "Support package loaded." };
+  } catch {
+    return { pkg: null, error: "Support package JSON invalid: invalid JSON." };
+  }
+}
+
+function buildSupportPackageChecklistText(rows: Array<{ label: string; ok: boolean }>): string {
+  return [
+    "### Incident Checklist",
+    ...rows.map((row) => `- [${row.ok ? "x" : " "}] ${row.label}`),
+  ].join("\n");
+}
+
+function buildSupportPackageIssueDraftText(args: {
+  manifestHash: string;
+  packageHash: string;
+  engineVersion: string;
+  scenarioContentHash: string;
+  driftSeverity: string;
+  firstDriftTurnIndex: string;
+  firstDriftMetric: string;
+  replayInvariant: string;
+}): string {
+  return [
+    "### Support Package",
+    `Manifest Hash: ${args.manifestHash}`,
+    `Package Hash: ${args.packageHash}`,
+    `Engine Version: ${args.engineVersion}`,
+    `Scenario Hash: ${args.scenarioContentHash}`,
+    "",
+    "### Drift Severity:",
+    args.driftSeverity,
+    "",
+    "### First Drift:",
+    `Turn: ${args.firstDriftTurnIndex}`,
+    `Metric: ${args.firstDriftMetric}`,
+    "",
+    "### Replay Invariants:",
+    args.replayInvariant,
+  ].join("\n");
+}
+
+function buildSupportPackageDiffRows(left: SupportPackageV1, right: SupportPackageV1): SupportPackageDiffRow[] {
+  return [
+    {
+      label: "manifestHash",
+      left: left.manifestHash,
+      right: right.manifestHash,
+      same: left.manifestHash === right.manifestHash,
+    },
+    {
+      label: "finalStateHash",
+      left: left.replay.finalStateHash,
+      right: right.replay.finalStateHash,
+      same: left.replay.finalStateHash === right.replay.finalStateHash,
+    },
+    {
+      label: "driftSeverity",
+      left: left.drift.severity,
+      right: right.drift.severity,
+      same: left.drift.severity === right.drift.severity,
+    },
+    {
+      label: "turnCount",
+      left: String(left.manifest.replay.turnCount),
+      right: String(right.manifest.replay.turnCount),
+      same: left.manifest.replay.turnCount === right.manifest.replay.turnCount,
+    },
+    {
+      label: "perTurnRows",
+      left: String(left.replay.perTurn.length),
+      right: String(right.replay.perTurn.length),
+      same: left.replay.perTurn.length === right.replay.perTurn.length,
+    },
+  ];
 }
 
 function stableStringify(value: unknown): string {
@@ -665,11 +822,24 @@ export function SupportDashboard({
   const [supportManifest, setSupportManifest] = useState<SupportManifestV1 | null>(null);
   const [supportManifestJson, setSupportManifestJson] = useState("");
   const [supportManifestHash, setSupportManifestHash] = useState("");
+  const [supportPackageJsonText, setSupportPackageJsonText] = useState("");
+  const [supportPackageStatus, setSupportPackageStatus] = useState("No support package loaded.");
+  const [supportPackageData, setSupportPackageData] = useState<SupportPackageV1 | null>(null);
+  const [supportPackageReadOnly, setSupportPackageReadOnly] = useState(false);
+  const [supportPackageHashReference, setSupportPackageHashReference] = useState("");
+  const [supportPackageComputedHash, setSupportPackageComputedHash] = useState("");
+  const [supportPackageDerivedManifestHash, setSupportPackageDerivedManifestHash] = useState("");
   const [manifestCopyStatus, setManifestCopyStatus] = useState("");
+  const [supportPackageManifestHashCopyStatus, setSupportPackageManifestHashCopyStatus] = useState("");
+  const [supportPackageChecklistCopyStatus, setSupportPackageChecklistCopyStatus] = useState("");
+  const [supportPackageIssueCopyStatus, setSupportPackageIssueCopyStatus] = useState("");
+  const [supportPackageCliCopyStatus, setSupportPackageCliCopyStatus] = useState("");
   const [driftReportCopyStatus, setDriftReportCopyStatus] = useState("");
   const [runbookCopyStatus, setRunbookCopyStatus] = useState<Record<string, string>>({});
   const [leftCompareJson, setLeftCompareJson] = useState("");
   const [rightCompareJson, setRightCompareJson] = useState("");
+  const [leftPackageJson, setLeftPackageJson] = useState("");
+  const [rightPackageJson, setRightPackageJson] = useState("");
 
   const fixtureMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -803,6 +973,167 @@ export function SupportDashboard({
     const cliReady = reproCliText.trim().length > 0;
     return determinismIsGreen && sequenceIntegrity.isGreen && cliReady;
   }, [missingNonCriticalFields.length, missingRequiredFields.length, reproCliText, sequenceIntegrity.isGreen]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function computeSupportPackageHashes() {
+      if (!supportPackageData) {
+        if (!cancelled) {
+          setSupportPackageDerivedManifestHash("");
+          setSupportPackageComputedHash("");
+        }
+        return;
+      }
+
+      try {
+        const derivedManifestHash = await hashSupportManifest(supportPackageData.manifest);
+        const computedPackageHash = await sha256HexFromText(serializeSupportPackage(supportPackageData));
+        if (!cancelled) {
+          setSupportPackageDerivedManifestHash(derivedManifestHash);
+          setSupportPackageComputedHash(computedPackageHash);
+        }
+      } catch {
+        if (!cancelled) {
+          setSupportPackageDerivedManifestHash("");
+          setSupportPackageComputedHash("");
+        }
+      }
+    }
+
+    void computeSupportPackageHashes();
+    return () => {
+      cancelled = true;
+    };
+  }, [supportPackageData]);
+
+  const supportPackageManifestIntegrity = useMemo(() => {
+    if (!supportPackageData) {
+      return {
+        manifestHashMatches: false,
+        replayFinalStateMatchesManifest: false,
+        telemetryConsistent: false,
+        derivedManifestHashMatches: false,
+        allTrue: false,
+      };
+    }
+
+    const derivedManifestHashMatches =
+      supportPackageDerivedManifestHash.length > 0 &&
+      supportPackageDerivedManifestHash === supportPackageData.manifestHash;
+    const allTrue =
+      derivedManifestHashMatches &&
+      supportPackageData.integrity.manifestHashMatches &&
+      supportPackageData.integrity.replayFinalStateMatchesManifest &&
+      supportPackageData.integrity.telemetryConsistent;
+
+    return {
+      manifestHashMatches: supportPackageData.integrity.manifestHashMatches,
+      replayFinalStateMatchesManifest: supportPackageData.integrity.replayFinalStateMatchesManifest,
+      telemetryConsistent: supportPackageData.integrity.telemetryConsistent,
+      derivedManifestHashMatches,
+      allTrue,
+    };
+  }, [supportPackageData, supportPackageDerivedManifestHash]);
+
+  const supportPackageHashBadge = useMemo(() => {
+    if (!supportPackageData || !supportPackageComputedHash) {
+      return { label: "PACKAGE_HASH unavailable", cls: "text-amber-700" };
+    }
+
+    const reference = normalizeHash(supportPackageHashReference);
+    if (!reference) {
+      return { label: "PACKAGE_HASH reference not provided", cls: "text-amber-700" };
+    }
+    if (reference !== normalizeHash(supportPackageComputedHash)) {
+      return { label: "PACKAGE TAMPER DETECTED", cls: "text-red-700" };
+    }
+    return { label: "PACKAGE_HASH verified", cls: "text-green-700" };
+  }, [supportPackageComputedHash, supportPackageData, supportPackageHashReference]);
+
+  const supportPackageChecklistRows = useMemo(
+    () => [
+      { label: "Manifest integrity verified", ok: supportPackageManifestIntegrity.allTrue },
+      { label: "Replay telemetry consistent", ok: supportPackageManifestIntegrity.telemetryConsistent },
+      { label: "Drift severity reviewed", ok: !!supportPackageData },
+      {
+        label: "First drift turn inspected",
+        ok:
+          !!supportPackageData &&
+          (supportPackageData.drift.severity === "NONE" ||
+            typeof supportPackageData.drift.firstDriftTurnIndex === "number"),
+      },
+      { label: "Repro CLI validated", ok: !!supportPackageData },
+      { label: "Package hash verified", ok: supportPackageHashBadge.label === "PACKAGE_HASH verified" },
+    ],
+    [supportPackageData, supportPackageHashBadge.label, supportPackageManifestIntegrity.allTrue, supportPackageManifestIntegrity.telemetryConsistent],
+  );
+
+  const supportPackageChecklistText = useMemo(
+    () => buildSupportPackageChecklistText(supportPackageChecklistRows),
+    [supportPackageChecklistRows],
+  );
+
+  const supportPackageIssueDraftText = useMemo(() => {
+    if (!supportPackageData) {
+      return buildSupportPackageIssueDraftText({
+        manifestHash: "(none)",
+        packageHash: "(none)",
+        engineVersion: "(none)",
+        scenarioContentHash: "(none)",
+        driftSeverity: "(none)",
+        firstDriftTurnIndex: "(none)",
+        firstDriftMetric: "(none)",
+        replayInvariant: "(none)",
+      });
+    }
+    return buildSupportPackageIssueDraftText({
+      manifestHash: supportPackageData.manifestHash,
+      packageHash: supportPackageComputedHash || "(none)",
+      engineVersion: supportPackageData.manifest.engineVersion ?? "(none)",
+      scenarioContentHash: supportPackageData.manifest.scenarioContentHash ?? "(none)",
+      driftSeverity: supportPackageData.drift.severity,
+      firstDriftTurnIndex:
+        typeof supportPackageData.drift.firstDriftTurnIndex === "number"
+          ? String(supportPackageData.drift.firstDriftTurnIndex)
+          : "(none)",
+      firstDriftMetric: supportPackageData.drift.firstDriftMetric ?? "(none)",
+      replayInvariant: supportPackageManifestIntegrity.allTrue ? "PASS" : "FAIL",
+    });
+  }, [supportPackageComputedHash, supportPackageData, supportPackageManifestIntegrity.allTrue]);
+
+  const supportPackageCliHelperText = useMemo(
+    () =>
+      [
+        "node --import tsx scripts/replay-from-bundle.ts --bundle-path=./path/to/bundle.json --manifest-json",
+        "node --import tsx scripts/build-support-package.ts --bundle-path=./path/to/bundle.json --out-dir=./support-output",
+      ].join("\n"),
+    [],
+  );
+
+  const leftPackageDiffState = useMemo(() => {
+    const text = leftPackageJson.trim();
+    if (!text) return { pkg: null as SupportPackageV1 | null, error: "" };
+    const parsed = parseSupportPackageJson(text);
+    return { pkg: parsed.pkg, error: parsed.pkg ? "" : parsed.error };
+  }, [leftPackageJson]);
+
+  const rightPackageDiffState = useMemo(() => {
+    const text = rightPackageJson.trim();
+    if (!text) return { pkg: null as SupportPackageV1 | null, error: "" };
+    const parsed = parseSupportPackageJson(text);
+    return { pkg: parsed.pkg, error: parsed.pkg ? "" : parsed.error };
+  }, [rightPackageJson]);
+
+  const supportPackageDiffRows = useMemo(() => {
+    if (!leftPackageDiffState.pkg || !rightPackageDiffState.pkg) return [] as SupportPackageDiffRow[];
+    return buildSupportPackageDiffRows(leftPackageDiffState.pkg, rightPackageDiffState.pkg);
+  }, [leftPackageDiffState.pkg, rightPackageDiffState.pkg]);
+
+  const supportPackageFirstDivergence = useMemo(() => {
+    const first = supportPackageDiffRows.find((row) => !row.same);
+    return first ? first.label : "(none)";
+  }, [supportPackageDiffRows]);
 
   const replayTelemetry = useMemo<ReplayTelemetryDerived>(() => {
     if (supportManifest) {
@@ -1246,6 +1577,70 @@ export function SupportDashboard({
     await copyText(driftReportText, setDriftReportCopyStatus);
   }
 
+  function applySupportPackage(pkg: SupportPackageV1, sourceText: string) {
+    setSupportPackageData(pkg);
+    setSupportPackageJsonText(sourceText);
+    setSupportPackageStatus("Support package loaded.");
+    setSupportPackageHashReference(readSupportPackageHashCandidate(pkg));
+    setPastedBundleData(pkg.originalBundle);
+    setBundleJsonStatus("Bundle JSON parsed.");
+  }
+
+  function onImportSupportPackageJson() {
+    const parsed = parseSupportPackageJson(supportPackageJsonText);
+    if (!parsed.pkg) {
+      setSupportPackageData(null);
+      setSupportPackageStatus(parsed.error);
+      return;
+    }
+    applySupportPackage(parsed.pkg, supportPackageJsonText);
+  }
+
+  function onSupportPackageFileChange(file: File | null) {
+    if (!file) {
+      setSupportPackageStatus("No support package file selected.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = typeof reader.result === "string" ? reader.result : "";
+      const parsed = parseSupportPackageJson(text);
+      if (!parsed.pkg) {
+        setSupportPackageData(null);
+        setSupportPackageJsonText(text);
+        setSupportPackageStatus(parsed.error);
+        return;
+      }
+      applySupportPackage(parsed.pkg, text);
+    };
+    reader.onerror = () => {
+      setSupportPackageStatus("Support package file read failed.");
+    };
+    reader.readAsText(file);
+  }
+
+  async function onCopySupportPackageManifestHash() {
+    const hash = supportPackageData?.manifestHash ?? "";
+    if (!hash) {
+      setSupportPackageManifestHashCopyStatus("Copy not supported");
+      return;
+    }
+    await copyText(hash, setSupportPackageManifestHashCopyStatus);
+  }
+
+  async function onCopySupportPackageChecklist() {
+    await copyText(supportPackageChecklistText, setSupportPackageChecklistCopyStatus);
+  }
+
+  async function onCopySupportPackageIssueDraft() {
+    await copyText(supportPackageIssueDraftText, setSupportPackageIssueCopyStatus);
+  }
+
+  async function onCopySupportPackageCliHelper() {
+    await copyText(supportPackageCliHelperText, setSupportPackageCliCopyStatus);
+  }
+
   return (
     <main className="mx-auto max-w-6xl p-6">
       <h1 className="text-2xl font-semibold">Support Dashboard</h1>
@@ -1326,6 +1721,212 @@ export function SupportDashboard({
         <div className="mt-1 text-xs">
           Endpoint availability: {debugEndpointAvailable ? "available" : "not found"}
         </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Import Support Package">
+        <h2 className="text-base font-semibold">Import Support Package</h2>
+        <div className="mt-2 text-xs">Paste support-package JSON and load deterministic triage state.</div>
+        <label htmlFor="support-package-json" className="mt-2 mb-1 block text-xs">
+          Paste support-package JSON
+        </label>
+        <textarea
+          id="support-package-json"
+          value={supportPackageJsonText}
+          onChange={(e) => setSupportPackageJsonText(e.target.value)}
+          readOnly={supportPackageReadOnly}
+          className="w-full rounded border p-2 font-mono text-xs"
+          rows={8}
+          placeholder='{"packageVersion":1,"manifest":{"manifestVersion":1},"manifestHash":"..."}'
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={onImportSupportPackageJson}>
+            Import support package
+          </button>
+          <label className="inline-flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={supportPackageReadOnly}
+              onChange={(e) => setSupportPackageReadOnly(e.target.checked)}
+            />
+            Locked Read-Only Mode
+          </label>
+          <label className="inline-flex items-center gap-2 text-xs">
+            Load .support.json file
+            <input
+              type="file"
+              accept=".json,.support.json,application/json"
+              onChange={(e) => onSupportPackageFileChange(e.target.files?.[0] ?? null)}
+              disabled={supportPackageReadOnly}
+            />
+          </label>
+        </div>
+        <div className="mt-2">
+          <label htmlFor="support-package-hash-ref" className="text-xs">
+            PACKAGE_HASH (optional)
+          </label>
+          <input
+            id="support-package-hash-ref"
+            value={supportPackageHashReference}
+            onChange={(e) => setSupportPackageHashReference(e.target.value)}
+            className="ml-2 rounded border px-2 py-1 text-xs"
+            placeholder="sha256 from copy block"
+          />
+        </div>
+        <div className="mt-2 text-xs" role="status" aria-live="polite">
+          {supportPackageStatus}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Package Header Summary">
+        <h2 className="text-base font-semibold">Package Header Summary</h2>
+        <div className="mt-2 text-xs">PACKAGE_VERSION: {supportPackageData?.packageVersion ?? "(none)"}</div>
+        <div className="text-xs">MANIFEST_VERSION: {supportPackageData?.manifest.manifestVersion ?? "(none)"}</div>
+        <div className="text-xs">
+          MANIFEST_HASH:{" "}
+          {supportPackageData?.manifestHash ? `${supportPackageData.manifestHash.slice(0, 16)}...` : "(none)"}
+        </div>
+        <div className="text-xs">FINAL_STATE_HASH: {supportPackageData?.replay.finalStateHash ?? "(none)"}</div>
+        <div className="text-xs">DRIFT_SEVERITY: {supportPackageData?.drift.severity ?? "(none)"}</div>
+        <div className="text-xs">TURN_COUNT: {supportPackageData?.manifest.replay.turnCount ?? "(none)"}</div>
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
+            onClick={onCopySupportPackageManifestHash}
+            disabled={!supportPackageData?.manifestHash}
+          >
+            Copy manifest hash
+          </button>
+          <span role="status" aria-live="polite">
+            {supportPackageManifestHashCopyStatus}
+          </span>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Manifest Integrity Badge">
+        <h2 className="text-base font-semibold">Manifest Integrity Badge</h2>
+        <div className={`mt-2 font-medium ${supportPackageManifestIntegrity.allTrue ? "text-green-700" : "text-red-700"}`}>
+          {supportPackageManifestIntegrity.allTrue ? "GREEN: All true" : "RED: Any false"}
+        </div>
+        <ul className="mt-2 list-disc pl-5 text-xs">
+          <li>derivedManifestHashMatches: {String(supportPackageManifestIntegrity.derivedManifestHashMatches)}</li>
+          <li>integrity.manifestHashMatches: {String(supportPackageManifestIntegrity.manifestHashMatches)}</li>
+          <li>
+            integrity.replayFinalStateMatchesManifest:{" "}
+            {String(supportPackageManifestIntegrity.replayFinalStateMatchesManifest)}
+          </li>
+          <li>integrity.telemetryConsistent: {String(supportPackageManifestIntegrity.telemetryConsistent)}</li>
+        </ul>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Package Hash Recompute Badge">
+        <h2 className="text-base font-semibold">Package Hash Recompute Badge</h2>
+        <div className="mt-2 text-xs">PACKAGE_HASH_COMPUTED: {supportPackageComputedHash || "(none)"}</div>
+        <div className="text-xs">PACKAGE_HASH_REFERENCE: {supportPackageHashReference || "(none)"}</div>
+        <div className={`mt-1 font-medium ${supportPackageHashBadge.cls}`}>{supportPackageHashBadge.label}</div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Structured Incident Checklist">
+        <h2 className="text-base font-semibold">Structured Incident Checklist</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-6">
+          {supportPackageChecklistRows.map((row) => (
+            <li key={row.label}>
+              {row.label}: {row.ok ? "PASS" : "FAIL"}
+            </li>
+          ))}
+        </ol>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={onCopySupportPackageChecklist}>
+            Copy Checklist
+          </button>
+          <span role="status" aria-live="polite">
+            {supportPackageChecklistCopyStatus}
+          </span>
+        </div>
+        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">{supportPackageChecklistText}</pre>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Deterministic Issue Draft Generator (Package-aware)">
+        <h2 className="text-base font-semibold">Deterministic Issue Draft Generator (Package-aware)</h2>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={onCopySupportPackageIssueDraft}>
+            Copy package issue draft
+          </button>
+          <span role="status" aria-live="polite">
+            {supportPackageIssueCopyStatus}
+          </span>
+        </div>
+        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">{supportPackageIssueDraftText}</pre>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Package Diff Mode">
+        <h2 className="text-base font-semibold">Package Diff Mode</h2>
+        <div className="mt-2 grid gap-3 md:grid-cols-2">
+          <div>
+            <label htmlFor="support-package-left" className="mb-1 block text-xs">
+              Left support package JSON
+            </label>
+            <textarea
+              id="support-package-left"
+              value={leftPackageJson}
+              onChange={(e) => setLeftPackageJson(e.target.value)}
+              className="w-full rounded border p-2 font-mono text-xs"
+              rows={8}
+            />
+            <div className="mt-1 text-xs">{leftPackageDiffState.error || "Left package ready."}</div>
+          </div>
+          <div>
+            <label htmlFor="support-package-right" className="mb-1 block text-xs">
+              Right support package JSON
+            </label>
+            <textarea
+              id="support-package-right"
+              value={rightPackageJson}
+              onChange={(e) => setRightPackageJson(e.target.value)}
+              className="w-full rounded border p-2 font-mono text-xs"
+              rows={8}
+            />
+            <div className="mt-1 text-xs">{rightPackageDiffState.error || "Right package ready."}</div>
+          </div>
+        </div>
+        {supportPackageDiffRows.length === 0 ? (
+          <div className="mt-2 text-xs">Provide two valid support packages to compare.</div>
+        ) : (
+          <div className="mt-2">
+            <div className="text-xs">First divergence: {supportPackageFirstDivergence}</div>
+            <table className="mt-2 w-full border-collapse text-xs">
+              <thead>
+                <tr>
+                  <th className="border p-2 text-left">field</th>
+                  <th className="border p-2 text-left">left</th>
+                  <th className="border p-2 text-left">right</th>
+                </tr>
+              </thead>
+              <tbody>
+                {supportPackageDiffRows.map((row) => (
+                  <tr key={row.label} className={row.same ? "" : "bg-red-50"}>
+                    <td className="border p-2">{row.label}</td>
+                    <td className="border p-2">{row.left}</td>
+                    <td className="border p-2">{row.right}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Open in Replay CLI">
+        <h2 className="text-base font-semibold">Open in Replay CLI</h2>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={onCopySupportPackageCliHelper}>
+            Copy Replay CLI helper
+          </button>
+          <span role="status" aria-live="polite">
+            {supportPackageCliCopyStatus}
+          </span>
+        </div>
+        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">{supportPackageCliHelperText}</pre>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Bundle shape detector">
