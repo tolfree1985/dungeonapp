@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { buildPromptScaffoldBundleText } from "@/lib/buildPromptScaffoldBundleText";
 import { buildScenarioDraftBundleText } from "@/lib/buildScenarioDraftBundleText";
 import {
   formatCreatorCapDetail,
@@ -142,6 +143,7 @@ export default function CreatorPage() {
   const [myScenarios, setMyScenarios] = useState<MineViewItem[]>([]);
   const [mineStatus, setMineStatus] = useState("My scenarios not loaded.");
   const [draftCopyStatus, setDraftCopyStatus] = useState("");
+  const [promptBundleCopyStatus, setPromptBundleCopyStatus] = useState("");
   const [createDraftStatus, setCreateDraftStatus] = useState("");
   const [forkStatus, setForkStatus] = useState("");
   const [billingBanner, setBillingBanner] = useState("");
@@ -429,6 +431,26 @@ export default function CreatorPage() {
 
     await navigator.clipboard.writeText(text);
     setDraftCopyStatus("Copied");
+  }
+
+  async function onCopyPromptScaffoldBundle() {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      setPromptBundleCopyStatus("Copy not supported");
+      return;
+    }
+    if (!promptParts) {
+      setPromptBundleCopyStatus("Prompt scaffold preview unavailable.");
+      return;
+    }
+
+    const text = buildPromptScaffoldBundleText({
+      preview: promptParts.preview,
+      system: promptParts.system,
+      developer: promptParts.developer,
+      user: promptParts.user,
+    });
+    await navigator.clipboard.writeText(text);
+    setPromptBundleCopyStatus("Copied");
   }
 
   function onImportJson() {
@@ -732,6 +754,16 @@ export default function CreatorPage() {
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Prompt scaffold preview">
         <h2 className="text-base font-semibold">Prompt scaffold preview</h2>
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onCopyPromptScaffoldBundle}
+            className="rounded border px-2 py-1 text-xs"
+          >
+            Copy prompt scaffold bundle
+          </button>
+          <span>{promptBundleCopyStatus}</span>
+        </div>
         {!promptParts ? (
           <div className="mt-2">Prompt scaffold preview unavailable.</div>
         ) : (
