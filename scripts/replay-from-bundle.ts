@@ -311,6 +311,7 @@ async function main() {
   console.log(`FINAL_STATE_HASH ${manifest.replay.finalStateHash}`);
   console.log("REPLAY COMPLETE");
   console.log(`REPLAY_GUARD_SUMMARY ${guardSummary.guardSummary.join(",")}`);
+  console.log(`FAIL_FORWARD_CHECK: ${guardSummary.failForwardCheck}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");
@@ -400,6 +401,10 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : String(err));
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("FAIL_FORWARD_VIOLATION")) {
+    console.log("FAIL_FORWARD_CHECK: FAIL");
+  }
+  console.error(message);
   process.exit(1);
 });

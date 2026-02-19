@@ -90,6 +90,37 @@ function main() {
   });
   assert.deepEqual(undefinedValue.errors, ["SCENARIO_UNDEFINED_DELTA_VALUE"]);
 
+  const deadEndBranch = validateScenarioDeterminism({
+    turns: [
+      {
+        turnIndex: 0,
+        resolution: { tier: "fail" },
+        stateDeltas: [],
+        ledgerAdds: [],
+      },
+    ],
+  });
+  assert.deepEqual(deadEndBranch.errors, ["SCENARIO_DEAD_END_BRANCH"]);
+
+  const validFailureBranchTransition = validateScenarioDeterminism({
+    turns: [
+      {
+        turnIndex: 0,
+        resolution: { tier: "fail" },
+        nextTurnIndex: 1,
+        stateDeltas: [],
+        ledgerAdds: [],
+      },
+      {
+        turnIndex: 1,
+        stateDeltas: [{ op: "flag.set", path: "flags.recovered", value: true }],
+        ledgerAdds: [{ id: "l1", turnIndex: 1 }],
+      },
+    ],
+  });
+  assert.equal(validFailureBranchTransition.valid, true);
+  assert.deepEqual(validFailureBranchTransition.errors, []);
+
   const validLockedScenario = validateScenarioDeterminism({
     turns: [
       {

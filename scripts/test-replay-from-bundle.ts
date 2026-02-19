@@ -15,6 +15,7 @@ import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
 import {
   REPLAY_GUARD_ORDER,
   assertDeltaApplyIdempotency,
+  assertFailForwardInvariant,
   assertLedgerConsistency,
   assertStateDeltaShape,
   assertTurnMonotonicity,
@@ -90,6 +91,49 @@ async function main() {
   assert.doesNotThrow(
     () => assertStateDeltaShape({ op: "flag.set", path: "flags.dockSeen", key: "dockSeen", value: true }),
     "expected valid state delta shape to pass",
+  );
+  assert.doesNotThrow(
+    () =>
+      assertFailForwardInvariant([
+        {
+          seq: 0,
+          turnJson: {
+            resolution: { tier: "fail" },
+            deltas: [{ op: "flag.set", key: "failed_once", value: true, path: "flags.failed_once" }],
+            ledgerAdds: [{ id: "ledger_failforward_invariant_0", turnIndex: 0 }],
+          },
+        },
+      ]),
+    "expected fail-forward invariant to pass when failure applies a state mutation",
+  );
+  assert.throws(
+    () =>
+      assertFailForwardInvariant([
+        {
+          seq: 0,
+          turnJson: {
+            resolution: { tier: "fail" },
+            deltas: [],
+            ledgerAdds: [],
+          },
+        },
+      ]),
+    /FAIL_FORWARD_VIOLATION/,
+    "expected fail-forward invariant to fail when failure has no progression",
+  );
+  assert.doesNotThrow(
+    () =>
+      assertFailForwardInvariant([
+        {
+          seq: 0,
+          turnJson: {
+            resolution: { tier: "fail" },
+            deltas: [],
+            ledgerAdds: [{ id: "ledger_complication_only_0", turnIndex: 0, kind: "complication" }],
+          },
+        },
+      ]),
+    "expected fail-forward invariant to pass when failure includes explicit complication ledger marker",
   );
   assert.throws(
     () => assertStateDeltaShape({ op: "flag.set", path: "", key: "dockSeen", value: true }),
@@ -331,6 +375,7 @@ async function main() {
   );
   const failForwardOut = failForwardReplay.stdout ?? "";
   assert(failForwardOut.includes("TURNS 3"), "expected fail-forward fixture to increment turn count");
+  assert(failForwardOut.includes("FAIL_FORWARD_CHECK: PASS"), "expected fail-forward check pass output");
   const failForwardManifestLine =
     failForwardOut.split(/\r?\n/).find((line) => line.startsWith("SUPPORT_MANIFEST_JSON ")) ?? "";
   assert(failForwardManifestLine.length > 0, "expected fail-forward manifest output");
@@ -339,6 +384,47 @@ async function main() {
     ? failForwardManifestJson.perTurn.find((row: any) => row?.turnIndex === 1)
     : null;
   assert(failForwardRow && failForwardRow.deltaCount > 0, "expected fail-forward turn to include state delta");
+  assert(failForwardRow && failForwardRow.ledgerCount > 0, "expected fail-forward turn to include ledger entries");
+  assert(failForwardRow && failForwardRow.hasResolution === true, "expected fail-forward turn to include resolution marker");
+
+  const failForwardViolationBundle = {
+    bundleId: "bundle-fail-forward-violation",
+    engineVersion: "engine-test",
+    scenarioContentHash: "hash-test",
+    turns: [
+      {
+        turnIndex: 0,
+        stateDeltas: [{ op: "time.inc", by: 1 }],
+        ledgerAdds: [{ id: "ledger_ffv_0", turnIndex: 0 }],
+      },
+      {
+        turnIndex: 1,
+        resolution: { tier: "fail" },
+        stateDeltas: [],
+        ledgerAdds: [],
+      },
+    ],
+  };
+  const failForwardViolationReplay = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=fail-forward-violation",
+      `--bundle-json=${JSON.stringify(failForwardViolationBundle)}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(failForwardViolationReplay.status, 1, "expected fail-forward violation replay to fail");
+  assert(
+    (failForwardViolationReplay.stderr ?? "").includes("FAIL_FORWARD_VIOLATION"),
+    "expected fail-forward violation marker in stderr",
+  );
+  assert(
+    (failForwardViolationReplay.stdout ?? "").includes("FAIL_FORWARD_CHECK: FAIL"),
+    "expected fail-forward check fail output",
+  );
   assert.throws(
     () =>
       replayStateFromTurnJson(
@@ -519,6 +605,7 @@ async function main() {
 
   const out = result.stdout ?? "";
   assert(out.includes("REPLAY COMPLETE"), "expected REPLAY COMPLETE marker");
+  assert(out.includes("FAIL_FORWARD_CHECK: PASS"), "expected FAIL_FORWARD_CHECK PASS marker");
   assert(out.includes("FINAL_STATE_HASH"), "expected FINAL_STATE_HASH marker");
   assert(out.includes("TURNS"), "expected TURNS marker");
   assert(out.includes("INVARIANT_SEQ_CONTIGUOUS"), "expected sequence invariant marker");

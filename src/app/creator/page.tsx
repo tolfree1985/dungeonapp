@@ -97,6 +97,11 @@ const DETERMINISM_ERROR_METADATA: Record<
     reference: "Path: /turns/*/stateDeltas/*",
     hint: "Replace undefined with explicit JSON values.",
   },
+  SCENARIO_DEAD_END_BRANCH: {
+    explanation: "A failure branch does not mutate state and does not transition to another branch.",
+    reference: "Turn: /turns/* with fail resolution",
+    hint: "For fail branches, add a delta or nextTurnIndex/next branch transition.",
+  },
 };
 
 function compareText(a: string, b: string): number {

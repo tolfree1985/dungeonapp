@@ -50,6 +50,7 @@ type ReplayEvent = { seq: number; turnJson: any };
 export type ReplayGuardName =
   | "TURN_MONOTONICITY"
   | "LEDGER_CONSISTENCY"
+  | "FAIL_FORWARD_INVARIANT"
   | "DELTA_SHAPE"
   | "DELTA_NAMESPACE"
   | "DELTA_ORDER"
@@ -60,6 +61,7 @@ export type ReplayGuardName =
 export const REPLAY_GUARD_ORDER: readonly ReplayGuardName[] = [
   "TURN_MONOTONICITY",
   "LEDGER_CONSISTENCY",
+  "FAIL_FORWARD_INVARIANT",
   "DELTA_SHAPE",
   "DELTA_NAMESPACE",
   "DELTA_ORDER",
@@ -251,6 +253,78 @@ function parseLedgerTurnIndex(entry: unknown): number | null {
   return null;
 }
 
+function normalizeText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim().toLowerCase();
+  return text.length > 0 ? text : null;
+}
+
+function readsFailureBand(turnJson: unknown): boolean {
+  if (!isRecord(turnJson)) return false;
+
+  const resolution = isRecord(turnJson.resolution) ? turnJson.resolution : null;
+  const candidates = [
+    resolution?.tier,
+    resolution?.outcome,
+    resolution?.band,
+    turnJson.outcome,
+    turnJson.tier,
+    turnJson.band,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeText(candidate);
+    if (!normalized) continue;
+    if (normalized === "fail" || normalized === "failure" || normalized === "fail-forward") {
+      return true;
+    }
+    if (normalized.includes("fail")) {
+      return true;
+    }
+    if (normalized === "2-6") {
+      return true;
+    }
+  }
+
+  if (resolution && typeof resolution.total === "number" && Number.isFinite(resolution.total)) {
+    return resolution.total <= 6;
+  }
+  return false;
+}
+
+function hasComplicationLedgerTag(entry: unknown): boolean {
+  if (!isRecord(entry)) return false;
+  if (entry.complication === true) return true;
+  const candidates = [entry.kind, entry.tag, entry.type, entry.message, entry.because];
+  for (const candidate of candidates) {
+    const normalized = normalizeText(candidate);
+    if (!normalized) continue;
+    if (normalized === "complication" || normalized.includes("complication")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isQuestFlagStatMutation(delta: unknown): boolean {
+  if (isRecord(delta)) {
+    const path = normalizeDeltaPath(delta.path);
+    if (!path) {
+      const opNoPath = normalizeText(delta.op);
+      if (!opNoPath) return false;
+      return opNoPath.startsWith("quest.") || opNoPath.startsWith("flag.") || opNoPath.startsWith("stats.");
+    }
+    const cleaned = path.startsWith("/") ? path.slice(1) : path;
+    const namespace = cleaned.split(/[./[\]]+/).filter(Boolean)[0] ?? "";
+    if (namespace === "quests" || namespace === "flags" || namespace === "stats") {
+      return true;
+    }
+  }
+  if (!isRecord(delta)) return false;
+  const op = normalizeText(delta.op);
+  if (!op) return false;
+  return op.startsWith("quest.") || op.startsWith("flag.") || op.startsWith("stats.");
+}
+
 function getReplayDeltas(event: ReplayEvent): unknown[] {
   const tj = event?.turnJson ?? {};
   if (event.seq === 0 && !Array.isArray(tj?.deltas)) {
@@ -345,6 +419,23 @@ export function assertLedgerConsistency(events: ReplayEvent[]): void {
   }
 }
 
+export function assertFailForwardInvariant(events: ReplayEvent[]): void {
+  for (const event of events) {
+    const turnJson = isRecord(event.turnJson) ? event.turnJson : {};
+    if (!readsFailureBand(turnJson)) {
+      continue;
+    }
+    const deltas = getReplayDeltas(event);
+    const ledgerAdds = Array.isArray(turnJson.ledgerAdds) ? turnJson.ledgerAdds : [];
+    const hasStateDelta = deltas.length > 0;
+    const hasQuestFlagStat = deltas.some((delta) => isQuestFlagStatMutation(delta));
+    const hasComplicationLedger = ledgerAdds.some((entry) => hasComplicationLedgerTag(entry));
+    if (!hasStateDelta && !hasQuestFlagStat && !hasComplicationLedger) {
+      throw new Error(`FAIL_FORWARD_VIOLATION seq=${event.seq}`);
+    }
+  }
+}
+
 export function assertTurnMonotonicity(events: ReplayEvent[]): void {
   let prev: number | null = null;
   for (const event of events) {
@@ -436,6 +527,7 @@ export type ReplayWithGuardSummary = {
   state: any;
   guardSummary: readonly ReplayGuardName[];
   styleLockPresent: boolean;
+  failForwardCheck: "PASS" | "FAIL";
 };
 
 /**
@@ -458,6 +550,8 @@ function replayStateFromTurnJsonInternal(
   mark("TURN_MONOTONICITY");
   assertLedgerConsistency(events);
   mark("LEDGER_CONSISTENCY");
+  assertFailForwardInvariant(events);
+  mark("FAIL_FORWARD_INVARIANT");
 
   for (const e of events) {
     const rawDeltas = getReplayDeltasStrict(e);
@@ -486,6 +580,7 @@ function replayStateFromTurnJsonInternal(
       state,
       guardSummary: REPLAY_GUARD_ORDER.filter((name) => executedGuards.has(name)),
       styleLockPresent,
+      failForwardCheck: "PASS",
     };
   }
 

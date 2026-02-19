@@ -237,10 +237,86 @@ function parseGuardSummary(stdout: string): string[] | null {
     .filter((name) => name.length > 0);
 }
 
+function parsePerTurnTelemetryRows(stdout: string): Array<{
+  turnIndex: number;
+  deltaCount: number;
+  ledgerCount: number;
+  hasResolution: boolean;
+}> {
+  const rows: Array<{ turnIndex: number; deltaCount: number; ledgerCount: number; hasResolution: boolean }> = [];
+  const pattern =
+    /^TURN_INDEX:\s+(-?\d+)\s+DELTA_COUNT:\s+(\d+)\s+LEDGER_COUNT:\s+(\d+)\s+HAS_RESOLUTION:\s+(true|false)$/;
+  for (const line of stdout.split(/\r?\n/)) {
+    const match = line.match(pattern);
+    if (!match) continue;
+    rows.push({
+      turnIndex: Number(match[1]),
+      deltaCount: Number(match[2]),
+      ledgerCount: Number(match[3]),
+      hasResolution: match[4] === "true",
+    });
+  }
+  rows.sort((a, b) => a.turnIndex - b.turnIndex);
+  return rows;
+}
+
+function isFailureResolution(source: unknown): boolean {
+  if (!isRecord(source)) return false;
+  const resolution = isRecord(source.resolution) ? source.resolution : null;
+  const candidates = [
+    resolution?.tier,
+    resolution?.outcome,
+    resolution?.band,
+    source.outcome,
+    source.tier,
+    source.band,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const normalized = candidate.trim().toLowerCase();
+    if (!normalized) continue;
+    if (normalized === "fail" || normalized === "failure" || normalized === "fail-forward") return true;
+    if (normalized.includes("fail")) return true;
+    if (normalized === "2-6") return true;
+  }
+  if (resolution && typeof resolution.total === "number" && Number.isFinite(resolution.total)) {
+    return resolution.total <= 6;
+  }
+  return false;
+}
+
+function getFailureTurnIndexesFromFixture(fixturePath: string): number[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+    if (!isRecord(parsed) || !isRecord(parsed.originalBundle)) return [];
+    const bundle = parsed.originalBundle;
+    const rawEvents = Array.isArray(bundle.events) ? bundle.events : Array.isArray(bundle.turns) ? bundle.turns : [];
+    const indexes = rawEvents
+      .map((raw, idx) => {
+        if (!isRecord(raw)) return null;
+        const turnIndexRaw = raw.turnIndex ?? raw.seq ?? idx;
+        const turnIndex =
+          typeof turnIndexRaw === "number" && Number.isInteger(turnIndexRaw)
+            ? turnIndexRaw
+            : typeof turnIndexRaw === "string" && /^-?\d+$/.test(turnIndexRaw.trim())
+              ? Number(turnIndexRaw.trim())
+              : idx;
+        const source = isRecord(raw.turnJson) ? raw.turnJson : raw;
+        return isFailureResolution(source) ? turnIndex : null;
+      })
+      .filter((value): value is number => value !== null)
+      .sort((a, b) => a - b);
+    return indexes;
+  } catch {
+    return [];
+  }
+}
+
 function isGuardOrderValid(guards: string[]): boolean {
   const required = [
     "TURN_MONOTONICITY",
     "LEDGER_CONSISTENCY",
+    "FAIL_FORWARD_INVARIANT",
     "DELTA_SHAPE",
     "DELTA_NAMESPACE",
     "DELTA_ORDER",
@@ -293,6 +369,7 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   }
   const scenarioMetadata = readScenarioMetadataFromFixture(fixturePath);
   const hasStyleLockFields = hasStyleLockFieldsInScenario(scenarioMetadata);
+  const failureTurnIndexes = getFailureTurnIndexesFromFixture(fixturePath);
   if (scenarioMetadata) {
     const scenarioValidation = validateScenarioDeterminism(scenarioMetadata);
     if (!scenarioValidation.valid) {
@@ -342,6 +419,23 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   }
   if (hasStyleLockFields && combinedOutput.includes("STYLE_LOCK_VIOLATION")) {
     regressionMarkers.push("GOLDEN_STYLE_LOCK_REGRESSION");
+  }
+  if (failureTurnIndexes.length > 0) {
+    if (!stdout.includes("FAIL_FORWARD_CHECK: PASS")) {
+      regressionMarkers.push("GOLDEN_FAIL_FORWARD_REGRESSION missing=FAIL_FORWARD_CHECK_PASS");
+    }
+    if (combinedOutput.includes("FAIL_FORWARD_VIOLATION")) {
+      regressionMarkers.push("GOLDEN_FAIL_FORWARD_REGRESSION marker=FAIL_FORWARD_VIOLATION");
+    }
+    const perTurnRows = parsePerTurnTelemetryRows(stdout);
+    for (const failureTurnIndex of failureTurnIndexes) {
+      const row = perTurnRows.find((entry) => entry.turnIndex === failureTurnIndex);
+      if (!row || row.deltaCount <= 0) {
+        regressionMarkers.push(
+          `GOLDEN_FAIL_FORWARD_REGRESSION turn=${failureTurnIndex} reason=delta_count`,
+        );
+      }
+    }
   }
   const guardSummary = parseGuardSummary(stdout);
   if (!guardSummary || !isGuardOrderValid(guardSummary)) {

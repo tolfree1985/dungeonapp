@@ -67,6 +67,8 @@ type ScriptedTurn = {
   deltas: unknown[];
   ledgerAdds: unknown[];
   tags: string[];
+  isFailure: boolean;
+  hasBranchTransition: boolean;
 };
 
 function toTurnIndex(value: unknown, fallback: number): number {
@@ -91,6 +93,90 @@ function readTags(turn: unknown): string[] {
       .filter((entry) => entry.length > 0);
   }
   return [];
+}
+
+function normalizeText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim().toLowerCase();
+  return text.length > 0 ? text : null;
+}
+
+function isFailureResolution(source: unknown): boolean {
+  if (!isRecord(source)) return false;
+  const resolution = isRecord(source.resolution) ? source.resolution : null;
+  const candidates = [
+    resolution?.tier,
+    resolution?.outcome,
+    resolution?.band,
+    source.outcome,
+    source.tier,
+    source.band,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeText(candidate);
+    if (!normalized) continue;
+    if (normalized === "fail" || normalized === "failure" || normalized === "fail-forward") {
+      return true;
+    }
+    if (normalized.includes("fail")) {
+      return true;
+    }
+    if (normalized === "2-6") {
+      return true;
+    }
+  }
+  if (resolution && typeof resolution.total === "number" && Number.isFinite(resolution.total)) {
+    return resolution.total <= 6;
+  }
+  return false;
+}
+
+function hasBranchTransition(source: unknown): boolean {
+  if (!isRecord(source)) return false;
+  const directCandidates = [
+    source.next,
+    source.nextTurn,
+    source.nextTurnIndex,
+    source.nextSeq,
+    source.nextSceneId,
+    source.nextBranch,
+    source.branch,
+  ];
+  for (const candidate of directCandidates) {
+    if (typeof candidate === "number" && Number.isInteger(candidate)) return true;
+    if (typeof candidate === "string" && candidate.trim().length > 0) return true;
+  }
+  const branches = isRecord(source.branches) ? source.branches : null;
+  if (branches) {
+    const branchCandidates = [branches.fail, branches.failure, branches.onFail];
+    for (const candidate of branchCandidates) {
+      if (typeof candidate === "number" && Number.isInteger(candidate)) return true;
+      if (typeof candidate === "string" && candidate.trim().length > 0) return true;
+      if (isRecord(candidate)) {
+        if (
+          (typeof candidate.next === "number" && Number.isInteger(candidate.next)) ||
+          (typeof candidate.next === "string" && candidate.next.trim().length > 0)
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function isQuestFlagStatMutation(delta: unknown): boolean {
+  if (!isRecord(delta)) return false;
+  const path = normalizePath(delta.path);
+  if (path) {
+    const namespace = getPathNamespace(path);
+    if (namespace === "quests" || namespace === "flags" || namespace === "stats") {
+      return true;
+    }
+  }
+  const op = normalizeText(delta.op);
+  if (!op) return false;
+  return op.startsWith("quest.") || op.startsWith("flag.") || op.startsWith("stats.");
 }
 
 function extractTurns(scenarioJson: unknown): ScriptedTurn[] {
@@ -119,11 +205,18 @@ function extractTurns(scenarioJson: unknown): ScriptedTurn[] {
         ? turnJson.ledgerAdds
         : [];
     const turnIndex = toTurnIndex(source.turnIndex ?? source.seq, index);
+    const resolutionSource = isRecord(source.resolution)
+      ? source
+      : isRecord(turnJson.resolution)
+        ? turnJson
+        : source;
     return {
       turnIndex,
       deltas,
       ledgerAdds,
       tags: readTags(turn),
+      isFailure: isFailureResolution(resolutionSource),
+      hasBranchTransition: hasBranchTransition(source) || hasBranchTransition(turnJson),
     };
   });
 }
@@ -230,6 +323,14 @@ export function validateScenarioDeterminism(scenarioJson: unknown): {
     }
     if (turn.ledgerAdds.length > 0 && turn.deltas.length === 0) {
       errors.add("SCENARIO_LEDGER_DELTA_MISMATCH");
+    }
+
+    if (turn.isFailure) {
+      const hasQuestFlagStat = turn.deltas.some((delta) => isQuestFlagStatMutation(delta));
+      const hasProgression = turn.deltas.length > 0 || hasQuestFlagStat || turn.hasBranchTransition;
+      if (!hasProgression) {
+        errors.add("SCENARIO_DEAD_END_BRANCH");
+      }
     }
 
     for (const delta of turn.deltas) {
