@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { buildScenarioDraftBundleText } from "@/lib/buildScenarioDraftBundleText";
+import { buildPromptParts } from "@/lib/promptScaffold";
 
 type ValidationIssue = { path: string; code: string; message: string };
 type ScenarioListItem = {
@@ -107,6 +108,51 @@ export default function CreatorPage() {
       return null;
     }
   }, [contentJson]);
+  const promptParts = useMemo(() => {
+    if (!preview) {
+      return null;
+    }
+
+    try {
+      const initialState =
+        preview.initialState && typeof preview.initialState === "object" ? preview.initialState : {};
+      const startPrompt =
+        typeof preview.start?.prompt === "string" && preview.start.prompt.trim()
+          ? preview.start.prompt
+          : "(no start prompt)";
+
+      return buildPromptParts({
+        narrationInput: {
+          style: {
+            genre: "mystery-adventure",
+            tone: "grounded, serious",
+            pov: "second-person",
+            tense: "present",
+            allowedMagicLevel: "low-or-unclear",
+            profanity: "none",
+            maxWords: 220,
+          },
+          state: initialState,
+          playerInput: startPrompt,
+          resolution: {
+            roll: { d1: 3, d2: 4, total: 7 },
+            tier: "mixed",
+          },
+          stateDeltas: [],
+          causalLedgerAdds: [],
+          scene: {},
+        },
+        memory: {
+          injected: [],
+          suppressedIds: [],
+          matchedIds: [],
+          gate: null,
+        },
+      });
+    } catch {
+      return null;
+    }
+  }, [preview]);
 
   async function loadMyScenarios() {
     const trimmedOwnerId = ownerId.trim();
@@ -333,6 +379,23 @@ export default function CreatorPage() {
             </li>
           ))}
         </ol>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Prompt scaffold preview">
+        <h2 className="text-base font-semibold">Prompt scaffold preview</h2>
+        {!promptParts ? (
+          <div className="mt-2">Prompt scaffold preview unavailable.</div>
+        ) : (
+          <div className="mt-2 space-y-2">
+            <div>Preview: {promptParts.preview}</div>
+            <div>System:</div>
+            <pre className="rounded border p-2 whitespace-pre-wrap">{promptParts.system}</pre>
+            <div>Developer:</div>
+            <pre className="rounded border p-2 whitespace-pre-wrap">{promptParts.developer}</pre>
+            <div>User:</div>
+            <pre className="rounded border p-2 whitespace-pre-wrap">{promptParts.user}</pre>
+          </div>
+        )}
       </section>
     </main>
   );
