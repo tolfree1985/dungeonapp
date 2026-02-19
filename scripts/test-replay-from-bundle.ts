@@ -13,6 +13,7 @@ import {
 } from "../src/lib/support/supportManifest";
 import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
 import {
+  CONSEQUENCE_RULE_TABLE,
   REPLAY_GUARD_ORDER,
   assertCausalCoverage,
   assertDeltaApplyIdempotency,
@@ -20,6 +21,7 @@ import {
   assertLedgerConsistency,
   assertStateDeltaShape,
   assertTurnMonotonicity,
+  classifyConsequence,
   replayStateFromTurnJson,
   replayStateFromTurnJsonWithGuardSummary,
 } from "../src/lib/game/replay";
@@ -87,6 +89,71 @@ async function main() {
     manifestA.telemetry,
     manifestB.telemetry,
     "expected replay telemetry to be idempotent across runs",
+  );
+
+  const mutableConsequenceRules = CONSEQUENCE_RULE_TABLE as {
+    healthLossHighThreshold: number;
+    relationshipNegativeThreshold: number;
+    reputationNegativeThreshold: number;
+    namespaceEscalationMinor: number;
+    namespaceEscalationMajor: number;
+    failureMinimumRisk: "MODERATE";
+    costTypeOrder: readonly ["HEALTH", "RESOURCE", "RELATIONSHIP", "REPUTATION", "TIME", "FLAG"];
+  };
+  const originalHealthLossHighThreshold = mutableConsequenceRules.healthLossHighThreshold;
+  try {
+    const thresholdProbeTurn = {
+      deltas: [{ op: "stats.set", path: "stats.health", before: 10, after: 7 }],
+      ledgerAdds: [],
+    };
+    assert.equal(
+      classifyConsequence(thresholdProbeTurn).riskLevel,
+      "MODERATE",
+      "expected default threshold to keep 3-point health loss in MODERATE risk",
+    );
+    mutableConsequenceRules.healthLossHighThreshold = 2;
+    assert.equal(
+      classifyConsequence(thresholdProbeTurn).riskLevel,
+      "HIGH",
+      "expected rule-table threshold update to drive consequence classification",
+    );
+  } finally {
+    mutableConsequenceRules.healthLossHighThreshold = originalHealthLossHighThreshold;
+  }
+
+  const orderedCostTypes = classifyConsequence({
+    deltas: [
+      { op: "flag.set", path: "flags.alerted", value: true },
+      { op: "stats.set", path: "stats.health", before: 10, after: 8 },
+      { op: "inv.set", path: "inventory.supplies", before: 3, after: 2 },
+      { op: "relationship.shift", path: "relationships.rival", before: 2, after: 1 },
+      { op: "stats.set", path: "stats.reputation.guild", before: 5, after: 4 },
+      { op: "time.inc", path: "world.time", before: 1, after: 2 },
+    ],
+    ledgerAdds: [],
+  }).costTypes;
+  assert.deepEqual(
+    orderedCostTypes,
+    [...CONSEQUENCE_RULE_TABLE.costTypeOrder],
+    "expected COST_TYPES to follow deterministic rule-table order",
+  );
+
+  assert.equal(
+    classifyConsequence({
+      deltas: [{ op: "flag.set", path: "flags.alerted", value: true }],
+      ledgerAdds: [{ message: "stakes:HIGH" }],
+    }).riskLevel,
+    "HIGH",
+    "expected stakes:HIGH marker to elevate deterministic risk classification",
+  );
+  assert.equal(
+    classifyConsequence({
+      resolution: { tier: "fail" },
+      deltas: [{ op: "stats.set", path: "stats.health", before: 10, after: 5 }],
+      ledgerAdds: [{ message: "risk:LOW" }],
+    }).riskLevel,
+    "MODERATE",
+    "expected failure risk floor to prevent LOW suppression by ledger stakes override",
   );
 
   assert.doesNotThrow(

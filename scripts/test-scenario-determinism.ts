@@ -146,6 +146,30 @@ function main() {
   assert.equal(meaningfulFailureFlag.valid, true);
   assert.deepEqual(meaningfulFailureFlag.errors, []);
 
+  const contradictoryStakes = validateScenarioDeterminism({
+    turns: [
+      {
+        turnIndex: 0,
+        resolution: { tier: "fail" },
+        stateDeltas: [{ op: "stats.set", path: "stats.health", before: 10, after: 5 }],
+        ledgerAdds: [{ id: "l0", turnIndex: 0, message: "risk:LOW" }],
+      },
+    ],
+  });
+  assert.deepEqual(contradictoryStakes.errors, ["SCENARIO_STAKES_CONTRADICTION"]);
+
+  const elevatedStakes = validateScenarioDeterminism({
+    turns: [
+      {
+        turnIndex: 0,
+        stateDeltas: [{ op: "flag.set", path: "flags.opened", value: true }],
+        ledgerAdds: [{ id: "l0", turnIndex: 0, message: "stakes:HIGH" }],
+      },
+    ],
+  });
+  assert.equal(elevatedStakes.valid, true);
+  assert.deepEqual(elevatedStakes.errors, []);
+
   const validLockedScenario = validateScenarioDeterminism({
     turns: [
       {

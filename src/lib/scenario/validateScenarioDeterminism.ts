@@ -1,8 +1,14 @@
-import { ALLOWED_STATE_NAMESPACES } from "../game/replay";
+import {
+  ALLOWED_STATE_NAMESPACES,
+  classifyConsequence,
+  readLedgerStakesRiskOverride,
+  type ConsequenceRiskLevel,
+} from "../game/replay";
 
 const STYLE_LOCK_KEYS = new Set(["toneLock", "genreLock", "pacingLock"]);
 const STYLE_LOCK_ALLOWED_VALUE_LIST = ["none", "unlocked", "locked"].sort(compareText);
 const STYLE_LOCK_ALLOWED_VALUES = new Set(STYLE_LOCK_ALLOWED_VALUE_LIST);
+const CONSEQUENCE_RISK_ORDER: ConsequenceRiskLevel[] = ["LOW", "MODERATE", "HIGH"];
 
 function compareText(a: string, b: string): number {
   if (a === b) return 0;
@@ -216,6 +222,12 @@ function isTrivialFailureFlagDelta(delta: unknown): boolean {
   return true;
 }
 
+function compareConsequenceRisk(a: ConsequenceRiskLevel, b: ConsequenceRiskLevel): number {
+  const ai = CONSEQUENCE_RISK_ORDER.indexOf(a);
+  const bi = CONSEQUENCE_RISK_ORDER.indexOf(b);
+  return ai - bi;
+}
+
 function extractTurns(scenarioJson: unknown): ScriptedTurn[] {
   if (!isRecord(scenarioJson)) return [];
   const rawTurns = Array.isArray(scenarioJson.turns)
@@ -381,6 +393,20 @@ export function validateScenarioDeterminism(scenarioJson: unknown): {
         turn.deltas.length > 0 && turn.deltas.every((delta) => isTrivialFailureFlagDelta(delta));
       if (!hasMeaningfulFailureProgression && hasOnlyTrivialFlagMutation) {
         errors.add("SCENARIO_MEANINGLESS_FAILURE");
+      }
+    }
+
+    const stakesOverride = readLedgerStakesRiskOverride(turn.ledgerAdds);
+    if (stakesOverride) {
+      const consequenceInput = {
+        deltas: turn.deltas,
+        ledgerAdds: turn.ledgerAdds,
+        resolution: turn.isFailure ? { tier: "fail" } : undefined,
+      };
+      const baseRisk = classifyConsequence(consequenceInput, { ignoreLedgerStakesOverride: true }).riskLevel;
+      const effectiveRisk = classifyConsequence(consequenceInput).riskLevel;
+      if (compareConsequenceRisk(effectiveRisk, baseRisk) < 0) {
+        errors.add("SCENARIO_STAKES_CONTRADICTION");
       }
     }
 

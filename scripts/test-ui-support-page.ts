@@ -127,6 +127,11 @@ function main() {
   assert(dashboardSource.includes("RISK_LEVEL"), "Expected per-turn telemetry RISK_LEVEL header");
   assert(dashboardSource.includes("COST_TYPES"), "Expected per-turn telemetry COST_TYPES header");
   assert(dashboardSource.includes("ESCALATION"), "Expected per-turn telemetry ESCALATION header");
+  assert(dashboardSource.includes("explainConsequence"), "Expected deterministic stakes reason derivation");
+  assert(
+    dashboardSource.includes('row.stakesReason.join("\\n")'),
+    "Expected deterministic stakes reason tooltip lines in per-turn telemetry",
+  );
   assert(dashboardSource.includes('row.riskLevel === "HIGH"'), "Expected high-risk row highlighting logic");
   assert(dashboardSource.includes("FIRST_DRIFT_TURN_INDEX:"), "Expected first-drift turn index signal");
   assert(dashboardSource.includes("FIRST_DRIFT_METRIC:"), "Expected first-drift metric signal");

@@ -107,6 +107,11 @@ const DETERMINISM_ERROR_METADATA: Record<
     reference: "Turn: /turns/* with fail resolution",
     hint: "On failure, mutate quests/stats/relationships/inventory or set a non-trivial progression flag.",
   },
+  SCENARIO_STAKES_CONTRADICTION: {
+    explanation: "An explicit stakes marker lowers risk below what deterministic deltas imply.",
+    reference: "Turn: /turns/*/ledgerAdds/* with stakes:* or risk:* markers",
+    hint: "Use stakes markers to elevate risk or align with deterministic deltas; do not understate structural impact.",
+  },
 };
 
 function compareText(a: string, b: string): number {

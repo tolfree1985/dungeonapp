@@ -63,6 +63,23 @@ export type ConsequenceSummary = {
   escalation: ConsequenceEscalation;
 };
 
+export const CONSEQUENCE_RULE_TABLE = {
+  healthLossHighThreshold: 3,
+  relationshipNegativeThreshold: 1,
+  reputationNegativeThreshold: 1,
+  namespaceEscalationMinor: 2,
+  namespaceEscalationMajor: 3,
+  failureMinimumRisk: "MODERATE" as const,
+  costTypeOrder: [
+    "HEALTH",
+    "RESOURCE",
+    "RELATIONSHIP",
+    "REPUTATION",
+    "TIME",
+    "FLAG",
+  ] as const,
+} as const;
+
 export type CausalCoverageSummary = {
   totalDeltas: number;
   explainedDeltas: number;
@@ -367,14 +384,7 @@ const FAIL_FORWARD_SIGNAL_PRIORITY: readonly FailForwardSignal[] = [
   "STATE_DELTA",
 ] as const;
 
-const CONSEQUENCE_COST_ORDER: readonly ConsequenceCostType[] = [
-  "TIME",
-  "HEALTH",
-  "RESOURCE",
-  "RELATIONSHIP",
-  "REPUTATION",
-  "FLAG",
-] as const;
+const CONSEQUENCE_COST_ORDER: readonly ConsequenceCostType[] = CONSEQUENCE_RULE_TABLE.costTypeOrder;
 
 const CONSEQUENCE_RISK_ORDER: readonly ConsequenceRiskLevel[] = ["LOW", "MODERATE", "HIGH"] as const;
 const CONSEQUENCE_ESCALATION_ORDER: readonly ConsequenceEscalation[] = ["NONE", "MINOR", "MAJOR"] as const;
@@ -443,18 +453,72 @@ function ledgerMentions(text: string, token: string): boolean {
   return tokenInText(text, token.toLowerCase());
 }
 
-function consequenceFromTurn(source: unknown): {
+export type ConsequenceClassifierOptions = {
+  ignoreLedgerStakesOverride?: boolean;
+};
+
+function parseConsequenceRiskMarker(raw: string): ConsequenceRiskLevel | null {
+  const marker = raw.trim();
+  if (marker === "stakes:LOW" || marker === "risk:LOW") return "LOW";
+  if (marker === "stakes:MODERATE" || marker === "risk:MODERATE") return "MODERATE";
+  if (marker === "stakes:HIGH" || marker === "risk:HIGH") return "HIGH";
+  return null;
+}
+
+function readStringsForConsequenceMarker(source: unknown, out: string[]): void {
+  if (typeof source === "string") {
+    out.push(source);
+    return;
+  }
+  if (Array.isArray(source)) {
+    for (const entry of source) {
+      if (typeof entry === "string") {
+        out.push(entry);
+      }
+    }
+    return;
+  }
+}
+
+export function readLedgerStakesRiskOverride(ledgerAdds: unknown[]): ConsequenceRiskLevel | null {
+  let last: ConsequenceRiskLevel | null = null;
+  for (const entry of ledgerAdds) {
+    if (!isRecord(entry)) continue;
+    const candidates: string[] = [];
+    readStringsForConsequenceMarker(entry.stakes, candidates);
+    readStringsForConsequenceMarker(entry.risk, candidates);
+    readStringsForConsequenceMarker(entry.marker, candidates);
+    readStringsForConsequenceMarker(entry.message, candidates);
+    readStringsForConsequenceMarker(entry.because, candidates);
+    readStringsForConsequenceMarker(entry.kind, candidates);
+    readStringsForConsequenceMarker(entry.tag, candidates);
+    readStringsForConsequenceMarker(entry.tags, candidates);
+    readStringsForConsequenceMarker(entry.markers, candidates);
+    for (const candidate of candidates) {
+      const parsed = parseConsequenceRiskMarker(candidate);
+      if (parsed) {
+        last = parsed;
+      }
+    }
+  }
+  return last;
+}
+
+function consequenceFromTurn(source: unknown, options?: ConsequenceClassifierOptions): {
   summary: ConsequenceSummary;
   namespacesChanged: Set<string>;
+  reasonLines: string[];
 } {
   const deltas = readTurnDeltasForConsequence(source);
   const ledgerAdds = readTurnLedgerForConsequence(source);
+  const ignoreLedgerStakesOverride = options?.ignoreLedgerStakesOverride === true;
 
   const namespacesChanged = new Set<string>();
   let healthDecreaseMax = 0;
   let relationshipNegative = false;
   let reputationNegative = false;
   let riskyFlagMutation = false;
+  const reasonLines: string[] = [];
 
   const costTypes = new Set<ConsequenceCostType>();
   const ledgerText = ledgerAdds.map((entry) => ledgerEntrySearchText(entry)).join("\n");
@@ -517,21 +581,67 @@ function consequenceFromTurn(source: unknown): {
   if (ledgerMentions(ledgerText, "flag")) costTypes.add("FLAG");
 
   let riskLevel: ConsequenceRiskLevel = "LOW";
-  if (healthDecreaseMax > 3) {
+  if (healthDecreaseMax > CONSEQUENCE_RULE_TABLE.healthLossHighThreshold) {
     riskLevel = "HIGH";
+    reasonLines.push(
+      `HEALTH cost: stats.health decreased by ${healthDecreaseMax} (>=${CONSEQUENCE_RULE_TABLE.healthLossHighThreshold})`,
+    );
   } else if (healthDecreaseMax > 0 || relationshipNegative || reputationNegative || riskyFlagMutation) {
     riskLevel = "MODERATE";
+    if (healthDecreaseMax > 0) {
+      reasonLines.push(
+        `HEALTH cost: stats.health decreased by ${healthDecreaseMax} (<${CONSEQUENCE_RULE_TABLE.healthLossHighThreshold + 1})`,
+      );
+    }
+    if (relationshipNegative) {
+      reasonLines.push(
+        `RELATIONSHIP cost: negative shift detected (>=${CONSEQUENCE_RULE_TABLE.relationshipNegativeThreshold})`,
+      );
+    }
+    if (reputationNegative) {
+      reasonLines.push(
+        `REPUTATION cost: negative shift detected (>=${CONSEQUENCE_RULE_TABLE.reputationNegativeThreshold})`,
+      );
+    }
+    if (riskyFlagMutation) {
+      reasonLines.push("FLAG cost: risky failure flag mutation detected");
+    }
   }
-  if (namespacesChanged.size >= 3) {
+  if (namespacesChanged.size >= CONSEQUENCE_RULE_TABLE.namespaceEscalationMajor) {
     riskLevel = "HIGH";
-  } else if (namespacesChanged.size >= 2 && compareConsequenceRisk(riskLevel, "MODERATE") < 0) {
+  } else if (
+    namespacesChanged.size >= CONSEQUENCE_RULE_TABLE.namespaceEscalationMinor &&
+    compareConsequenceRisk(riskLevel, "MODERATE") < 0
+  ) {
     riskLevel = "MODERATE";
   }
+
+  const stakesOverride = ignoreLedgerStakesOverride ? null : readLedgerStakesRiskOverride(ledgerAdds);
+  if (stakesOverride) {
+    if (compareConsequenceRisk(stakesOverride, riskLevel) > 0) {
+      riskLevel = stakesOverride;
+      reasonLines.push(`RISK override: ${stakesOverride}`);
+    } else if (compareConsequenceRisk(stakesOverride, riskLevel) < 0) {
+      const floor = readsFailureBand(source) ? CONSEQUENCE_RULE_TABLE.failureMinimumRisk : "LOW";
+      riskLevel =
+        compareConsequenceRisk(stakesOverride, floor) >= 0 ? stakesOverride : floor;
+      reasonLines.push(`RISK override (bounded): ${riskLevel}`);
+    }
+  }
+
   let escalation: ConsequenceEscalation = "NONE";
-  if (namespacesChanged.size >= 3 || riskLevel === "HIGH") {
+  if (
+    namespacesChanged.size >= CONSEQUENCE_RULE_TABLE.namespaceEscalationMajor ||
+    riskLevel === "HIGH"
+  ) {
     escalation = "MAJOR";
-  } else if (namespacesChanged.size >= 2 || riskLevel === "MODERATE") {
+    reasonLines.push(`ESCALATION MAJOR: ${namespacesChanged.size} namespaces changed`);
+  } else if (
+    namespacesChanged.size >= CONSEQUENCE_RULE_TABLE.namespaceEscalationMinor ||
+    riskLevel === "MODERATE"
+  ) {
     escalation = "MINOR";
+    reasonLines.push(`ESCALATION MINOR: ${namespacesChanged.size} namespaces changed`);
   }
 
   const orderedCostTypes = [...costTypes].sort(
@@ -544,6 +654,7 @@ function consequenceFromTurn(source: unknown): {
       escalation,
     },
     namespacesChanged,
+    reasonLines,
   };
 }
 
@@ -565,8 +676,18 @@ export function classifyFailForwardSignal(turnJson: unknown): FailForwardSignal 
   return null;
 }
 
-export function classifyConsequence(turnEvent: unknown): ConsequenceSummary {
-  return consequenceFromTurn(turnEvent).summary;
+export function classifyConsequence(
+  turnEvent: unknown,
+  options?: ConsequenceClassifierOptions,
+): ConsequenceSummary {
+  return consequenceFromTurn(turnEvent, options).summary;
+}
+
+export function explainConsequence(
+  turnEvent: unknown,
+  options?: ConsequenceClassifierOptions,
+): string[] {
+  return consequenceFromTurn(turnEvent, options).reasonLines;
 }
 
 export function aggregateConsequences(turnEvents: unknown[]): ConsequenceSummary {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { buildDeltaLedgerExplanationRows, classifyConsequence, classifyFailForwardSignal } from "@/lib/game/replay";
+import { buildDeltaLedgerExplanationRows, classifyConsequence, classifyFailForwardSignal, explainConsequence } from "@/lib/game/replay";
 import { categorizeDeltaPath } from "@/lib/support/deltaPathMeaningMap";
 import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministicReproCliText";
 import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
@@ -111,6 +111,7 @@ type PerTurnTelemetryRow = {
   riskLevel: "LOW" | "MODERATE" | "HIGH";
   costTypes: string;
   escalation: "NONE" | "MINOR" | "MAJOR";
+  stakesReason: string[];
 };
 
 type ReplayTelemetryReference = {
@@ -530,7 +531,17 @@ function readPathPerTurnTelemetry(bundle: unknown, candidates: string[][]): PerT
       const escalation: "NONE" | "MINOR" | "MAJOR" =
         normalizedEscalation === "MAJOR" ? "MAJOR" : normalizedEscalation === "MINOR" ? "MINOR" : "NONE";
 
-      rows.push({ turnIndex, deltaCount, ledgerCount, hasResolution, failForwardSignal, riskLevel, costTypes, escalation });
+      rows.push({
+        turnIndex,
+        deltaCount,
+        ledgerCount,
+        hasResolution,
+        failForwardSignal,
+        riskLevel,
+        costTypes,
+        escalation,
+        stakesReason: [],
+      });
     }
 
     rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
@@ -1313,14 +1324,17 @@ export function SupportDashboard({
   const perTurnTelemetry = useMemo<PerTurnTelemetryRow[]>(() => {
     const failForwardSignalByTurn = new Map<number, string>();
     const consequenceByTurn = new Map<number, ReturnType<typeof classifyConsequence>>();
+    const stakesReasonByTurn = new Map<number, string[]>();
     turnRows.forEach((row, index) => {
       const turnIndex = parseTurnIndex(row.turnIndex, index);
       const signal = classifyFailForwardSignal(row.rawTurn);
       const consequence = classifyConsequence(row.rawTurn);
+      const reasonLines = explainConsequence(row.rawTurn);
       if (signal) {
         failForwardSignalByTurn.set(turnIndex, signal);
       }
       consequenceByTurn.set(turnIndex, consequence);
+      stakesReasonByTurn.set(turnIndex, reasonLines);
     });
 
     if (supportManifest) {
@@ -1331,20 +1345,26 @@ export function SupportDashboard({
           riskLevel: (consequenceByTurn.get(row.turnIndex)?.riskLevel ?? "LOW") as "LOW" | "MODERATE" | "HIGH",
           costTypes: (consequenceByTurn.get(row.turnIndex)?.costTypes ?? []).join(","),
           escalation: (consequenceByTurn.get(row.turnIndex)?.escalation ?? "NONE") as "NONE" | "MINOR" | "MAJOR",
+          stakesReason: stakesReasonByTurn.get(row.turnIndex) ?? [],
         }))
         .sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
     }
 
-    const rows = turnRows.map((row, index) => ({
-      turnIndex: parseTurnIndex(row.turnIndex, index),
-      deltaCount: row.stateDeltas.length,
-      ledgerCount: row.ledgerAdds.length,
-      hasResolution: row.resolution !== "(none)",
-      failForwardSignal: classifyFailForwardSignal(row.rawTurn) ?? "",
-      riskLevel: classifyConsequence(row.rawTurn).riskLevel,
-      costTypes: classifyConsequence(row.rawTurn).costTypes.join(","),
-      escalation: classifyConsequence(row.rawTurn).escalation,
-    }));
+    const rows = turnRows.map((row, index) => {
+      const turnIndex = parseTurnIndex(row.turnIndex, index);
+      const consequence = consequenceByTurn.get(turnIndex) ?? classifyConsequence(row.rawTurn);
+      return {
+        turnIndex,
+        deltaCount: row.stateDeltas.length,
+        ledgerCount: row.ledgerAdds.length,
+        hasResolution: row.resolution !== "(none)",
+        failForwardSignal: failForwardSignalByTurn.get(turnIndex) ?? "",
+        riskLevel: consequence.riskLevel,
+        costTypes: consequence.costTypes.join(","),
+        escalation: consequence.escalation,
+        stakesReason: stakesReasonByTurn.get(turnIndex) ?? [],
+      };
+    });
     rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
     return rows;
   }, [supportManifest, turnRows]);
@@ -2596,7 +2616,9 @@ export function SupportDashboard({
                     <td className="border p-2">{row.ledgerCount}</td>
                     <td className="border p-2">{String(row.hasResolution)}</td>
                     <td className="border p-2">{row.failForwardSignal}</td>
-                    <td className="border p-2">{row.riskLevel}</td>
+                    <td className="border p-2" title={row.stakesReason.length > 0 ? row.stakesReason.join("\n") : "(none)"}>
+                      {row.riskLevel}
+                    </td>
                     <td className="border p-2">{row.costTypes || "(none)"}</td>
                     <td className="border p-2">{row.escalation}</td>
                   </tr>
