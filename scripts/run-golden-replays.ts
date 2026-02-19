@@ -10,6 +10,7 @@ type GoldenIndex = {
 type CliArgs = {
   list: boolean;
   checkIndex: boolean;
+  noParallel: boolean;
 };
 
 type FixtureRunResult =
@@ -23,12 +24,15 @@ type FixtureRunResult =
       ok: false;
       fixtureName: string;
       markers: string[];
+      excerptLines: string[];
     };
 
 function parseArgs(argv: string[]): CliArgs {
+  const explicitParallel = argv.includes("--parallel");
   return {
     list: argv.includes("--list"),
     checkIndex: argv.includes("--check-index"),
+    noParallel: argv.includes("--no-parallel") || !explicitParallel,
   };
 }
 
@@ -133,10 +137,71 @@ function collectFailureMarkers(text: string): string[] {
   return out;
 }
 
+function parseGuardSummary(stdout: string): string[] | null {
+  const line = stdout
+    .split(/\r?\n/)
+    .find((entry) => entry.startsWith("REPLAY_GUARD_SUMMARY "));
+  if (!line) return null;
+  return line
+    .replace(/^REPLAY_GUARD_SUMMARY\s+/, "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
+function isGuardOrderValid(guards: string[]): boolean {
+  const required = [
+    "TURN_MONOTONICITY",
+    "LEDGER_CONSISTENCY",
+    "DELTA_SHAPE",
+    "DELTA_NAMESPACE",
+    "DELTA_ORDER",
+    "DELTA_APPLY_IDEMPOTENCY",
+    "REPLAY_STATE_INVARIANT",
+  ];
+  let last = -1;
+  for (const name of required) {
+    const idx = guards.indexOf(name);
+    if (idx < 0 || idx <= last) return false;
+    last = idx;
+  }
+  return true;
+}
+
+function buildFailureExcerpt(stdout: string, markers: string[]): string[] {
+  const out: string[] = [];
+  out.push(`FIRST_FAIL_MARKER ${markers[0] ?? "UNKNOWN"}`);
+
+  const lines = stdout.split(/\r?\n/);
+  const summaryPrefixes = [
+    "REPRO_PACK_SUMMARY",
+    "PACKAGE_VERSION:",
+    "MANIFEST_VERSION:",
+    "MANIFEST_HASH:",
+    "FINAL_STATE_HASH:",
+    "DRIFT_SEVERITY:",
+  ];
+  for (const prefix of summaryPrefixes) {
+    const line = lines.find((entry) => entry.startsWith(prefix));
+    if (line) out.push(line);
+  }
+
+  const driftTurnLine = lines.find((entry) => entry.startsWith("FIRST_DRIFT_TURN_INDEX"));
+  if (driftTurnLine) out.push(driftTurnLine);
+  const driftMetricLine = lines.find((entry) => entry.startsWith("FIRST_DRIFT_METRIC"));
+  if (driftMetricLine) out.push(driftMetricLine);
+  return out;
+}
+
 function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: string): FixtureRunResult {
   const schemaMarkers = validateFixtureSchema(fixtureName, fixturePath);
   if (schemaMarkers.length > 0) {
-    return { ok: false, fixtureName, markers: schemaMarkers };
+    return {
+      ok: false,
+      fixtureName,
+      markers: schemaMarkers,
+      excerptLines: buildFailureExcerpt("", schemaMarkers),
+    };
   }
 
   const child = spawnSync(
@@ -172,12 +237,18 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   if (stdout.includes("DRIFT_BLOCK_MISSING")) {
     regressionMarkers.push("GOLDEN_REGRESSION unexpected=DRIFT_BLOCK_MISSING");
   }
+  const guardSummary = parseGuardSummary(stdout);
+  if (!guardSummary || !isGuardOrderValid(guardSummary)) {
+    regressionMarkers.push("GOLDEN_GUARD_SUMMARY_MISSING");
+  }
 
   if (regressionMarkers.length > 0) {
+    const markers = [...regressionMarkers, ...collectFailureMarkers(`${stdout}\n${stderr}`)];
     return {
       ok: false,
       fixtureName,
-      markers: [...regressionMarkers, ...collectFailureMarkers(`${stdout}\n${stderr}`)],
+      markers,
+      excerptLines: buildFailureExcerpt(stdout, markers),
     };
   }
 
@@ -195,6 +266,7 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
       ok: false,
       fixtureName,
       markers: ["GOLDEN_REGRESSION summary_parse", ...collectFailureMarkers(message)],
+      excerptLines: buildFailureExcerpt(stdout, ["GOLDEN_REGRESSION summary_parse"]),
     };
   }
 }
@@ -219,6 +291,11 @@ function main(): void {
     console.log(`GOLDEN_INDEX_OK count=${index.fixtures.length}`);
     return;
   }
+  if (!args.noParallel) {
+    throw new Error("GOLDEN_MODE_INVALID parallel_not_supported");
+  }
+  console.log(`GOLDEN_ENV NODE=${process.versions.node}`);
+  console.log("GOLDEN_MODE SEQUENTIAL");
 
   let passCount = 0;
   let failCount = 0;
@@ -231,6 +308,11 @@ function main(): void {
       passCount += 1;
     } else {
       console.error(`GOLDEN_FAIL ${result.fixtureName}`);
+      console.error("GOLDEN_FAILURE_EXCERPT_BEGIN");
+      for (const line of result.excerptLines) {
+        console.error(line);
+      }
+      console.error("GOLDEN_FAILURE_EXCERPT_END");
       for (const marker of result.markers) {
         console.error(`MARKER ${marker}`);
       }

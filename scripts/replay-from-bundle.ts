@@ -8,10 +8,12 @@ import {
   serializeSupportManifest,
 } from "../src/lib/support/supportManifest";
 import { SUPPORT_PACKAGE_VERSION, type DriftSeverity, type SupportPackageV1 } from "../src/lib/support/supportPackage";
+import { replayStateFromTurnJsonWithGuardSummary } from "../src/lib/game/replay";
 
 type ReplaySupportPackage = Omit<SupportPackageV1, "drift"> & {
   drift?: SupportPackageV1["drift"];
 };
+type ReplayEvent = { seq: number; turnJson: any };
 
 function stableStringify(value: unknown): string {
   const normalize = (input: unknown): unknown => {
@@ -35,6 +37,52 @@ function stableStringify(value: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function asSeq(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return Number(value.trim());
+  return fallback;
+}
+
+function toTurnJson(source: any): any {
+  const direct = source?.turnJson;
+  if (direct && typeof direct === "object") {
+    const deltas = Array.isArray(direct.deltas)
+      ? direct.deltas
+      : Array.isArray(source?.deltas)
+        ? source.deltas
+        : Array.isArray(source?.stateDeltas)
+          ? source.stateDeltas
+          : [];
+    return { ...direct, deltas, resolution: direct?.resolution ?? source?.resolution };
+  }
+
+  const deltas = Array.isArray(source?.deltas)
+    ? source.deltas
+    : Array.isArray(source?.stateDeltas)
+      ? source.stateDeltas
+      : [];
+
+  return {
+    deltas,
+    ledgerAdds: Array.isArray(source?.ledgerAdds) ? source.ledgerAdds : [],
+    resolution: source?.resolution,
+  };
+}
+
+function extractEvents(bundle: unknown, turnLimit?: number): ReplayEvent[] {
+  const root = isRecord(bundle) ? bundle : {};
+  const rawEvents = Array.isArray(root.events) ? root.events : Array.isArray(root.turns) ? root.turns : [];
+  const mapped = rawEvents.map((raw: any, index: number) => ({
+    seq: asSeq(raw?.seq ?? raw?.turnIndex, index),
+    turnJson: toTurnJson(raw),
+  }));
+  mapped.sort((a, b) => a.seq - b.seq);
+  if (typeof turnLimit === "number" && Number.isInteger(turnLimit)) {
+    return mapped.filter((event) => event.seq <= turnLimit);
+  }
+  return mapped;
 }
 
 function parseArgs(argv: string[]): Record<string, string> {
@@ -250,6 +298,7 @@ async function main() {
 
   const bundleId = args["bundle-id"] ?? "(none)";
   const perTurn = [...manifest.perTurn].sort((a, b) => a.turnIndex - b.turnIndex);
+  const guardSummary = replayStateFromTurnJsonWithGuardSummary(extractEvents(bundle, turnLimit));
   const contiguous = isSeqContiguous(perTurn.map((row) => row.turnIndex));
   const ledgerCount = manifest.telemetry.totalLedgerEntries;
   const deltaCount = manifest.telemetry.totalStateDeltas;
@@ -261,6 +310,7 @@ async function main() {
   console.log(`INVARIANT_DELTA_COUNT ${deltaCount}`);
   console.log(`FINAL_STATE_HASH ${manifest.replay.finalStateHash}`);
   console.log("REPLAY COMPLETE");
+  console.log(`REPLAY_GUARD_SUMMARY ${guardSummary.guardSummary.join(",")}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");

@@ -35,6 +35,7 @@ function main() {
   const testScript = path.join(root, "scripts", "run-golden-replays.ts");
   const indexPath = path.join(root, "fixtures", "golden", "index.json");
   const index = parseGoldenIndex(indexPath);
+  assert(index.fixtures.length >= 2, "expected at least two golden fixtures");
 
   const checkIndex = spawnSync(process.execPath, ["--import", "tsx", testScript, "--check-index"], {
     encoding: "utf8",
@@ -62,6 +63,11 @@ function main() {
   assert.equal(runB.status, 0, `run-golden-replays failed on second run: ${runB.stderr || runB.stdout}`);
 
   assert.equal(runA.stdout, runB.stdout, "expected stable golden replay output across runs");
+  assert(
+    /GOLDEN_ENV NODE=\d+\.\d+\.\d+/.test(runA.stdout),
+    "expected deterministic GOLDEN_ENV line with semantic version format",
+  );
+  assert(runA.stdout.includes("GOLDEN_MODE SEQUENTIAL"), "expected explicit sequential mode line");
 
   let lastPos = -1;
   for (const fixtureName of index.fixtures) {
