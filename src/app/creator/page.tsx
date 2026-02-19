@@ -21,6 +21,7 @@ type ScenarioListItem = {
 };
 type MineViewItem = ScenarioListItem & { visibilityBadge: "DRAFT" | "PUBLIC" };
 type CreatorTier = "NOMAD" | "TRAILBLAZOR" | "CHRONICLER" | "LOREMASTER";
+type CreatorSnapshot = { title: string; summary: string; contentJson: string };
 
 function compareText(a: string, b: string): number {
   if (a === b) return 0;
@@ -147,6 +148,11 @@ export default function CreatorPage() {
   const [createDraftStatus, setCreateDraftStatus] = useState("");
   const [forkStatus, setForkStatus] = useState("");
   const [billingBanner, setBillingBanner] = useState("");
+  const [baselineSnapshot, setBaselineSnapshot] = useState<CreatorSnapshot>({
+    title: "",
+    summary: "",
+    contentJson: "",
+  });
   const [promptSectionOpen, setPromptSectionOpen] = useState({
     preview: true,
     system: false,
@@ -267,6 +273,13 @@ export default function CreatorPage() {
     }
     return stableJsonDisplay(memory);
   }, [preview]);
+  const hasUnsavedChanges = useMemo(
+    () =>
+      title !== baselineSnapshot.title ||
+      summary !== baselineSnapshot.summary ||
+      contentJson !== baselineSnapshot.contentJson,
+    [baselineSnapshot.contentJson, baselineSnapshot.summary, baselineSnapshot.title, contentJson, summary, title],
+  );
 
   async function loadMyScenarios() {
     const trimmedOwnerId = ownerId.trim();
@@ -474,9 +487,16 @@ export default function CreatorPage() {
     }
 
     const scenario = parsed as any;
-    setTitle(typeof scenario.title === "string" ? scenario.title : "");
-    setSummary(typeof scenario.summary === "string" ? scenario.summary : "");
+    const importedTitle = typeof scenario.title === "string" ? scenario.title : "";
+    const importedSummary = typeof scenario.summary === "string" ? scenario.summary : "";
+    setTitle(importedTitle);
+    setSummary(importedSummary);
     setContentJson(raw);
+    setBaselineSnapshot({
+      title: importedTitle,
+      summary: importedSummary,
+      contentJson: raw,
+    });
     setLastValidation(validateScenarioContentJson(raw));
     setJsonImportStatus("Import complete.");
   }
@@ -565,6 +585,7 @@ export default function CreatorPage() {
         <div>Title: {emptyState.title ? "empty" : "ready"}</div>
         <div>Summary: {emptyState.summary ? "empty" : "ready"}</div>
         <div>Content JSON: {emptyState.contentJson ? "empty" : "ready"}</div>
+        <div>Unsaved changes: {hasUnsavedChanges ? "yes" : "no"}</div>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Scenario validation">
