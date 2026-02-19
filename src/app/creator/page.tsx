@@ -15,6 +15,17 @@ type ScenarioListItem = {
 };
 type MineViewItem = ScenarioListItem & { visibilityBadge: "DRAFT" | "PUBLIC" };
 
+function mapCreatorRequestError(status: number, payload: any): string {
+  const code = typeof payload?.error === "string" ? payload.error : "";
+  if (status === 429 && code === "RATE_LIMITED") {
+    return "Rate limited. Try again later.";
+  }
+  if (status === 429 && code === "SCENARIO_CAP_EXCEEDED") {
+    return "Scenario cap reached for this owner.";
+  }
+  return "Request failed.";
+}
+
 function validateScenarioContentJson(raw: string): {
   ok: boolean;
   parseError: string | null;
@@ -84,6 +95,7 @@ export default function CreatorPage() {
   const [myScenarios, setMyScenarios] = useState<MineViewItem[]>([]);
   const [mineStatus, setMineStatus] = useState("My scenarios not loaded.");
   const [draftCopyStatus, setDraftCopyStatus] = useState("");
+  const [creatorRequestStatus, setCreatorRequestStatus] = useState("");
 
   const emptyState = useMemo(
     () => ({
@@ -195,6 +207,52 @@ export default function CreatorPage() {
     } catch {
       setMyScenarios([]);
       setMineStatus("Failed to load scenarios.");
+    }
+  }
+
+  async function onCreateDraft() {
+    const trimmedOwnerId = ownerId.trim();
+    if (!trimmedOwnerId) {
+      setCreatorRequestStatus("ownerId is required.");
+      return;
+    }
+    if (!validation.ok || !preview) {
+      setCreatorRequestStatus("Cannot create draft: validation must pass.");
+      return;
+    }
+
+    const scenarioId = typeof preview.id === "string" ? preview.id : "";
+    const scenarioTitle =
+      title.trim() || (typeof preview.title === "string" ? preview.title : "");
+    if (!scenarioId || !scenarioTitle) {
+      setCreatorRequestStatus("Cannot create draft: id and title are required.");
+      return;
+    }
+
+    const scenarioSummary =
+      summary.trim() || (typeof preview.summary === "string" ? preview.summary : null);
+
+    try {
+      const res = await fetch("/api/scenario", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: scenarioId,
+          title: scenarioTitle,
+          summary: scenarioSummary,
+          contentJson: preview,
+          visibility: "PRIVATE",
+          ownerId: trimmedOwnerId,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        setCreatorRequestStatus(mapCreatorRequestError(res.status, json));
+        return;
+      }
+      setCreatorRequestStatus("Draft created.");
+    } catch {
+      setCreatorRequestStatus("Request failed.");
     }
   }
 
@@ -338,6 +396,12 @@ export default function CreatorPage() {
             Publish scenario
           </button>
           <span>{publishEnabled ? "Publish enabled: validation passed." : "Publish disabled: validation must pass."}</span>
+        </div>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" onClick={onCreateDraft} className="rounded border px-2 py-1 text-xs">
+            Create draft
+          </button>
+          <span>{creatorRequestStatus}</span>
         </div>
       </section>
 
