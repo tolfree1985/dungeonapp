@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   SUPPORT_MANIFEST_VERSION,
   TELEMETRY_VERSION,
   assertSupportManifestConsistency,
 } from "../src/lib/support/supportManifest";
+import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
 
 function extractSection(output: string, startMarker: string, endMarker?: string): string {
   const lines = output.split(/\r?\n/);
@@ -19,6 +22,7 @@ function extractSection(output: string, startMarker: string, endMarker?: string)
 
 function main() {
   const scriptPath = path.join(process.cwd(), "scripts", "replay-from-bundle.ts");
+  const buildSupportPackageScriptPath = path.join(process.cwd(), "scripts", "build-support-package.ts");
   const bundle = {
     bundleId: "bundle-test-1",
     engineVersion: "engine-test",
@@ -79,6 +83,7 @@ function main() {
     "expected at least one per-turn telemetry row",
   );
   assert(!out.includes("TELEMETRY_JSON "), "did not expect TELEMETRY_JSON without flag");
+  assert(out.includes("MANIFEST_HASH "), "expected MANIFEST_HASH output in base run");
 
   const telemetryBlockA = extractSection(out, "TELEMETRY", "PER_TURN_TELEMETRY");
   const perTurnBlockA = extractSection(out, "PER_TURN_TELEMETRY");
@@ -151,7 +156,7 @@ function main() {
     outJson.split(/\r?\n/).find((line) => line.startsWith("TELEMETRY_JSON ")) ?? "";
   assert(telemetryJsonLine.length > 0, "expected TELEMETRY_JSON line");
   assert(
-    !/timestamp|duration|token|random|seed|Date\.now|performance\.now/i.test(telemetryJsonLine),
+    !/timestamp|duration|\bms\b|\bseconds\b|token|random|seed|Date\.now|performance\.now/i.test(telemetryJsonLine),
     "telemetry JSON should not include timing/entropy fields",
   );
 
@@ -190,7 +195,7 @@ function main() {
     "manifest replay.finalStateHash should match base FINAL_STATE_HASH",
   );
   assert(
-    !/timestamp|duration|token|random|seed|Date\.now|performance\.now/i.test(manifestJsonRaw),
+    !/timestamp|duration|\bms\b|\bseconds\b|token|random|seed|Date\.now|performance\.now/i.test(manifestJsonRaw),
     "manifest json should not include timing/entropy fields",
   );
 
@@ -238,6 +243,112 @@ function main() {
     (withManifest2.stdout ?? "").split(/\r?\n/).find((line) => line.startsWith("MANIFEST_HASH ")) ?? "";
   assert(manifestHashLine2.length > 0, "expected MANIFEST_HASH line in second manifest run");
   assert.equal(manifestHashLine, manifestHashLine2, "manifest hash output should be stable across runs");
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "replay-support-package-"));
+  const bundlePath = path.join(tempDir, "bundle.json");
+  const supportOutDir = path.join(tempDir, "support-out");
+  fs.writeFileSync(bundlePath, JSON.stringify(bundle), "utf8");
+
+  const buildSupportPackage = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      buildSupportPackageScriptPath,
+      `--bundle-path=${bundlePath}`,
+      `--out-dir=${supportOutDir}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(
+    buildSupportPackage.status,
+    0,
+    `build-support-package failed: ${buildSupportPackage.stderr || buildSupportPackage.stdout}`,
+  );
+  const supportPackagePathLine =
+    (buildSupportPackage.stdout ?? "").split(/\r?\n/).find((line) => line.startsWith("SUPPORT_PACKAGE_PATH ")) ?? "";
+  assert(supportPackagePathLine.length > 0, "expected SUPPORT_PACKAGE_PATH from package builder");
+  const supportPackagePath = supportPackagePathLine.replace(/^SUPPORT_PACKAGE_PATH\s+/, "").trim();
+  assert(fs.existsSync(supportPackagePath), "expected support package file to exist");
+
+  const replaySupportPackage = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=test-bundle",
+      "--manifest-json",
+      `--support-package-path=${supportPackagePath}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(
+    replaySupportPackage.status,
+    0,
+    `replay script (--support-package-path) failed: ${replaySupportPackage.stderr || replaySupportPackage.stdout}`,
+  );
+  const outSupportPackage = replaySupportPackage.stdout ?? "";
+  assert(outSupportPackage.includes("REPRO_PACK_VALIDATION"), "expected support package validation marker");
+  assert(
+    outSupportPackage.includes(`PACKAGE_VERSION: ${SUPPORT_PACKAGE_VERSION}`),
+    "expected package version validation line",
+  );
+  assert(outSupportPackage.includes("MANIFEST_HASH_MATCH: true"), "expected manifest hash parity");
+  assert(outSupportPackage.includes("FINAL_STATE_HASH_MATCH: true"), "expected final state hash parity");
+  assert(outSupportPackage.includes("TELEMETRY_MATCH: true"), "expected telemetry parity");
+  assert(outSupportPackage.includes("DRIFT_SEVERITY: NONE"), "expected deterministic drift severity");
+  assert(!outSupportPackage.includes("DRIFT_PARITY_MISMATCH"), "did not expect drift parity mismatch");
+
+  const supportLines = outSupportPackage.split(/\r?\n/);
+  const idxTelemetryVersion = supportLines.findIndex((line) => line.startsWith("TELEMETRY_VERSION "));
+  const idxTelemetry = supportLines.findIndex((line) => line.trim() === "TELEMETRY");
+  const idxPerTurn = supportLines.findIndex((line) => line.trim() === "PER_TURN_TELEMETRY");
+  const idxManifestJson = supportLines.findIndex((line) => line.startsWith("SUPPORT_MANIFEST_JSON "));
+  const idxManifestHash = supportLines.findIndex((line) => line.startsWith("MANIFEST_HASH "));
+  const idxPackValidation = supportLines.findIndex((line) => line.trim() === "REPRO_PACK_VALIDATION");
+  assert(
+    idxTelemetryVersion >= 0 &&
+      idxTelemetry >= 0 &&
+      idxPerTurn >= 0 &&
+      idxManifestJson >= 0 &&
+      idxManifestHash >= 0 &&
+      idxPackValidation >= 0,
+    "expected ordered output markers in support package replay mode",
+  );
+  assert(
+    idxTelemetryVersion < idxTelemetry &&
+      idxTelemetry < idxPerTurn &&
+      idxPerTurn < idxManifestJson &&
+      idxManifestJson < idxManifestHash &&
+      idxManifestHash < idxPackValidation,
+    "expected deterministic output section ordering",
+  );
+  assert(
+    !/timestamp|duration|\bms\b|\bseconds\b|random|seed|Date\.now|performance\.now/i.test(outSupportPackage),
+    "support package replay output should not include entropy/timing tokens",
+  );
+
+  const replaySupportPackage2 = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=test-bundle",
+      "--manifest-json",
+      `--support-package-path=${supportPackagePath}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(
+    replaySupportPackage2.status,
+    0,
+    `second replay script (--support-package-path) failed: ${replaySupportPackage2.stderr || replaySupportPackage2.stdout}`,
+  );
+  const validationA = extractSection(outSupportPackage, "REPRO_PACK_VALIDATION");
+  const validationB = extractSection(replaySupportPackage2.stdout ?? "", "REPRO_PACK_VALIDATION");
+  assert.equal(validationA, validationB, "support package validation section should be stable across runs");
 
   const corruptedManifest = JSON.parse(JSON.stringify(manifestJson));
   corruptedManifest.perTurn = [];
