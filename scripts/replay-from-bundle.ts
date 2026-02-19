@@ -8,7 +8,7 @@ import {
   serializeSupportManifest,
 } from "../src/lib/support/supportManifest";
 import { SUPPORT_PACKAGE_VERSION, type DriftSeverity, type SupportPackageV1 } from "../src/lib/support/supportPackage";
-import { replayStateFromTurnJsonWithGuardSummary } from "../src/lib/game/replay";
+import { classifyFailForwardSignal, replayStateFromTurnJsonWithGuardSummary } from "../src/lib/game/replay";
 
 type ReplaySupportPackage = Omit<SupportPackageV1, "drift"> & {
   drift?: SupportPackageV1["drift"];
@@ -298,7 +298,15 @@ async function main() {
 
   const bundleId = args["bundle-id"] ?? "(none)";
   const perTurn = [...manifest.perTurn].sort((a, b) => a.turnIndex - b.turnIndex);
-  const guardSummary = replayStateFromTurnJsonWithGuardSummary(extractEvents(bundle, turnLimit));
+  const replayEvents = extractEvents(bundle, turnLimit);
+  const guardSummary = replayStateFromTurnJsonWithGuardSummary(replayEvents);
+  const failForwardSignalByTurn = new Map<number, string>();
+  for (const event of replayEvents) {
+    const signal = classifyFailForwardSignal(event.turnJson);
+    if (signal) {
+      failForwardSignalByTurn.set(event.seq, signal);
+    }
+  }
   const contiguous = isSeqContiguous(perTurn.map((row) => row.turnIndex));
   const ledgerCount = manifest.telemetry.totalLedgerEntries;
   const deltaCount = manifest.telemetry.totalStateDeltas;
@@ -311,6 +319,7 @@ async function main() {
   console.log(`FINAL_STATE_HASH ${manifest.replay.finalStateHash}`);
   console.log("REPLAY COMPLETE");
   console.log(`REPLAY_GUARD_SUMMARY ${guardSummary.guardSummary.join(",")}`);
+  console.log(`FAIL_FORWARD_SIGNAL: ${guardSummary.failForwardSignal}`);
   console.log(`FAIL_FORWARD_CHECK: ${guardSummary.failForwardCheck}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
@@ -325,7 +334,7 @@ async function main() {
   console.log("PER_TURN_TELEMETRY");
   perTurn.forEach((row) => {
     console.log(
-      `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution}`,
+      `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution} FAIL_FORWARD_SIGNAL: ${failForwardSignalByTurn.get(row.turnIndex) ?? ""}`,
     );
   });
   if (args["telemetry-json"] === "true") {
@@ -339,7 +348,10 @@ async function main() {
         avgDeltaPerTurn: manifest.telemetry.avgDeltaPerTurn,
         maxLedgerPerTurn: manifest.telemetry.maxLedgerPerTurn,
         finalStateHash: manifest.replay.finalStateHash,
-        perTurn,
+        perTurn: perTurn.map((row) => ({
+          ...row,
+          failForwardSignal: failForwardSignalByTurn.get(row.turnIndex) ?? "",
+        })),
       })}`,
     );
   }

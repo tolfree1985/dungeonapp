@@ -116,6 +116,7 @@ function main() {
   assert(dashboardSource.includes("DELTA_COUNT"), "Expected per-turn telemetry DELTA_COUNT header");
   assert(dashboardSource.includes("LEDGER_COUNT"), "Expected per-turn telemetry LEDGER_COUNT header");
   assert(dashboardSource.includes("HAS_RESOLUTION"), "Expected per-turn telemetry HAS_RESOLUTION header");
+  assert(dashboardSource.includes("FAIL_FORWARD_SIGNAL"), "Expected per-turn telemetry FAIL_FORWARD_SIGNAL header");
   assert(dashboardSource.includes("FIRST_DRIFT_TURN_INDEX:"), "Expected first-drift turn index signal");
   assert(dashboardSource.includes("FIRST_DRIFT_METRIC:"), "Expected first-drift metric signal");
   assert(dashboardSource.includes("DRIFT_SEVERITY:"), "Expected drift severity signal");

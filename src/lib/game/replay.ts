@@ -46,6 +46,12 @@ const LEDGER_FORBIDDEN_PATTERNS = [
 ];
 
 type ReplayEvent = { seq: number; turnJson: any };
+export type FailForwardSignal =
+  | "STATE_DELTA"
+  | "QUEST_ADVANCE"
+  | "FLAG_SET"
+  | "RELATIONSHIP_SHIFT"
+  | "SYSTEM_NO_LEDGER";
 
 export type ReplayGuardName =
   | "TURN_MONOTONICITY"
@@ -291,38 +297,70 @@ function readsFailureBand(turnJson: unknown): boolean {
   return false;
 }
 
-function hasComplicationLedgerTag(entry: unknown): boolean {
-  if (!isRecord(entry)) return false;
-  if (entry.complication === true) return true;
-  const candidates = [entry.kind, entry.tag, entry.type, entry.message, entry.because];
-  for (const candidate of candidates) {
-    const normalized = normalizeText(candidate);
-    if (!normalized) continue;
-    if (normalized === "complication" || normalized.includes("complication")) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function isQuestFlagStatMutation(delta: unknown): boolean {
-  if (isRecord(delta)) {
-    const path = normalizeDeltaPath(delta.path);
-    if (!path) {
-      const opNoPath = normalizeText(delta.op);
-      if (!opNoPath) return false;
-      return opNoPath.startsWith("quest.") || opNoPath.startsWith("flag.") || opNoPath.startsWith("stats.");
-    }
+function isQuestAdvanceMutation(delta: unknown): boolean {
+  if (!isRecord(delta)) return false;
+  const path = normalizeDeltaPath(delta.path);
+  if (path) {
     const cleaned = path.startsWith("/") ? path.slice(1) : path;
     const namespace = cleaned.split(/[./[\]]+/).filter(Boolean)[0] ?? "";
-    if (namespace === "quests" || namespace === "flags" || namespace === "stats") {
-      return true;
-    }
+    if (namespace === "quests") return true;
   }
-  if (!isRecord(delta)) return false;
   const op = normalizeText(delta.op);
-  if (!op) return false;
-  return op.startsWith("quest.") || op.startsWith("flag.") || op.startsWith("stats.");
+  return !!op && op.startsWith("quest.");
+}
+
+function isFlagSetMutation(delta: unknown): boolean {
+  if (!isRecord(delta)) return false;
+  const path = normalizeDeltaPath(delta.path);
+  if (path) {
+    const cleaned = path.startsWith("/") ? path.slice(1) : path;
+    const namespace = cleaned.split(/[./[\]]+/).filter(Boolean)[0] ?? "";
+    if (namespace === "flags") return true;
+  }
+  const op = normalizeText(delta.op);
+  return !!op && op.startsWith("flag.");
+}
+
+function isRelationshipShiftMutation(delta: unknown): boolean {
+  if (!isRecord(delta)) return false;
+  const path = normalizeDeltaPath(delta.path);
+  if (path) {
+    const cleaned = path.startsWith("/") ? path.slice(1) : path;
+    const namespace = cleaned.split(/[./[\]]+/).filter(Boolean)[0] ?? "";
+    if (namespace === "relationships") return true;
+  }
+  const op = normalizeText(delta.op);
+  return !!op && op.startsWith("relationship.");
+}
+
+const FAIL_FORWARD_SIGNAL_PRIORITY: readonly FailForwardSignal[] = [
+  "QUEST_ADVANCE",
+  "FLAG_SET",
+  "RELATIONSHIP_SHIFT",
+  "SYSTEM_NO_LEDGER",
+  "STATE_DELTA",
+] as const;
+
+function compareFailForwardSignalPriority(a: FailForwardSignal, b: FailForwardSignal): number {
+  return FAIL_FORWARD_SIGNAL_PRIORITY.indexOf(a) - FAIL_FORWARD_SIGNAL_PRIORITY.indexOf(b);
+}
+
+export function classifyFailForwardSignal(turnJson: unknown): FailForwardSignal | null {
+  const tj = isRecord(turnJson) ? turnJson : {};
+  if (!readsFailureBand(tj)) return null;
+  const deltas = Array.isArray(tj.deltas) ? tj.deltas : [];
+  const hasStateDelta = deltas.length > 0;
+  const hasQuestAdvance = deltas.some((delta) => isQuestAdvanceMutation(delta));
+  const hasFlagSet = deltas.some((delta) => isFlagSetMutation(delta));
+  const hasRelationshipShift = deltas.some((delta) => isRelationshipShiftMutation(delta));
+  const systemNoLedger = hasSystemNoLedgerTag(tj);
+
+  if (hasQuestAdvance) return "QUEST_ADVANCE";
+  if (hasFlagSet) return "FLAG_SET";
+  if (hasRelationshipShift) return "RELATIONSHIP_SHIFT";
+  if (systemNoLedger) return "SYSTEM_NO_LEDGER";
+  if (hasStateDelta) return "STATE_DELTA";
+  return null;
 }
 
 function getReplayDeltas(event: ReplayEvent): unknown[] {
@@ -419,21 +457,18 @@ export function assertLedgerConsistency(events: ReplayEvent[]): void {
   }
 }
 
-export function assertFailForwardInvariant(events: ReplayEvent[]): void {
+export function assertFailForwardInvariant(events: ReplayEvent[]): Map<number, FailForwardSignal> {
+  const byTurnIndex = new Map<number, FailForwardSignal>();
   for (const event of events) {
     const turnJson = isRecord(event.turnJson) ? event.turnJson : {};
-    if (!readsFailureBand(turnJson)) {
-      continue;
-    }
-    const deltas = getReplayDeltas(event);
-    const ledgerAdds = Array.isArray(turnJson.ledgerAdds) ? turnJson.ledgerAdds : [];
-    const hasStateDelta = deltas.length > 0;
-    const hasQuestFlagStat = deltas.some((delta) => isQuestFlagStatMutation(delta));
-    const hasComplicationLedger = ledgerAdds.some((entry) => hasComplicationLedgerTag(entry));
-    if (!hasStateDelta && !hasQuestFlagStat && !hasComplicationLedger) {
+    if (!readsFailureBand(turnJson)) continue;
+    const signal = classifyFailForwardSignal(turnJson);
+    if (!signal) {
       throw new Error(`FAIL_FORWARD_VIOLATION seq=${event.seq}`);
     }
+    byTurnIndex.set(event.seq, signal);
   }
+  return byTurnIndex;
 }
 
 export function assertTurnMonotonicity(events: ReplayEvent[]): void {
@@ -528,6 +563,7 @@ export type ReplayWithGuardSummary = {
   guardSummary: readonly ReplayGuardName[];
   styleLockPresent: boolean;
   failForwardCheck: "PASS" | "FAIL";
+  failForwardSignal: FailForwardSignal | "NONE";
 };
 
 /**
@@ -545,12 +581,14 @@ function replayStateFromTurnJsonInternal(
   const mark = (name: ReplayGuardName) => executedGuards.add(name);
   let state: any = genesisState ?? createInitialStateV1();
   let styleLockPresent = false;
+  let failForwardSignal: FailForwardSignal | "NONE" = "NONE";
 
   assertTurnMonotonicity(events);
   mark("TURN_MONOTONICITY");
   assertLedgerConsistency(events);
   mark("LEDGER_CONSISTENCY");
-  assertFailForwardInvariant(events);
+  const failForwardSignals = assertFailForwardInvariant(events);
+  failForwardSignal = [...failForwardSignals.values()].sort(compareFailForwardSignalPriority)[0] ?? "NONE";
   mark("FAIL_FORWARD_INVARIANT");
 
   for (const e of events) {
@@ -581,6 +619,7 @@ function replayStateFromTurnJsonInternal(
       guardSummary: REPLAY_GUARD_ORDER.filter((name) => executedGuards.has(name)),
       styleLockPresent,
       failForwardCheck: "PASS",
+      failForwardSignal,
     };
   }
 

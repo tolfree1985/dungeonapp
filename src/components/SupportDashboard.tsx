@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { classifyFailForwardSignal } from "@/lib/game/replay";
 import { categorizeDeltaPath } from "@/lib/support/deltaPathMeaningMap";
 import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministicReproCliText";
 import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
@@ -106,6 +107,7 @@ type PerTurnTelemetryRow = {
   deltaCount: number;
   ledgerCount: number;
   hasResolution: boolean;
+  failForwardSignal: string;
 };
 
 type ReplayTelemetryReference = {
@@ -479,6 +481,7 @@ function readPathPerTurnTelemetry(bundle: unknown, candidates: string[][]): PerT
       const deltaCountRaw = row.deltaCount ?? row.DELTA_COUNT ?? 0;
       const ledgerCountRaw = row.ledgerCount ?? row.LEDGER_COUNT ?? 0;
       const hasResolutionRaw = row.hasResolution ?? row.HAS_RESOLUTION ?? false;
+      const failForwardSignalRaw = row.failForwardSignal ?? row.FAIL_FORWARD_SIGNAL ?? "";
 
       const turnIndex =
         typeof turnIndexRaw === "number" && Number.isFinite(turnIndexRaw)
@@ -511,8 +514,10 @@ function readPathPerTurnTelemetry(bundle: unknown, candidates: string[][]): PerT
           : typeof hasResolutionRaw === "string"
             ? hasResolutionRaw.trim().toLowerCase() === "true"
             : false;
+      const failForwardSignal =
+        typeof failForwardSignalRaw === "string" ? failForwardSignalRaw.trim() : "";
 
-      rows.push({ turnIndex, deltaCount, ledgerCount, hasResolution });
+      rows.push({ turnIndex, deltaCount, ledgerCount, hasResolution, failForwardSignal });
     }
 
     rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
@@ -1293,10 +1298,22 @@ export function SupportDashboard({
   }, [finalStateHash, supportManifest, turnRows]);
 
   const perTurnTelemetry = useMemo<PerTurnTelemetryRow[]>(() => {
+    const failForwardSignalByTurn = new Map<number, string>();
+    turnRows.forEach((row, index) => {
+      const turnIndex = parseTurnIndex(row.turnIndex, index);
+      const signal = classifyFailForwardSignal(row.rawTurn);
+      if (signal) {
+        failForwardSignalByTurn.set(turnIndex, signal);
+      }
+    });
+
     if (supportManifest) {
-      return [...supportManifest.perTurn].sort((a, b) =>
-        a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1,
-      );
+      return [...supportManifest.perTurn]
+        .map((row) => ({
+          ...row,
+          failForwardSignal: failForwardSignalByTurn.get(row.turnIndex) ?? "",
+        }))
+        .sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
     }
 
     const rows = turnRows.map((row, index) => ({
@@ -1304,6 +1321,7 @@ export function SupportDashboard({
       deltaCount: row.stateDeltas.length,
       ledgerCount: row.ledgerAdds.length,
       hasResolution: row.resolution !== "(none)",
+      failForwardSignal: classifyFailForwardSignal(row.rawTurn) ?? "",
     }));
     rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
     return rows;
@@ -1428,6 +1446,7 @@ export function SupportDashboard({
       `DELTA_COUNT: ${rowForReport ? rowForReport.deltaCount : "(none)"}`,
       `LEDGER_COUNT: ${rowForReport ? rowForReport.ledgerCount : "(none)"}`,
       `HAS_RESOLUTION: ${rowForReport ? String(rowForReport.hasResolution) : "(none)"}`,
+      `FAIL_FORWARD_SIGNAL: ${rowForReport ? rowForReport.failForwardSignal || "(none)" : "(none)"}`,
     ].join("\n");
   }, [
     bundleId,
@@ -1495,7 +1514,7 @@ export function SupportDashboard({
         : perTurnTelemetry
             .map(
               (row) =>
-                `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution}`,
+                `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution} FAIL_FORWARD_SIGNAL: ${row.failForwardSignal}`,
             )
             .join("\n"),
     [perTurnTelemetry],
@@ -2498,12 +2517,13 @@ export function SupportDashboard({
                 <th className="border p-2 text-left">DELTA_COUNT</th>
                 <th className="border p-2 text-left">LEDGER_COUNT</th>
                 <th className="border p-2 text-left">HAS_RESOLUTION</th>
+                <th className="border p-2 text-left">FAIL_FORWARD_SIGNAL</th>
               </tr>
             </thead>
             <tbody>
               {perTurnTelemetry.length === 0 ? (
                 <tr>
-                  <td className="border p-2" colSpan={4}>
+                  <td className="border p-2" colSpan={5}>
                     (none)
                   </td>
                 </tr>
@@ -2514,6 +2534,7 @@ export function SupportDashboard({
                     <td className="border p-2">{row.deltaCount}</td>
                     <td className="border p-2">{row.ledgerCount}</td>
                     <td className="border p-2">{String(row.hasResolution)}</td>
+                    <td className="border p-2">{row.failForwardSignal}</td>
                   </tr>
                 ))
               )}

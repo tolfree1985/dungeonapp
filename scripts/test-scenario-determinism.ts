@@ -121,6 +121,31 @@ function main() {
   assert.equal(validFailureBranchTransition.valid, true);
   assert.deepEqual(validFailureBranchTransition.errors, []);
 
+  const meaninglessFailure = validateScenarioDeterminism({
+    turns: [
+      {
+        turnIndex: 0,
+        resolution: { tier: "fail" },
+        stateDeltas: [{ op: "flag.set", path: "flags.failed", value: true }],
+        ledgerAdds: [{ id: "l0", turnIndex: 0 }],
+      },
+    ],
+  });
+  assert.deepEqual(meaninglessFailure.errors, ["SCENARIO_MEANINGLESS_FAILURE"]);
+
+  const meaningfulFailureFlag = validateScenarioDeterminism({
+    turns: [
+      {
+        turnIndex: 0,
+        resolution: { tier: "fail" },
+        stateDeltas: [{ op: "flag.set", path: "flags.storyProgress", value: true }],
+        ledgerAdds: [{ id: "l0", turnIndex: 0 }],
+      },
+    ],
+  });
+  assert.equal(meaningfulFailureFlag.valid, true);
+  assert.deepEqual(meaningfulFailureFlag.errors, []);
+
   const validLockedScenario = validateScenarioDeterminism({
     turns: [
       {

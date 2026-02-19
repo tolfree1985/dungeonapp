@@ -242,10 +242,17 @@ function parsePerTurnTelemetryRows(stdout: string): Array<{
   deltaCount: number;
   ledgerCount: number;
   hasResolution: boolean;
+  failForwardSignal: string;
 }> {
-  const rows: Array<{ turnIndex: number; deltaCount: number; ledgerCount: number; hasResolution: boolean }> = [];
+  const rows: Array<{
+    turnIndex: number;
+    deltaCount: number;
+    ledgerCount: number;
+    hasResolution: boolean;
+    failForwardSignal: string;
+  }> = [];
   const pattern =
-    /^TURN_INDEX:\s+(-?\d+)\s+DELTA_COUNT:\s+(\d+)\s+LEDGER_COUNT:\s+(\d+)\s+HAS_RESOLUTION:\s+(true|false)$/;
+    /^TURN_INDEX:\s+(-?\d+)\s+DELTA_COUNT:\s+(\d+)\s+LEDGER_COUNT:\s+(\d+)\s+HAS_RESOLUTION:\s+(true|false)(?:\s+FAIL_FORWARD_SIGNAL:\s*(.*))?$/;
   for (const line of stdout.split(/\r?\n/)) {
     const match = line.match(pattern);
     if (!match) continue;
@@ -254,6 +261,7 @@ function parsePerTurnTelemetryRows(stdout: string): Array<{
       deltaCount: Number(match[2]),
       ledgerCount: Number(match[3]),
       hasResolution: match[4] === "true",
+      failForwardSignal: (match[5] ?? "").trim(),
     });
   }
   rows.sort((a, b) => a.turnIndex - b.turnIndex);
@@ -424,10 +432,14 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
     if (!stdout.includes("FAIL_FORWARD_CHECK: PASS")) {
       regressionMarkers.push("GOLDEN_FAIL_FORWARD_REGRESSION missing=FAIL_FORWARD_CHECK_PASS");
     }
+    if (!stdout.includes("FAIL_FORWARD_SIGNAL: ")) {
+      regressionMarkers.push("GOLDEN_FAIL_FORWARD_REGRESSION missing=FAIL_FORWARD_SIGNAL");
+    }
     if (combinedOutput.includes("FAIL_FORWARD_VIOLATION")) {
       regressionMarkers.push("GOLDEN_FAIL_FORWARD_REGRESSION marker=FAIL_FORWARD_VIOLATION");
     }
     const perTurnRows = parsePerTurnTelemetryRows(stdout);
+    const failureSignals: string[] = [];
     for (const failureTurnIndex of failureTurnIndexes) {
       const row = perTurnRows.find((entry) => entry.turnIndex === failureTurnIndex);
       if (!row || row.deltaCount <= 0) {
@@ -435,6 +447,24 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
           `GOLDEN_FAIL_FORWARD_REGRESSION turn=${failureTurnIndex} reason=delta_count`,
         );
       }
+      if (!row || row.ledgerCount <= 0) {
+        regressionMarkers.push(
+          `GOLDEN_FAIL_FORWARD_REGRESSION turn=${failureTurnIndex} reason=ledger_count`,
+        );
+      }
+      if (!row || row.failForwardSignal.length === 0) {
+        regressionMarkers.push(
+          `GOLDEN_FAIL_FORWARD_REGRESSION turn=${failureTurnIndex} reason=missing_signal`,
+        );
+      } else {
+        failureSignals.push(row.failForwardSignal);
+      }
+    }
+    const uniqueSignals = [...new Set(failureSignals)].sort();
+    if (failureSignals.length > 1 && uniqueSignals.length === 1) {
+      console.log(
+        `GOLDEN_WARN_LOW_FAIL_FORWARD_DIVERSITY fixture=${fixtureName} signal=${uniqueSignals[0]}`,
+      );
     }
   }
   const guardSummary = parseGuardSummary(stdout);

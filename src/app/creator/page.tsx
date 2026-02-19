@@ -102,6 +102,11 @@ const DETERMINISM_ERROR_METADATA: Record<
     reference: "Turn: /turns/* with fail resolution",
     hint: "For fail branches, add a delta or nextTurnIndex/next branch transition.",
   },
+  SCENARIO_MEANINGLESS_FAILURE: {
+    explanation: "A failure branch only sets trivial failure flags and does not add meaningful progression.",
+    reference: "Turn: /turns/* with fail resolution",
+    hint: "On failure, mutate quests/stats/relationships/inventory or set a non-trivial progression flag.",
+  },
 };
 
 function compareText(a: string, b: string): number {

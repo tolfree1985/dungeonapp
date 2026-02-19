@@ -121,7 +121,7 @@ async function main() {
     /FAIL_FORWARD_VIOLATION/,
     "expected fail-forward invariant to fail when failure has no progression",
   );
-  assert.doesNotThrow(
+  assert.throws(
     () =>
       assertFailForwardInvariant([
         {
@@ -133,7 +133,23 @@ async function main() {
           },
         },
       ]),
-    "expected fail-forward invariant to pass when failure includes explicit complication ledger marker",
+    /FAIL_FORWARD_VIOLATION/,
+    "expected fail-forward invariant to fail when failure lacks allowed progression signal",
+  );
+  assert.doesNotThrow(
+    () =>
+      assertFailForwardInvariant([
+        {
+          seq: 0,
+          turnJson: {
+            resolution: { tier: "fail" },
+            tags: ["system/no-ledger"],
+            deltas: [],
+            ledgerAdds: [],
+          },
+        },
+      ]),
+    "expected fail-forward invariant to pass for explicit system/no-ledger exception path",
   );
   assert.throws(
     () => assertStateDeltaShape({ op: "flag.set", path: "", key: "dockSeen", value: true }),
@@ -375,6 +391,10 @@ async function main() {
   );
   const failForwardOut = failForwardReplay.stdout ?? "";
   assert(failForwardOut.includes("TURNS 3"), "expected fail-forward fixture to increment turn count");
+  assert(
+    failForwardOut.includes("FAIL_FORWARD_SIGNAL: FLAG_SET"),
+    "expected fail-forward signal classification marker",
+  );
   assert(failForwardOut.includes("FAIL_FORWARD_CHECK: PASS"), "expected fail-forward check pass output");
   const failForwardManifestLine =
     failForwardOut.split(/\r?\n/).find((line) => line.startsWith("SUPPORT_MANIFEST_JSON ")) ?? "";
@@ -605,6 +625,7 @@ async function main() {
 
   const out = result.stdout ?? "";
   assert(out.includes("REPLAY COMPLETE"), "expected REPLAY COMPLETE marker");
+  assert(out.includes("FAIL_FORWARD_SIGNAL: NONE"), "expected FAIL_FORWARD_SIGNAL NONE marker");
   assert(out.includes("FAIL_FORWARD_CHECK: PASS"), "expected FAIL_FORWARD_CHECK PASS marker");
   assert(out.includes("FINAL_STATE_HASH"), "expected FINAL_STATE_HASH marker");
   assert(out.includes("TURNS"), "expected TURNS marker");
@@ -621,7 +642,9 @@ async function main() {
   assert(out.includes("FINAL_STATE_HASH:"), "expected telemetry FINAL_STATE_HASH field");
   assert(out.includes("PER_TURN_TELEMETRY"), "expected PER_TURN_TELEMETRY marker");
   assert(
-    /TURN_INDEX:\s+\d+\s+DELTA_COUNT:\s+\d+\s+LEDGER_COUNT:\s+\d+\s+HAS_RESOLUTION:\s+(true|false)/.test(out),
+    /TURN_INDEX:\s+\d+\s+DELTA_COUNT:\s+\d+\s+LEDGER_COUNT:\s+\d+\s+HAS_RESOLUTION:\s+(true|false)\s+FAIL_FORWARD_SIGNAL:\s*(STATE_DELTA|QUEST_ADVANCE|FLAG_SET|RELATIONSHIP_SHIFT|SYSTEM_NO_LEDGER)?/.test(
+      out,
+    ),
     "expected at least one per-turn telemetry row",
   );
   assert(!out.includes("TELEMETRY_JSON "), "did not expect TELEMETRY_JSON without flag");

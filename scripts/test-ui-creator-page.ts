@@ -28,6 +28,10 @@ function main() {
   assert(source.includes("Quick-fix hint:"), 'Expected deterministic quick-fix hints');
   assert(source.includes("toDeterminismLintMarkers"), 'Expected lint marker mapping helper usage');
   assert(source.includes("sort(compareText)"), 'Expected deterministic sorting of validation displays');
+  assert(
+    source.includes("SCENARIO_MEANINGLESS_FAILURE"),
+    "Expected meaningless-failure lint marker to be documented in creator surface",
+  );
   assert(source.includes("Deterministic Preview Check"), 'Expected deterministic preview check control');
   assert(source.includes("Preview check not run."), 'Expected deterministic preview status baseline');
   assert(source.includes("Final state hash:"), 'Expected deterministic preview hash output label');

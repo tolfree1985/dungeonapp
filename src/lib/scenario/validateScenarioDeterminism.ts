@@ -179,6 +179,43 @@ function isQuestFlagStatMutation(delta: unknown): boolean {
   return op.startsWith("quest.") || op.startsWith("flag.") || op.startsWith("stats.");
 }
 
+const MEANINGFUL_FAILURE_NAMESPACES = new Set(["quests", "stats", "relationships", "inventory"]);
+const TRIVIAL_FAILURE_FLAG_KEYS = new Set(["failed", "failed_once", "failedonce"]);
+
+function namespaceForDelta(delta: unknown): string {
+  if (!isRecord(delta)) return "";
+  const path = normalizePath(delta.path);
+  if (!path) return "";
+  return getPathNamespace(path);
+}
+
+function flagKeyForDelta(delta: unknown): string {
+  if (!isRecord(delta)) return "";
+  const path = normalizePath(delta.path);
+  if (path) {
+    const cleaned = path.startsWith("/") ? path.slice(1) : path;
+    const parts = cleaned.split(/[./[\]]+/).filter(Boolean);
+    if (parts[0] === "flags" && parts[1]) return parts[1].trim();
+    if (parts[0] === "world" && parts[1] === "flags" && parts[2]) return parts[2].trim();
+  }
+  if (typeof delta.key === "string" && delta.key.trim().length > 0) {
+    return delta.key.trim();
+  }
+  return "";
+}
+
+function isTrivialFailureFlagDelta(delta: unknown): boolean {
+  if (!isRecord(delta)) return false;
+  const namespace = namespaceForDelta(delta);
+  if (namespace !== "flags") return false;
+  const key = flagKeyForDelta(delta).toLowerCase();
+  if (!TRIVIAL_FAILURE_FLAG_KEYS.has(key)) return false;
+  if ("value" in delta) {
+    return delta.value === true;
+  }
+  return true;
+}
+
 function extractTurns(scenarioJson: unknown): ScriptedTurn[] {
   if (!isRecord(scenarioJson)) return [];
   const rawTurns = Array.isArray(scenarioJson.turns)
@@ -330,6 +367,20 @@ export function validateScenarioDeterminism(scenarioJson: unknown): {
       const hasProgression = turn.deltas.length > 0 || hasQuestFlagStat || turn.hasBranchTransition;
       if (!hasProgression) {
         errors.add("SCENARIO_DEAD_END_BRANCH");
+      }
+
+      const hasMeaningfulNamespaceMutation = turn.deltas.some((delta) =>
+        MEANINGFUL_FAILURE_NAMESPACES.has(namespaceForDelta(delta)),
+      );
+      const hasNonTrivialFlagMutation = turn.deltas.some(
+        (delta) => namespaceForDelta(delta) === "flags" && !isTrivialFailureFlagDelta(delta),
+      );
+      const hasMeaningfulFailureProgression =
+        turn.hasBranchTransition || hasMeaningfulNamespaceMutation || hasNonTrivialFlagMutation;
+      const hasOnlyTrivialFlagMutation =
+        turn.deltas.length > 0 && turn.deltas.every((delta) => isTrivialFailureFlagDelta(delta));
+      if (!hasMeaningfulFailureProgression && hasOnlyTrivialFlagMutation) {
+        errors.add("SCENARIO_MEANINGLESS_FAILURE");
       }
     }
 
