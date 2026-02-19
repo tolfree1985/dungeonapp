@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { buildScenarioDraftBundleText } from "@/lib/buildScenarioDraftBundleText";
 import {
   formatCreatorCapDetail,
@@ -124,6 +124,7 @@ export default function CreatorPage() {
   const [draftCopyStatus, setDraftCopyStatus] = useState("");
   const [createDraftStatus, setCreateDraftStatus] = useState("");
   const [forkStatus, setForkStatus] = useState("");
+  const [billingBanner, setBillingBanner] = useState("");
 
   const emptyState = useMemo(
     () => ({
@@ -194,6 +195,9 @@ export default function CreatorPage() {
       return null;
     }
   }, [preview]);
+  useEffect(() => {
+    setBillingBanner("");
+  }, [contentJson, creatorTier, forkNewScenarioId, forkSourceScenarioId, ownerId, summary, title]);
   const preflightChecklist = useMemo(
     () => [
       {
@@ -316,7 +320,9 @@ export default function CreatorPage() {
           retryAfterHeader: res.headers.get("Retry-After"),
         });
         const parts = [message, detail, retryAfter].filter(Boolean);
-        setCreateDraftStatus(parts.join(" "));
+        const statusText = parts.join(" ");
+        setCreateDraftStatus(statusText);
+        setBillingBanner(statusText);
         return;
       }
       setCreateDraftStatus("Draft created.");
@@ -359,7 +365,9 @@ export default function CreatorPage() {
           retryAfterHeader: res.headers.get("Retry-After"),
         });
         const parts = [message, detail, retryAfter].filter(Boolean);
-        setForkStatus(parts.join(" "));
+        const statusText = parts.join(" ");
+        setForkStatus(statusText);
+        setBillingBanner(statusText);
         return;
       }
       setForkStatus("Scenario forked.");
@@ -574,6 +582,11 @@ export default function CreatorPage() {
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Publish controls">
         <h2 className="text-base font-semibold">Publish</h2>
+        {billingBanner ? (
+          <div className="mt-2 rounded border p-2 text-xs" aria-label="Creator billing banner">
+            {billingBanner}
+          </div>
+        ) : null}
         <div className="mt-2 flex items-center gap-3">
           <label htmlFor="creator-tier" className="text-xs">
             Tier
