@@ -57,11 +57,13 @@ export type CausalCoverageSummary = {
   totalDeltas: number;
   explainedDeltas: number;
   unexplainedDeltas: number;
+  coverageRatio: number;
 };
 
 export type DeltaLedgerExplanationRow = {
   deltaPath: string;
   ledgerExplanations: string[];
+  ledgerIndexes: number[];
   explained: boolean;
 };
 
@@ -471,6 +473,11 @@ function readLedgerGroupTokens(entry: unknown): Set<string> {
   return out;
 }
 
+function isNamespaceWideLedgerEntry(entry: unknown): boolean {
+  if (!isRecord(entry)) return false;
+  return entry.namespace_wide === true || entry.namespaceWide === true;
+}
+
 function readDeltaGroupTokens(delta: unknown): Set<string> {
   const out = new Set<string>();
   const groups = readStringValues(delta, ["causalGroup", "causalGroups", "group", "groups"]);
@@ -583,6 +590,27 @@ function ledgerPathMatchesDeltaPath(ledgerPath: string, deltaPath: string): bool
   return deltaPath.startsWith(`${ledgerPath}.`);
 }
 
+function topNamespaceFromPath(path: string): string {
+  const cleaned = path.startsWith("/") ? path.slice(1) : path;
+  return cleaned.split(/[./[\]]+/).filter(Boolean)[0] ?? "";
+}
+
+function explicitReferencePathsForEntry(entry: unknown): string[] {
+  return readLedgerExplicitReferencePaths(entry)
+    .map((rawPath) => normalizeReferenceToken(rawPath))
+    .filter((value) => value.length > 0);
+}
+
+function entryReferencesNamespace(entry: unknown, namespace: string): boolean {
+  const explicitPaths = explicitReferencePathsForEntry(entry);
+  if (explicitPaths.some((path) => path === namespace || path.startsWith(`${namespace}.`))) {
+    return true;
+  }
+  const groups = readLedgerGroupTokens(entry);
+  if (groups.has(namespace)) return true;
+  return tokenInText(ledgerEntrySearchText(entry), namespace);
+}
+
 export function buildDeltaLedgerExplanationRows(args: {
   deltas: unknown[];
   ledgerAdds: unknown[];
@@ -594,12 +622,13 @@ export function buildDeltaLedgerExplanationRows(args: {
   const allowImplicitSinglePair = args.allowImplicitSinglePair !== false;
   const systemNoLedger = args.systemNoLedger === true;
 
-  const ledgerContexts = ledgerAdds.map((entry) => {
+  const ledgerContexts = ledgerAdds.map((entry, index) => {
     const explicitRefs = new Set<string>();
     for (const rawPath of readLedgerExplicitReferencePaths(entry)) {
       addTokenWithParents(rawPath, explicitRefs);
     }
     return {
+      index,
       searchText: ledgerEntrySearchText(entry),
       explanation: ledgerExplanationText(entry),
       explicitRefs,
@@ -612,6 +641,7 @@ export function buildDeltaLedgerExplanationRows(args: {
       return {
         deltaPath: readDeltaDisplayPath(delta, index),
         ledgerExplanations: ["system/no-ledger"],
+        ledgerIndexes: [],
         explained: true,
       };
     }
@@ -620,12 +650,14 @@ export function buildDeltaLedgerExplanationRows(args: {
     const deltaGroups = readDeltaGroupTokens(delta);
 
     const matchedExplanations: string[] = [];
+    const matchedIndexes: number[] = [];
     for (const ledgerContext of ledgerContexts) {
       const byPath = deltaTokens.some((token) => ledgerContext.explicitRefs.has(token));
       const byGroup = deltaGroups.size > 0 && [...deltaGroups].some((group) => ledgerContext.groupTokens.has(group));
       const byText = deltaTokens.some((token) => tokenInText(ledgerContext.searchText, token));
       if (byPath || byGroup || byText) {
         matchedExplanations.push(ledgerContext.explanation);
+        matchedIndexes.push(ledgerContext.index);
       }
     }
 
@@ -636,22 +668,26 @@ export function buildDeltaLedgerExplanationRows(args: {
       ledgerContexts.length === 1
     ) {
       matchedExplanations.push(ledgerContexts[0].explanation);
+      matchedIndexes.push(ledgerContexts[0].index);
     }
 
     return {
       deltaPath: readDeltaDisplayPath(delta, index),
       ledgerExplanations: matchedExplanations,
+      ledgerIndexes: matchedIndexes,
       explained: matchedExplanations.length > 0,
     };
   });
 
   const explainedDeltas = rows.filter((row) => row.explained).length;
+  const totalDeltas = rows.length;
   return {
     rows,
     coverage: {
-      totalDeltas: rows.length,
+      totalDeltas,
       explainedDeltas,
-      unexplainedDeltas: rows.length - explainedDeltas,
+      unexplainedDeltas: totalDeltas - explainedDeltas,
+      coverageRatio: totalDeltas === 0 ? 1 : explainedDeltas / totalDeltas,
     },
   };
 }
@@ -735,10 +771,46 @@ export function assertCausalCoverage(events: ReplayEvent[]): CausalCoverageSumma
 
     const deltaTokens = buildDeltaTokenSet(deltas);
     const deltaReferencePaths = buildDeltaReferencePathsForLedger(deltas);
+    const topNamespaces = new Set<string>();
+    for (const path of deltaReferencePaths) {
+      const namespace = topNamespaceFromPath(path);
+      if (namespace) topNamespaces.add(namespace);
+    }
+
+    if (deltas.length > 1) {
+      for (const namespace of [...topNamespaces].sort(compareText)) {
+        const namespaceReferenced = ledgerAdds.some((entry) => entryReferencesNamespace(entry, namespace));
+        if (!namespaceReferenced) {
+          throw new Error(`DELTA_WITHOUT_LEDGER_EXPLANATION seq=${event.seq} namespace=${namespace}`);
+        }
+      }
+    }
+
     for (let idx = 0; idx < ledgerAdds.length; idx++) {
       const entry = ledgerAdds[idx];
       const explicitPaths = readLedgerExplicitReferencePaths(entry);
       if (explicitPaths.length === 0) continue;
+      const normalizedEntryPaths = explicitPaths
+        .map((rawPath) => normalizeReferenceToken(rawPath))
+        .filter((value) => value.length > 0);
+      const entryNamespaceWide = isNamespaceWideLedgerEntry(entry);
+      for (const entryPath of normalizedEntryPaths) {
+        const namespace = topNamespaceFromPath(entryPath);
+        if (!namespace || entryPath !== namespace) continue;
+        const hasDeeperDelta = deltaReferencePaths.some(
+          (deltaPath) =>
+            topNamespaceFromPath(deltaPath) === namespace &&
+            deltaPath !== namespace &&
+            deltaPath.startsWith(`${namespace}.`),
+        );
+        if (!hasDeeperDelta) continue;
+        const hasExplicitChildRef = normalizedEntryPaths.some(
+          (candidate) => candidate !== namespace && candidate.startsWith(`${namespace}.`),
+        );
+        if (!hasExplicitChildRef && !entryNamespaceWide) {
+          throw new Error(`LEDGER_TOO_BROAD_EXPLANATION seq=${event.seq} idx=${idx} path=${namespace}`);
+        }
+      }
       for (const rawPath of explicitPaths) {
         const normalizedPath = normalizeReferenceToken(rawPath);
         if (!normalizedPath) continue;
@@ -756,6 +828,7 @@ export function assertCausalCoverage(events: ReplayEvent[]): CausalCoverageSumma
     totalDeltas,
     explainedDeltas,
     unexplainedDeltas,
+    coverageRatio: totalDeltas === 0 ? 1 : explainedDeltas / totalDeltas,
   };
 }
 
@@ -889,6 +962,7 @@ function replayStateFromTurnJsonInternal(
     totalDeltas: 0,
     explainedDeltas: 0,
     unexplainedDeltas: 0,
+    coverageRatio: 1,
   };
 
   assertTurnMonotonicity(events);

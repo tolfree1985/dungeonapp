@@ -330,6 +330,47 @@ async function main() {
     /LEDGER_WITHOUT_DELTA_MUTATION/,
     "expected causal coverage to fail on orphan ledger path references",
   );
+  assert.throws(
+    () =>
+      assertCausalCoverage([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [
+              { op: "stats.set", path: "stats.health", value: 10 },
+              { op: "stats.set", path: "stats.mana", value: 5 },
+            ],
+            ledgerAdds: [{ id: "ledger_causal_broad_0", turnIndex: 0, path: "stats", message: "stats changed" }],
+          },
+        },
+      ]),
+    /LEDGER_TOO_BROAD_EXPLANATION/,
+    "expected causal coverage to fail on broad parent-only ledger explanations",
+  );
+  assert.doesNotThrow(
+    () =>
+      assertCausalCoverage([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [
+              { op: "stats.set", path: "stats.health", value: 10 },
+              { op: "stats.set", path: "stats.mana", value: 5 },
+            ],
+            ledgerAdds: [
+              {
+                id: "ledger_causal_namespace_wide_0",
+                turnIndex: 0,
+                path: "stats",
+                namespace_wide: true,
+                message: "all stats changed",
+              },
+            ],
+          },
+        },
+      ]),
+    "expected namespace-wide ledger entry to satisfy broad parent explanation rule",
+  );
 
   assert.doesNotThrow(
     () =>
@@ -679,7 +720,9 @@ async function main() {
   assert(out.includes("totalDeltas:"), "expected causal coverage total deltas field");
   assert(out.includes("explainedDeltas:"), "expected causal coverage explained deltas field");
   assert(out.includes("unexplainedDeltas:"), "expected causal coverage unexplained deltas field");
+  assert(out.includes("coverageRatio:"), "expected causal coverage ratio field");
   assert(/unexplainedDeltas:\s*0/.test(out), "expected unexplainedDeltas to be zero for deterministic fixtures");
+  assert(/coverageRatio:\s*1(\.0+)?/.test(out), "expected coverageRatio to be 1 for deterministic fixtures");
   assert(out.includes("FINAL_STATE_HASH"), "expected FINAL_STATE_HASH marker");
   assert(out.includes("TURNS"), "expected TURNS marker");
   assert(out.includes("INVARIANT_SEQ_CONTIGUOUS"), "expected sequence invariant marker");

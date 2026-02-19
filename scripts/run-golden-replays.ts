@@ -241,6 +241,7 @@ function parseCausalCoverage(stdout: string): {
   totalDeltas: number;
   explainedDeltas: number;
   unexplainedDeltas: number;
+  coverageRatio: number;
 } | null {
   const lines = stdout.split(/\r?\n/);
   const markerIndex = lines.findIndex((line) => line.trim() === "CAUSAL_COVERAGE:");
@@ -256,10 +257,18 @@ function parseCausalCoverage(stdout: string): {
   const totalDeltas = readValue("totalDeltas:");
   const explainedDeltas = readValue("explainedDeltas:");
   const unexplainedDeltas = readValue("unexplainedDeltas:");
-  if (totalDeltas == null || explainedDeltas == null || unexplainedDeltas == null) {
+  const coverageRatioLine = window.find((entry) => entry.trim().startsWith("coverageRatio:"));
+  const coverageRatioRaw = coverageRatioLine ? coverageRatioLine.trim().slice("coverageRatio:".length).trim() : "";
+  const coverageRatio = coverageRatioRaw.length > 0 ? Number(coverageRatioRaw) : Number.NaN;
+  if (
+    totalDeltas == null ||
+    explainedDeltas == null ||
+    unexplainedDeltas == null ||
+    !Number.isFinite(coverageRatio)
+  ) {
     return null;
   }
-  return { totalDeltas, explainedDeltas, unexplainedDeltas };
+  return { totalDeltas, explainedDeltas, unexplainedDeltas, coverageRatio };
 }
 
 function parsePerTurnTelemetryRows(stdout: string): Array<{
@@ -460,12 +469,19 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   if (combinedOutput.includes("LEDGER_WITHOUT_DELTA_MUTATION")) {
     regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION marker=LEDGER_WITHOUT_DELTA_MUTATION");
   }
+  if (combinedOutput.includes("LEDGER_TOO_BROAD_EXPLANATION")) {
+    regressionMarkers.push("GOLDEN_CAUSAL_PRECISION_REGRESSION marker=LEDGER_TOO_BROAD_EXPLANATION");
+  }
   const causalCoverage = parseCausalCoverage(stdout);
   if (!causalCoverage) {
     regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION missing=CAUSAL_COVERAGE");
   } else if (causalCoverage.unexplainedDeltas > 0) {
     regressionMarkers.push(
       `GOLDEN_CAUSAL_REGRESSION unexplainedDeltas=${String(causalCoverage.unexplainedDeltas)}`,
+    );
+  } else if (causalCoverage.coverageRatio !== 1) {
+    regressionMarkers.push(
+      `GOLDEN_CAUSAL_PRECISION_REGRESSION coverageRatio=${String(causalCoverage.coverageRatio)}`,
     );
   }
   if (failureTurnIndexes.length > 0) {

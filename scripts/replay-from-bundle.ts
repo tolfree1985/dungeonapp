@@ -325,6 +325,7 @@ async function main() {
   console.log(`  totalDeltas: ${guardSummary.causalCoverage.totalDeltas}`);
   console.log(`  explainedDeltas: ${guardSummary.causalCoverage.explainedDeltas}`);
   console.log(`  unexplainedDeltas: ${guardSummary.causalCoverage.unexplainedDeltas}`);
+  console.log(`  coverageRatio: ${guardSummary.causalCoverage.coverageRatio}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");

@@ -60,6 +60,9 @@ function main() {
   assert(dashboardSource.includes("Why This Changed"), "Expected why-this-changed causal panel");
   assert(dashboardSource.includes("Delta Path"), "Expected causal table delta path header");
   assert(dashboardSource.includes("Ledger Explanation(s)"), "Expected causal table ledger explanation header");
+  assert(dashboardSource.includes("Highlights"), "Expected causal table highlights header");
+  assert(dashboardSource.includes("MULTI_DELTA_EXPLANATION"), "Expected multi-delta ledger highlight marker");
+  assert(dashboardSource.includes("MULTI_LEDGER_REFERENCES"), "Expected multi-ledger delta highlight marker");
   assert(dashboardSource.includes("UNEXPLAINED DELTA"), "Expected unexplained delta marker");
   assert(dashboardSource.includes("Copy Turn Repro Block"), "Expected copy turn repro block control");
   assert(dashboardSource.includes("Error/Anomaly Spotlight"), "Expected anomaly spotlight panel");

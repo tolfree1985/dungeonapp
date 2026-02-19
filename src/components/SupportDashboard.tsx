@@ -1605,8 +1605,13 @@ export function SupportDashboard({
   const selectedTurnCausal = useMemo(() => {
     if (!selectedTurn) {
       return {
-        rows: [] as Array<{ deltaPath: string; ledgerExplanations: string[]; explained: boolean }>,
-        coverage: { totalDeltas: 0, explainedDeltas: 0, unexplainedDeltas: 0 },
+        rows: [] as Array<{
+          deltaPath: string;
+          ledgerExplanations: string[];
+          ledgerIndexes: number[];
+          explained: boolean;
+        }>,
+        coverage: { totalDeltas: 0, explainedDeltas: 0, unexplainedDeltas: 0, coverageRatio: 1 },
       };
     }
     return buildDeltaLedgerExplanationRows({
@@ -1616,6 +1621,16 @@ export function SupportDashboard({
       systemNoLedger: false,
     });
   }, [selectedTurn]);
+
+  const selectedTurnLedgerExplanationCount = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const row of selectedTurnCausal.rows) {
+      for (const ledgerIndex of row.ledgerIndexes) {
+        counts.set(ledgerIndex, (counts.get(ledgerIndex) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [selectedTurnCausal.rows]);
 
   const selectedTurnReproText = useMemo(() => {
     if (!selectedTurn) return "";
@@ -2780,8 +2795,21 @@ export function SupportDashboard({
               <div className="mt-1 text-xs">
                 explainedDeltas: {selectedTurnCausal.coverage.explainedDeltas} / {selectedTurnCausal.coverage.totalDeltas}
               </div>
+              <div className="mt-1 text-xs">coverageRatio: {selectedTurnCausal.coverage.coverageRatio}</div>
               {selectedTurnCausal.coverage.unexplainedDeltas > 0 ? (
                 <div className="mt-1 text-xs font-semibold text-red-700">UNEXPLAINED DELTA</div>
+              ) : null}
+              {selectedTurn && selectedTurnLedgerExplanationCount.size > 0 ? (
+                <div className="mt-1 text-xs">
+                  {Array.from(selectedTurnLedgerExplanationCount.entries())
+                    .filter(([, count]) => count > 1)
+                    .sort((a, b) => a[0] - b[0])
+                    .map(([ledgerIndex, count]) => {
+                      const prefix = `#${ledgerIndex}`;
+                      return `${prefix} MULTI_DELTA_EXPLANATION(${count})`;
+                    })
+                    .join(" | ") || "(no multi-delta ledger entries)"}
+                </div>
               ) : null}
               <div className="mt-2 overflow-auto">
                 <table className="w-full border-collapse text-xs">
@@ -2789,12 +2817,13 @@ export function SupportDashboard({
                     <tr>
                       <th className="border p-2 text-left">Delta Path</th>
                       <th className="border p-2 text-left">Ledger Explanation(s)</th>
+                      <th className="border p-2 text-left">Highlights</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selectedTurnCausal.rows.length === 0 ? (
                       <tr>
-                        <td className="border p-2" colSpan={2}>
+                        <td className="border p-2" colSpan={3}>
                           (none)
                         </td>
                       </tr>
@@ -2804,6 +2833,9 @@ export function SupportDashboard({
                           <td className="border p-2">{row.deltaPath}</td>
                           <td className="border p-2">
                             {row.ledgerExplanations.length > 0 ? row.ledgerExplanations.join(" || ") : "(none)"}
+                          </td>
+                          <td className="border p-2">
+                            {row.ledgerIndexes.length > 1 ? "MULTI_LEDGER_REFERENCES" : "(none)"}
                           </td>
                         </tr>
                       ))
