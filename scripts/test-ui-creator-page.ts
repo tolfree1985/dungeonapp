@@ -50,6 +50,8 @@ function main() {
   assert(source.includes("Copy prompt scaffold bundle"), 'Expected prompt scaffold bundle copy control');
   assert(source.includes("togglePromptSection"), 'Expected deterministic prompt scaffold section toggles');
   assert(source.includes("Unsaved changes:"), 'Expected unsaved changes indicator');
+  assert(source.includes("Creator navigation"), 'Expected creator navigation region');
+  assert(source.includes("href=\"/support\""), 'Expected dev-only Support navigation entry');
 
   console.log("UI CREATOR PAGE OK");
 }

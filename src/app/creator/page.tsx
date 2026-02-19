@@ -167,6 +167,7 @@ function validateScenarioContentJson(raw: string): {
 }
 
 export default function CreatorPage() {
+  const supportNavEnabled = process.env.NODE_ENV !== "production";
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [contentJson, setContentJson] = useState("");
@@ -612,6 +613,13 @@ export default function CreatorPage() {
     <main className="mx-auto max-w-4xl p-6">
       <h1 className="text-2xl font-semibold">Scenario Creator</h1>
       <p className="mt-1 text-sm text-neutral-600">Create and validate scenario drafts.</p>
+      {supportNavEnabled ? (
+        <nav className="mt-2 text-xs" aria-label="Creator navigation">
+          <a href="/support" className="underline">
+            Support
+          </a>
+        </nav>
+      ) : null}
 
       <section className="mt-6 space-y-4 rounded border p-4">
         <div>

@@ -11,6 +11,7 @@ const SCRIPTS = [
   "scripts/test-route-scenario-error-envelope.ts",
   "scripts/test-creator-error-mapping.ts",
   "scripts/test-ui-creator-page.ts",
+  "scripts/test-ui-support-page.ts",
 ];
 
 function runScript(script: string): Promise<void> {
