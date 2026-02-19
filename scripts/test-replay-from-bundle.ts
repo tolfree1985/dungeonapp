@@ -8,11 +8,14 @@ import {
   SUPPORT_MANIFEST_VERSION,
   TELEMETRY_VERSION,
   assertSupportManifestConsistency,
+  buildSupportManifestFromBundle,
+  serializeSupportManifest,
 } from "../src/lib/support/supportManifest";
 import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
 import {
   assertLedgerConsistency,
   assertStateDeltaShape,
+  assertTurnMonotonicity,
   replayStateFromTurnJson,
 } from "../src/lib/game/replay";
 import { roll2d6 as resolveRoll2d6, tierFor2d6 } from "../src/lib/game/resolve";
@@ -35,7 +38,7 @@ function fixedRng(values: number[]): () => number {
   };
 }
 
-function main() {
+async function main() {
   const scriptPath = path.join(process.cwd(), "scripts", "replay-from-bundle.ts");
   const buildSupportPackageScriptPath = path.join(process.cwd(), "scripts", "build-support-package.ts");
   const bundle = {
@@ -62,6 +65,24 @@ function main() {
       },
     ],
   };
+
+  const manifestA = await buildSupportManifestFromBundle(bundle);
+  const manifestB = await buildSupportManifestFromBundle(bundle);
+  assert.equal(
+    serializeSupportManifest(manifestA),
+    serializeSupportManifest(manifestB),
+    "expected replay manifest to be idempotent across runs",
+  );
+  assert.equal(
+    manifestA.replay.finalStateHash,
+    manifestB.replay.finalStateHash,
+    "expected replay final state hash to be idempotent",
+  );
+  assert.deepEqual(
+    manifestA.telemetry,
+    manifestB.telemetry,
+    "expected replay telemetry to be idempotent across runs",
+  );
 
   assert.doesNotThrow(
     () => assertStateDeltaShape({ op: "flag.set", path: "flags.dockSeen", key: "dockSeen", value: true }),
@@ -149,6 +170,41 @@ function main() {
       ]),
     /LEDGER_DUPLICATE_ID/,
     "expected duplicate ledger ids to fail",
+  );
+
+  assert.doesNotThrow(
+    () =>
+      assertTurnMonotonicity([
+        { seq: 0, turnJson: { deltas: [] } },
+        { seq: 1, turnJson: { deltas: [] } },
+      ]),
+    "expected monotonic turn sequence to pass",
+  );
+  assert.throws(
+    () =>
+      assertTurnMonotonicity([
+        { seq: 1, turnJson: { deltas: [] } },
+        { seq: 0, turnJson: { deltas: [] } },
+      ]),
+    /TURN_INDEX_ZERO_REGRESSION/,
+    "expected zero-based regression to fail",
+  );
+  assert.throws(
+    () =>
+      assertTurnMonotonicity([
+        { seq: -1, turnJson: { deltas: [] } },
+      ]),
+    /TURN_INDEX_NEGATIVE/,
+    "expected negative turn index to fail",
+  );
+  assert.throws(
+    () =>
+      assertTurnMonotonicity([
+        { seq: 1, turnJson: { deltas: [] } },
+        { seq: 1, turnJson: { deltas: [] } },
+      ]),
+    /TURN_INDEX_NOT_STRICTLY_INCREASING/,
+    "expected duplicate turn index to fail",
   );
 
   const resolutionSuccess = resolveRoll2d6(fixedRng([0.5, 0.9]));
@@ -242,6 +298,36 @@ function main() {
       ),
     /REPLAY_STATE_TOP_KEY_NOT_ALLOWED/,
     "expected top-level state namespace lock to reject rogue keys",
+  );
+  assert.throws(
+    () =>
+      replayStateFromTurnJson([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [
+              { op: "flag.set", key: "quest_seen", value: true, path: "quests.seen" },
+              { op: "flag.set", key: "alpha", value: true, path: "flags.alpha" },
+            ],
+          },
+        },
+      ]),
+    /DELTA_ORDER_NOT_SORTED/,
+    "expected unsorted delta paths to fail ordering lock",
+  );
+  assert.throws(
+    () =>
+      replayStateFromTurnJson([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "flag.set", key: "dock_seen", value: true, path: "flags.dock_seen" }],
+            ledgerAdds: [{ id: "ledger_uuid_like", turnIndex: 0, message: "trace 123e4567-e89b-12d3-a456-426614174000" }],
+          },
+        },
+      ]),
+    /LEDGER_TEXT_NON_DETERMINISTIC/,
+    "expected non-deterministic ledger text to fail",
   );
 
   const invalidDeltaBundle = {
@@ -710,4 +796,7 @@ function main() {
   console.log("REPLAY FROM BUNDLE OK");
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

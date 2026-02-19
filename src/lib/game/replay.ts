@@ -11,6 +11,14 @@ const FORBIDDEN_DELTA_KEYS = new Set([
 ]);
 
 export const ALLOWED_STATE_NAMESPACES = new Set([
+  "stats",
+  "inventory",
+  "relationships",
+  "quests",
+  "flags",
+]);
+
+const ALLOWED_REPLAY_TOP_LEVEL_KEYS = new Set([
   "stateVersion",
   "world",
   "inventory",
@@ -23,10 +31,26 @@ export const ALLOWED_STATE_NAMESPACES = new Set([
   "flags",
 ]);
 
+const LEDGER_FORBIDDEN_PATTERNS = [
+  /\bdate\.now\b/i,
+  /\bmath\.random\b/i,
+  /\brandom\b/i,
+  /\bseed\b/i,
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i,
+  /\b\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z?\b/i,
+  /\b\d{13}\b/,
+  /\b0\.\d{6,}\b/,
+];
+
 type ReplayEvent = { seq: number; turnJson: any };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function compareText(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }
 
 function normalizeDeltaPath(path: unknown): string | null {
@@ -94,6 +118,25 @@ export function assertStateDeltaShape(delta: unknown): void {
   assertNoForbiddenDeltaValues(delta, "delta");
 }
 
+function deltaOrderKey(delta: unknown): string {
+  const explicitPath = explicitDeltaPath(delta);
+  if (explicitPath) return explicitPath;
+  if (isRecord(delta) && typeof delta.op === "string" && delta.op.trim().length > 0) {
+    return delta.op.trim();
+  }
+  return "";
+}
+
+function assertDeltaOrderIsSorted(deltas: unknown[], seq: number): unknown[] {
+  const sorted = [...deltas].sort((a, b) => compareText(deltaOrderKey(a), deltaOrderKey(b)));
+  for (let i = 0; i < deltas.length; i++) {
+    if (deltaOrderKey(deltas[i]) !== deltaOrderKey(sorted[i])) {
+      throw new Error(`DELTA_ORDER_NOT_SORTED seq=${seq}`);
+    }
+  }
+  return sorted;
+}
+
 function assertDeltaNamespaceAllowed(delta: unknown): void {
   const path = explicitDeltaPath(delta);
   if (!path) return;
@@ -101,6 +144,31 @@ function assertDeltaNamespaceAllowed(delta: unknown): void {
   const namespace = cleaned.split(/[./[\]]+/).filter(Boolean)[0] ?? "";
   if (!namespace || !ALLOWED_STATE_NAMESPACES.has(namespace)) {
     throw new Error(`DELTA_NAMESPACE_NOT_ALLOWED namespace=${namespace || "(none)"}`);
+  }
+}
+
+function assertLedgerTextDeterminism(value: unknown): void {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    for (const pattern of LEDGER_FORBIDDEN_PATTERNS) {
+      if (pattern.test(normalized)) {
+        throw new Error("LEDGER_TEXT_NON_DETERMINISTIC");
+      }
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry) => assertLedgerTextDeterminism(entry));
+    return;
+  }
+  if (isRecord(value)) {
+    const keys = Object.keys(value).sort(compareText);
+    for (const key of keys) {
+      if (FORBIDDEN_DELTA_KEYS.has(key.toLowerCase())) {
+        throw new Error("LEDGER_TEXT_NON_DETERMINISTIC");
+      }
+      assertLedgerTextDeterminism(value[key]);
+    }
   }
 }
 
@@ -154,6 +222,7 @@ export function assertLedgerConsistency(events: ReplayEvent[]): void {
     }
 
     ledgerAdds.forEach((entry, idx) => {
+      assertLedgerTextDeterminism(entry);
       const refTurnIndex = parseLedgerTurnIndex(entry);
       if (refTurnIndex != null && !turnIndexes.has(refTurnIndex)) {
         throw new Error(`LEDGER_REFERENCE_INVALID seq=${event.seq} idx=${idx} turnIndex=${refTurnIndex}`);
@@ -185,13 +254,32 @@ export function assertLedgerConsistency(events: ReplayEvent[]): void {
   }
 }
 
+export function assertTurnMonotonicity(events: ReplayEvent[]): void {
+  let prev: number | null = null;
+  for (const event of events) {
+    if (!Number.isInteger(event.seq)) {
+      throw new Error("TURN_INDEX_NOT_INTEGER");
+    }
+    if (event.seq < 0) {
+      throw new Error("TURN_INDEX_NEGATIVE");
+    }
+    if (prev != null && event.seq === 0) {
+      throw new Error("TURN_INDEX_ZERO_REGRESSION");
+    }
+    if (prev != null && event.seq <= prev) {
+      throw new Error("TURN_INDEX_NOT_STRICTLY_INCREASING");
+    }
+    prev = event.seq;
+  }
+}
+
 function assertReplayStateInvariant(state: unknown): void {
   if (!isRecord(state)) {
     throw new Error("REPLAY_STATE_INVALID");
   }
   const keys = Object.keys(state).sort();
   for (const key of keys) {
-    if (!ALLOWED_STATE_NAMESPACES.has(key)) {
+    if (!ALLOWED_REPLAY_TOP_LEVEL_KEYS.has(key)) {
       throw new Error(`REPLAY_STATE_TOP_KEY_NOT_ALLOWED key=${key}`);
     }
   }
@@ -208,14 +296,16 @@ export function replayStateFromTurnJson(
   genesisState?: any
 ) {
   let state: any = genesisState ?? createInitialStateV1();
+  assertTurnMonotonicity(events);
   assertLedgerConsistency(events);
 
   for (const e of events) {
-    const deltas = getReplayDeltasStrict(e);
-    deltas.forEach((delta) => {
+    const rawDeltas = getReplayDeltasStrict(e);
+    rawDeltas.forEach((delta) => {
       assertStateDeltaShape(delta);
       assertDeltaNamespaceAllowed(delta);
     });
+    const deltas = assertDeltaOrderIsSorted(rawDeltas, e.seq);
 
     state = applyDeltas(state, deltas);
   }
