@@ -14,6 +14,7 @@ const SCRIPTS = [
   "scripts/test-ui-support-page.ts",
   "scripts/test-replay-from-bundle.ts",
   "scripts/test-build-support-package.ts",
+  "scripts/test-golden-replays.ts",
 ];
 
 function runScript(script: string): Promise<void> {
