@@ -67,6 +67,14 @@ Only variables currently read by app/runtime code are listed.
   - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-creator-error-mapping.ts`
   - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-ui-creator-page.ts`
 
+## Launch hardening checklist stub (Sprint 11)
+- Confirm creator debug exports copy deterministic text only (no stack traces, no timestamps).
+- Confirm create/publish creator route errors return stable `{ error, code }` envelopes.
+- Confirm status regions are readable and deterministic (`role="status"` + `aria-live` where used).
+- Confirm smoke surface includes route error envelope checks before release.
+- Confirm no autosave timers/debounces in creator workflows.
+- Run full intervention suite and capture final green output in release notes.
+
 ## Deterministic smoke command
 Run in CI/staging with valid `DATABASE_URL`:
 
