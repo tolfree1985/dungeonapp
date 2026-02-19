@@ -33,6 +33,10 @@ function main() {
     "Expected meaningless-failure lint marker to be documented in creator surface",
   );
   assert(
+    source.includes("SCENARIO_STYLE_INSTABILITY"),
+    "Expected style-instability lint marker to be documented in creator surface",
+  );
+  assert(
     source.includes("SCENARIO_STAKES_CONTRADICTION"),
     "Expected stakes-contradiction lint marker to be documented in creator surface",
   );

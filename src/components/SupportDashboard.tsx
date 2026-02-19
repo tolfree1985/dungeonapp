@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { buildDeltaLedgerExplanationRows, classifyConsequence, classifyFailForwardSignal, explainConsequence } from "@/lib/game/replay";
+import {
+  buildDeltaLedgerExplanationRows,
+  classifyConsequence,
+  classifyFailForwardSignal,
+  deriveStyleStabilityFromEvents,
+  explainConsequence,
+} from "@/lib/game/replay";
 import { categorizeDeltaPath } from "@/lib/support/deltaPathMeaningMap";
 import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministicReproCliText";
 import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
@@ -112,6 +118,13 @@ type PerTurnTelemetryRow = {
   costTypes: string;
   escalation: "NONE" | "MINOR" | "MAJOR";
   stakesReason: string[];
+};
+
+type StyleStabilityPanel = {
+  toneStable: boolean;
+  genreStable: boolean;
+  pacingStable: boolean;
+  driftCount: number;
 };
 
 type ReplayTelemetryReference = {
@@ -1369,6 +1382,44 @@ export function SupportDashboard({
     return rows;
   }, [supportManifest, turnRows]);
 
+  const styleStability = useMemo<StyleStabilityPanel>(() => {
+    if (turnRows.length === 0) {
+      return {
+        toneStable: true,
+        genreStable: true,
+        pacingStable: true,
+        driftCount: 0,
+      };
+    }
+
+    try {
+      const events = turnRows
+        .map((row, index) => {
+          const turnIndex = parseTurnIndex(row.turnIndex, index);
+          const rawTurn = isRecord(row.rawTurn) ? row.rawTurn : {};
+          const deltas = Array.isArray(rawTurn.deltas) ? rawTurn.deltas : row.stateDeltas;
+          const ledgerAdds = Array.isArray(rawTurn.ledgerAdds) ? rawTurn.ledgerAdds : row.ledgerAdds;
+          return {
+            seq: turnIndex,
+            turnJson: {
+              ...rawTurn,
+              deltas,
+              ledgerAdds,
+            },
+          };
+        })
+        .sort((a, b) => (a.seq === b.seq ? 0 : a.seq < b.seq ? -1 : 1));
+      return deriveStyleStabilityFromEvents(events);
+    } catch {
+      return {
+        toneStable: false,
+        genreStable: false,
+        pacingStable: false,
+        driftCount: 0,
+      };
+    }
+  }, [turnRows]);
+
   const telemetryReference = useMemo(() => extractTelemetryReference(bundleData), [bundleData]);
   const telemetryReferencePerTurn = useMemo(
     () =>
@@ -2536,6 +2587,20 @@ export function SupportDashboard({
             {finalStateHashCopyStatus}
           </span>
         </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Style stability">
+        <h2 className="text-base font-semibold">STYLE STABILITY</h2>
+        <div className={`mt-2 text-xs ${styleStability.toneStable ? "text-green-700" : "text-red-700"}`}>
+          Tone: {styleStability.toneStable ? "STABLE" : "DRIFTED"}
+        </div>
+        <div className={`text-xs ${styleStability.genreStable ? "text-green-700" : "text-red-700"}`}>
+          Genre: {styleStability.genreStable ? "STABLE" : "DRIFTED"}
+        </div>
+        <div className={`text-xs ${styleStability.pacingStable ? "text-green-700" : "text-red-700"}`}>
+          Pacing: {styleStability.pacingStable ? "STABLE" : "DRIFTED"}
+        </div>
+        <div className="text-xs">Drift Count: {styleStability.driftCount}</div>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Replay Telemetry (Derived)">

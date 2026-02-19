@@ -87,6 +87,11 @@ const DETERMINISM_ERROR_METADATA: Record<
     reference: "Turn: /turns/* where style-lock deltas apply",
     hint: "Allowed transitions: undefined -> defined, or defined -> same value.",
   },
+  SCENARIO_STYLE_INSTABILITY: {
+    explanation: "A style dimension transitions more than once in the scripted flow.",
+    reference: "Turn: /turns/* where style-lock deltas apply",
+    hint: "Keep each style dimension to at most one transition per scenario script.",
+  },
   SCENARIO_TURN_INDEX_INVALID: {
     explanation: "Turn indexes contain duplicates or invalid sequence entries.",
     reference: "Path: /turns/*/turnIndex",

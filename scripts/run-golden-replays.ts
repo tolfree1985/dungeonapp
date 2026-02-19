@@ -311,6 +311,41 @@ function parsePerTurnTelemetryRows(stdout: string): Array<{
   return rows;
 }
 
+function parseStyleStability(stdout: string): {
+  toneStable: boolean;
+  genreStable: boolean;
+  pacingStable: boolean;
+  driftCount: number;
+} | null {
+  const lines = stdout.split(/\r?\n/);
+  const markerIndex = lines.findIndex((line) => line.trim() === "STYLE_STABILITY");
+  if (markerIndex < 0) return null;
+  const window = lines.slice(markerIndex, markerIndex + 6);
+  const readBoolean = (prefix: string): boolean | null => {
+    const line = window.find((entry) => entry.trim().startsWith(prefix));
+    if (!line) return null;
+    const raw = line.trim().slice(prefix.length).trim();
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    return null;
+  };
+  const readNumber = (prefix: string): number | null => {
+    const line = window.find((entry) => entry.trim().startsWith(prefix));
+    if (!line) return null;
+    const raw = line.trim().slice(prefix.length).trim();
+    if (!/^-?\d+$/.test(raw)) return null;
+    return Number(raw);
+  };
+  const toneStable = readBoolean("toneStable:");
+  const genreStable = readBoolean("genreStable:");
+  const pacingStable = readBoolean("pacingStable:");
+  const driftCount = readNumber("driftCount:");
+  if (toneStable == null || genreStable == null || pacingStable == null || driftCount == null) {
+    return null;
+  }
+  return { toneStable, genreStable, pacingStable, driftCount };
+}
+
 function isFailureResolution(source: unknown): boolean {
   if (!isRecord(source)) return false;
   const resolution = isRecord(source.resolution) ? source.resolution : null;
@@ -469,8 +504,17 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   if (stdout.includes("DRIFT_BLOCK_MISSING")) {
     regressionMarkers.push("GOLDEN_REGRESSION unexpected=DRIFT_BLOCK_MISSING");
   }
-  if (hasStyleLockFields && combinedOutput.includes("STYLE_LOCK_VIOLATION")) {
+  if (hasStyleLockFields && (combinedOutput.includes("STYLE_LOCK_VIOLATION") || combinedOutput.includes("STYLE_LOCK_DRIFT_VIOLATION"))) {
     regressionMarkers.push("GOLDEN_STYLE_LOCK_REGRESSION");
+  }
+  if (combinedOutput.includes("STYLE_OVERRIDE_MISSING_LEDGER")) {
+    regressionMarkers.push("GOLDEN_STYLE_LOCK_REGRESSION marker=STYLE_OVERRIDE_MISSING_LEDGER");
+  }
+  const styleStability = parseStyleStability(stdout);
+  if (!styleStability) {
+    regressionMarkers.push("GOLDEN_STYLE_LOCK_REGRESSION missing=STYLE_STABILITY");
+  } else if (styleStability.driftCount !== 0) {
+    regressionMarkers.push(`GOLDEN_STYLE_LOCK_REGRESSION driftCount=${String(styleStability.driftCount)}`);
   }
   if (combinedOutput.includes("DELTA_WITHOUT_LEDGER_EXPLANATION")) {
     regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION marker=DELTA_WITHOUT_LEDGER_EXPLANATION");

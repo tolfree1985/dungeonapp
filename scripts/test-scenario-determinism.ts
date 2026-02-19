@@ -204,6 +204,25 @@ function main() {
   assert.equal(validUnlockedScenario.valid, true);
   assert.deepEqual(validUnlockedScenario.errors, []);
 
+  const styleInstability = validateScenarioDeterminism({
+    turns: [
+      {
+        turnIndex: 0,
+        stateDeltas: [{ op: "flag.set", path: "flags.toneLock", value: "locked" }],
+        ledgerAdds: [{ id: "l0", turnIndex: 0 }],
+      },
+      {
+        turnIndex: 1,
+        stateDeltas: [{ op: "flag.set", path: "flags.toneLock", value: "unlocked" }],
+        ledgerAdds: [{ id: "l1", turnIndex: 1 }],
+      },
+    ],
+  });
+  assert.deepEqual(styleInstability.errors, [
+    "SCENARIO_STYLE_INSTABILITY",
+    "SCENARIO_STYLE_LOCK_TRANSITION_INVALID",
+  ]);
+
   const orderingScenario = validateScenarioDeterminism({
     initialState: {
       world: {

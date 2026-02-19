@@ -109,6 +109,11 @@ function main() {
   assert(dashboardSource.includes("Turn sequence integrity:"), "Expected turn sequence integrity signal");
   assert(dashboardSource.includes("FINAL_STATE_HASH:"), "Expected final state hash label");
   assert(dashboardSource.includes("Copy final state hash"), "Expected final state hash copy control");
+  assert(dashboardSource.includes("STYLE STABILITY"), "Expected style stability section");
+  assert(dashboardSource.includes("Tone:"), "Expected style stability tone row");
+  assert(dashboardSource.includes("Genre:"), "Expected style stability genre row");
+  assert(dashboardSource.includes("Pacing:"), "Expected style stability pacing row");
+  assert(dashboardSource.includes("Drift Count:"), "Expected style stability drift count row");
   assert(dashboardSource.includes("Replay Telemetry (Derived)"), "Expected derived telemetry panel");
   assert(dashboardSource.includes("TELEMETRY_VERSION"), "Expected telemetry version marker in UI panel");
   assert(dashboardSource.includes("TELEMETRY"), "Expected telemetry marker in UI panel");

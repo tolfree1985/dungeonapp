@@ -87,6 +87,13 @@ export type CausalCoverageSummary = {
   coverageRatio: number;
 };
 
+export type StyleStabilitySummary = {
+  toneStable: boolean;
+  genreStable: boolean;
+  pacingStable: boolean;
+  driftCount: number;
+};
+
 export type DeltaLedgerExplanationRow = {
   deltaPath: string;
   ledgerExplanations: string[];
@@ -1234,17 +1241,79 @@ function readStyleLockFromState(state: unknown, key: (typeof STYLE_LOCK_KEYS)[nu
   return undefined;
 }
 
-function assertStyleLockInvariant(prevState: unknown, nextState: unknown, seq: number): boolean {
+function styleStabilityKey(key: (typeof STYLE_LOCK_KEYS)[number]): keyof StyleStabilitySummary {
+  if (key === "toneLock") return "toneStable";
+  if (key === "genreLock") return "genreStable";
+  return "pacingStable";
+}
+
+function readLedgerAddsForStyleOverride(turnJson: unknown): unknown[] {
+  if (!isRecord(turnJson)) return [];
+  if (Array.isArray(turnJson.ledgerAdds)) return turnJson.ledgerAdds;
+  if (isRecord(turnJson.turnJson) && Array.isArray(turnJson.turnJson.ledgerAdds)) {
+    return turnJson.turnJson.ledgerAdds;
+  }
+  return [];
+}
+
+function hasStyleOverrideBoolean(ledgerAdds: unknown[]): boolean {
+  for (const entry of ledgerAdds) {
+    if (!isRecord(entry)) continue;
+    if (entry.style_override === true || entry.styleOverride === true) {
+      return true;
+    }
+    try {
+      const text = stableStringifyDeterministic(entry, "style.override.bool");
+      if (text.includes("\"style_override\":true") || text.includes("\"styleOverride\":true")) {
+        return true;
+      }
+    } catch {
+      const fallback = JSON.stringify(entry);
+      if (
+        typeof fallback === "string" &&
+        (fallback.includes("\"style_override\":true") || fallback.includes("\"styleOverride\":true"))
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasStyleOverrideMarker(ledgerAdds: unknown[]): boolean {
+  for (const entry of ledgerAdds) {
+    try {
+      const text = stableStringifyDeterministic(entry, "style.override.marker");
+      if (text.includes("STYLE_OVERRIDE")) {
+        return true;
+      }
+    } catch {
+      const fallback = JSON.stringify(entry);
+      if (typeof fallback === "string" && fallback.includes("STYLE_OVERRIDE")) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function assertStyleLockInvariant(
+  prevState: unknown,
+  nextState: unknown,
+  turnJson: unknown,
+  seq: number,
+  flipCounts: Map<(typeof STYLE_LOCK_KEYS)[number], number>,
+  stability: StyleStabilitySummary,
+): boolean {
   let styleLockSeen = false;
+  const ledgerAdds = readLedgerAddsForStyleOverride(turnJson);
+  const hasOverrideBoolean = hasStyleOverrideBoolean(ledgerAdds);
+  const hasOverrideToken = hasStyleOverrideMarker(ledgerAdds);
   for (const key of STYLE_LOCK_KEYS) {
     const prevValue = readStyleLockFromState(prevState, key);
     const nextValue = readStyleLockFromState(nextState, key);
     if (prevValue !== undefined || nextValue !== undefined) {
       styleLockSeen = true;
-    }
-
-    if (prevValue !== undefined && nextValue === undefined) {
-      throw new Error(`STYLE_LOCK_VIOLATION seq=${seq} key=${key} reason=deleted`);
     }
 
     if (prevValue !== undefined) {
@@ -1258,8 +1327,27 @@ function assertStyleLockInvariant(prevState: unknown, nextState: unknown, seq: n
       }
     }
 
-    if (prevValue === "locked" && nextValue !== undefined && nextValue !== "locked") {
-      throw new Error(`STYLE_LOCK_VIOLATION seq=${seq} key=${key} reason=locked_transition`);
+    if ((prevValue !== undefined || nextValue !== undefined) && prevValue !== nextValue) {
+      stability[styleStabilityKey(key)] = false;
+      stability.driftCount += 1;
+    }
+
+    if (prevValue !== undefined && nextValue === undefined) {
+      throw new Error(`STYLE_LOCK_DRIFT_VIOLATION seq=${seq} key=${key} reason=deleted`);
+    }
+
+    if (prevValue !== undefined && nextValue !== undefined && prevValue !== nextValue) {
+      if (!hasOverrideBoolean) {
+        throw new Error(`STYLE_LOCK_DRIFT_VIOLATION seq=${seq} key=${key} reason=override_required`);
+      }
+      if (!hasOverrideToken) {
+        throw new Error(`STYLE_OVERRIDE_MISSING_LEDGER seq=${seq} key=${key}`);
+      }
+      const nextFlipCount = (flipCounts.get(key) ?? 0) + 1;
+      flipCounts.set(key, nextFlipCount);
+      if (nextFlipCount > 1) {
+        throw new Error(`STYLE_LOCK_DRIFT_VIOLATION seq=${seq} key=${key} reason=multiple_flips`);
+      }
     }
   }
   return styleLockSeen;
@@ -1283,6 +1371,7 @@ export type ReplayWithGuardSummary = {
   state: any;
   guardSummary: readonly ReplayGuardName[];
   styleLockPresent: boolean;
+  styleStability: StyleStabilitySummary;
   failForwardCheck: "PASS" | "FAIL";
   failForwardSignal: FailForwardSignal | "NONE";
   causalCoverage: CausalCoverageSummary;
@@ -1304,6 +1393,13 @@ function replayStateFromTurnJsonInternal(
   const mark = (name: ReplayGuardName) => executedGuards.add(name);
   let state: any = genesisState ?? createInitialStateV1();
   let styleLockPresent = false;
+  const styleLockFlipCounts = new Map<(typeof STYLE_LOCK_KEYS)[number], number>();
+  const styleStability: StyleStabilitySummary = {
+    toneStable: true,
+    genreStable: true,
+    pacingStable: true,
+    driftCount: 0,
+  };
   let failForwardSignal: FailForwardSignal | "NONE" = "NONE";
   let causalCoverage: CausalCoverageSummary = {
     totalDeltas: 0,
@@ -1342,7 +1438,9 @@ function replayStateFromTurnJsonInternal(
     mark("DELTA_APPLY_IDEMPOTENCY");
 
     const nextState = applyDeltas(state, deltas as any);
-    styleLockPresent = assertStyleLockInvariant(state, nextState, e.seq) || styleLockPresent;
+    styleLockPresent =
+      assertStyleLockInvariant(state, nextState, e.turnJson, e.seq, styleLockFlipCounts, styleStability) ||
+      styleLockPresent;
     mark("STYLE_LOCK_INVARIANT");
     state = nextState;
   }
@@ -1356,6 +1454,7 @@ function replayStateFromTurnJsonInternal(
       state,
       guardSummary: REPLAY_GUARD_ORDER.filter((name) => executedGuards.has(name)),
       styleLockPresent,
+      styleStability,
       failForwardCheck: "PASS",
       failForwardSignal,
       causalCoverage,
@@ -1364,6 +1463,30 @@ function replayStateFromTurnJsonInternal(
   }
 
   return state;
+}
+
+export function deriveStyleStabilityFromEvents(
+  events: Array<{ seq: number; turnJson: any }>,
+  genesisState?: unknown,
+): StyleStabilitySummary {
+  let state: unknown = genesisState ?? createInitialStateV1();
+  const sortedEvents = [...events].sort((a, b) => a.seq - b.seq);
+  const flipCounts = new Map<(typeof STYLE_LOCK_KEYS)[number], number>();
+  const stability: StyleStabilitySummary = {
+    toneStable: true,
+    genreStable: true,
+    pacingStable: true,
+    driftCount: 0,
+  };
+
+  for (const event of sortedEvents) {
+    const deltas = getReplayDeltas(event as ReplayEvent);
+    const nextState = applyDeltas(state, deltas as any);
+    assertStyleLockInvariant(state, nextState, event.turnJson, event.seq, flipCounts, stability);
+    state = nextState;
+  }
+
+  return stability;
 }
 
 export function replayStateFromTurnJson(

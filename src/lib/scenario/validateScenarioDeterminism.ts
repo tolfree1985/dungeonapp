@@ -347,6 +347,7 @@ export function validateScenarioDeterminism(scenarioJson: unknown): {
   const seenTurnIndexes = new Set<number>();
 
   const styleLockState = new Map<string, unknown>();
+  const styleTransitionCounts = new Map<string, number>();
   const orderedStyleKeys = [...STYLE_LOCK_KEYS].sort(compareText);
   for (const key of orderedStyleKeys) {
     const value = readStyleLockValueFromInitialState(scenarioJson, key);
@@ -431,6 +432,13 @@ export function validateScenarioDeterminism(scenarioJson: unknown): {
           const current = styleLockState.get(styleKey);
           const next = styleLockNextValueFromDelta(delta);
           const lockFieldPresent = hasStyleLockInInitialState(scenarioJson, styleKey) || current !== undefined;
+          if (current !== next) {
+            const nextCount = (styleTransitionCounts.get(styleKey) ?? 0) + 1;
+            styleTransitionCounts.set(styleKey, nextCount);
+            if (nextCount > 1) {
+              errors.add("SCENARIO_STYLE_INSTABILITY");
+            }
+          }
 
           if (lockFieldPresent && next === undefined) {
             errors.add("SCENARIO_STYLE_LOCK_TRANSITION_INVALID");

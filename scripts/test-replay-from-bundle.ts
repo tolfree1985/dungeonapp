@@ -714,8 +714,61 @@ async function main() {
           npcs: {},
         } as any,
       ),
-    /STYLE_LOCK_VIOLATION/,
-    "expected locked style key downgrade to fail",
+    /STYLE_LOCK_DRIFT_VIOLATION/,
+    "expected style key transition without override marker to fail",
+  );
+  assert.throws(
+    () =>
+      replayStateFromTurnJson(
+        [
+          {
+            seq: 0,
+            turnJson: {
+              deltas: [{ op: "flag.set", key: "toneLock", value: "unlocked", path: "flags.toneLock" }],
+              ledgerAdds: [{ id: "ledger_style_0", turnIndex: 0, style_override: true }],
+            },
+          },
+        ],
+        {
+          stateVersion: "v1",
+          world: { time: 0, locationId: "room_start", clocks: {}, flags: { toneLock: "locked" } },
+          inventory: {},
+          map: { nodes: {} },
+          npcs: {},
+        } as any,
+      ),
+    /STYLE_OVERRIDE_MISSING_LEDGER/,
+    "expected style override without STYLE_OVERRIDE marker to fail",
+  );
+  assert.throws(
+    () =>
+      replayStateFromTurnJson(
+        [
+          {
+            seq: 0,
+            turnJson: {
+              deltas: [{ op: "flag.set", key: "toneLock", value: "unlocked", path: "flags.toneLock" }],
+              ledgerAdds: [{ id: "ledger_style_0", turnIndex: 0, style_override: true, marker: "STYLE_OVERRIDE" }],
+            },
+          },
+          {
+            seq: 1,
+            turnJson: {
+              deltas: [{ op: "flag.set", key: "toneLock", value: "none", path: "flags.toneLock" }],
+              ledgerAdds: [{ id: "ledger_style_1", turnIndex: 1, style_override: true, marker: "STYLE_OVERRIDE" }],
+            },
+          },
+        ],
+        {
+          stateVersion: "v1",
+          world: { time: 0, locationId: "room_start", clocks: {}, flags: { toneLock: "locked" } },
+          inventory: {},
+          map: { nodes: {} },
+          npcs: {},
+        } as any,
+      ),
+    /STYLE_LOCK_DRIFT_VIOLATION/,
+    "expected style lock to reject more than one flip per session",
   );
   let nonIdempotentTick = false;
   assert.throws(
@@ -743,6 +796,35 @@ async function main() {
     "expected guard summary names in deterministic order",
   );
   assert.equal(guardSummaryReplay.styleLockPresent, false, "expected no style lock marker when no style lock keys are present");
+  assert.deepEqual(
+    guardSummaryReplay.styleStability,
+    { toneStable: true, genreStable: true, pacingStable: true, driftCount: 0 },
+    "expected default style stability summary for non-style-lock fixtures",
+  );
+
+  const styleDriftAllowedSummary = replayStateFromTurnJsonWithGuardSummary(
+    [
+      {
+        seq: 0,
+        turnJson: {
+          deltas: [{ op: "flag.set", key: "toneLock", value: "unlocked", path: "flags.toneLock" }],
+          ledgerAdds: [{ id: "ledger_style_allow_0", turnIndex: 0, style_override: true, marker: "STYLE_OVERRIDE" }],
+        },
+      },
+    ],
+    {
+      stateVersion: "v1",
+      world: { time: 0, locationId: "room_start", clocks: {}, flags: { toneLock: "locked" } },
+      inventory: {},
+      map: { nodes: {} },
+      npcs: {},
+    } as any,
+  );
+  assert.deepEqual(
+    styleDriftAllowedSummary.styleStability,
+    { toneStable: false, genreStable: true, pacingStable: true, driftCount: 1 },
+    "expected style stability to reflect one allowed tone transition",
+  );
 
   const invalidDeltaBundle = {
     bundleId: "bundle-invalid-delta",
@@ -831,6 +913,28 @@ async function main() {
   assert(out.includes("RISK_LEVEL:"), "expected consequence summary risk field");
   assert(out.includes("COST_TYPES:"), "expected consequence summary cost field");
   assert(out.includes("ESCALATION:"), "expected consequence summary escalation field");
+  assert(out.includes("STYLE_STABILITY"), "expected style stability marker");
+  assert(out.includes("toneStable:"), "expected style stability tone field");
+  assert(out.includes("genreStable:"), "expected style stability genre field");
+  assert(out.includes("pacingStable:"), "expected style stability pacing field");
+  assert(out.includes("driftCount:"), "expected style stability drift count field");
+  assert(/driftCount:\s*0/.test(out), "expected driftCount to be zero for deterministic fixture");
+  const styleOrder = [
+    "CONSEQUENCE_SUMMARY",
+    "STYLE_STABILITY",
+    "toneStable:",
+    "genreStable:",
+    "pacingStable:",
+    "driftCount:",
+    `TELEMETRY_VERSION ${TELEMETRY_VERSION}`,
+  ];
+  const styleOrderIndex = styleOrder.map((marker) => out.indexOf(marker));
+  for (let i = 0; i < styleOrderIndex.length - 1; i++) {
+    assert(
+      styleOrderIndex[i] >= 0 && styleOrderIndex[i + 1] >= 0 && styleOrderIndex[i] < styleOrderIndex[i + 1],
+      `expected replay style stability ordering for ${styleOrder[i]} before ${styleOrder[i + 1]}`,
+    );
+  }
   assert(out.includes("FINAL_STATE_HASH"), "expected FINAL_STATE_HASH marker");
   assert(out.includes("TURNS"), "expected TURNS marker");
   assert(out.includes("INVARIANT_SEQ_CONTIGUOUS"), "expected sequence invariant marker");

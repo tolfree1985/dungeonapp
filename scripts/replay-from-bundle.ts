@@ -338,6 +338,11 @@ async function main() {
   console.log(`RISK_LEVEL: ${guardSummary.consequenceSummary.riskLevel}`);
   console.log(`COST_TYPES: ${guardSummary.consequenceSummary.costTypes.join(",")}`);
   console.log(`ESCALATION: ${guardSummary.consequenceSummary.escalation}`);
+  console.log("STYLE_STABILITY");
+  console.log(`toneStable: ${guardSummary.styleStability.toneStable}`);
+  console.log(`genreStable: ${guardSummary.styleStability.genreStable}`);
+  console.log(`pacingStable: ${guardSummary.styleStability.pacingStable}`);
+  console.log(`driftCount: ${guardSummary.styleStability.driftCount}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");
