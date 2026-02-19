@@ -83,6 +83,8 @@ export default function CreatorPage() {
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [contentJson, setContentJson] = useState("");
+  const [importJsonText, setImportJsonText] = useState("");
+  const [jsonImportStatus, setJsonImportStatus] = useState("");
   const [lastValidation, setLastValidation] = useState<ReturnType<typeof validateScenarioContentJson> | null>(
     null,
   );
@@ -326,12 +328,65 @@ export default function CreatorPage() {
     setDraftCopyStatus("Copied");
   }
 
+  function onImportJson() {
+    const raw = importJsonText.trim();
+    if (!raw) {
+      setJsonImportStatus("Import error: JSON input is required.");
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      setJsonImportStatus("Import error: Invalid JSON.");
+      return;
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      setJsonImportStatus("Import error: Scenario JSON must be an object.");
+      return;
+    }
+
+    const scenario = parsed as any;
+    setTitle(typeof scenario.title === "string" ? scenario.title : "");
+    setSummary(typeof scenario.summary === "string" ? scenario.summary : "");
+    setContentJson(raw);
+    setLastValidation(validateScenarioContentJson(raw));
+    setJsonImportStatus("Import complete.");
+  }
+
   return (
     <main className="mx-auto max-w-4xl p-6">
       <h1 className="text-2xl font-semibold">Scenario Creator</h1>
       <p className="mt-1 text-sm text-neutral-600">Create and validate scenario drafts.</p>
 
       <section className="mt-6 space-y-4 rounded border p-4">
+        <div>
+          <label className="mb-1 block text-sm font-medium" htmlFor="scenario-json-import">
+            Paste scenario JSON
+          </label>
+          <textarea
+            id="scenario-json-import"
+            value={importJsonText}
+            onChange={(e) => setImportJsonText(e.target.value)}
+            className="w-full rounded border px-3 py-2 font-mono text-sm"
+            rows={6}
+            placeholder="{\"id\":\"scenario-id\",\"title\":\"...\",\"summary\":\"...\",\"start\":{\"prompt\":\"...\"}}"
+          />
+          <div className="mt-2 flex items-center gap-3">
+            <button type="button" onClick={onImportJson} className="rounded border px-2 py-1 text-xs">
+              Import JSON
+            </button>
+            <span>{jsonImportStatus}</span>
+          </div>
+          {jsonImportStatus.startsWith("Import error:") ? (
+            <div className="mt-2 rounded border p-2 text-xs" aria-label="JSON import error">
+              {jsonImportStatus}
+            </div>
+          ) : null}
+        </div>
+
         <div>
           <label className="mb-1 block text-sm font-medium" htmlFor="scenario-title">
             Title
