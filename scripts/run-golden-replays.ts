@@ -20,6 +20,7 @@ type FixtureRunResult =
       fixtureName: string;
       manifestHash: string;
       finalStateHash: string;
+      memoryHash: string;
     }
   | {
       ok: false;
@@ -346,6 +347,36 @@ function parseStyleStability(stdout: string): {
   return { toneStable, genreStable, pacingStable, driftCount };
 }
 
+function parseMemoryStability(stdout: string): {
+  cardsTriggered: number;
+  cardsApplied: number;
+  memoryHash: string;
+} | null {
+  const lines = stdout.split(/\r?\n/);
+  const markerIndex = lines.findIndex((line) => line.trim() === "MEMORY_STABILITY");
+  if (markerIndex < 0) return null;
+  const window = lines.slice(markerIndex, markerIndex + 5);
+  const readNumber = (prefix: string): number | null => {
+    const line = window.find((entry) => entry.trim().startsWith(prefix));
+    if (!line) return null;
+    const raw = line.trim().slice(prefix.length).trim();
+    if (!/^-?\d+$/.test(raw)) return null;
+    return Number(raw);
+  };
+  const cardsTriggered = readNumber("cardsTriggered:");
+  const cardsApplied = readNumber("cardsApplied:");
+  const memoryHashLine = window.find((entry) => entry.trim().startsWith("memoryHash:"));
+  const memoryHash = memoryHashLine ? memoryHashLine.trim().slice("memoryHash:".length).trim() : "";
+  if (
+    cardsTriggered == null ||
+    cardsApplied == null ||
+    !/^[a-f0-9]{64}$/.test(memoryHash)
+  ) {
+    return null;
+  }
+  return { cardsTriggered, cardsApplied, memoryHash };
+}
+
 function isFailureResolution(source: unknown): boolean {
   if (!isRecord(source)) return false;
   const resolution = isRecord(source.resolution) ? source.resolution : null;
@@ -407,6 +438,8 @@ function isGuardOrderValid(guards: string[]): boolean {
     "DELTA_NAMESPACE",
     "DELTA_ORDER",
     "DELTA_APPLY_IDEMPOTENCY",
+    "STYLE_LOCK_INVARIANT",
+    "MEMORY_STABILITY",
     "CAUSAL_COVERAGE",
     "REPLAY_STATE_INVARIANT",
   ];
@@ -516,6 +549,19 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   } else if (styleStability.driftCount !== 0) {
     regressionMarkers.push(`GOLDEN_STYLE_LOCK_REGRESSION driftCount=${String(styleStability.driftCount)}`);
   }
+  if (combinedOutput.includes("STORY_CARD_NON_DETERMINISTIC_TRIGGER")) {
+    regressionMarkers.push("GOLDEN_MEMORY_REGRESSION marker=STORY_CARD_NON_DETERMINISTIC_TRIGGER");
+  }
+  if (combinedOutput.includes("STORY_CARD_ORDER_UNSTABLE")) {
+    regressionMarkers.push("GOLDEN_MEMORY_REGRESSION marker=STORY_CARD_ORDER_UNSTABLE");
+  }
+  if (combinedOutput.includes("MEMORY_MUTATION_VIOLATION")) {
+    regressionMarkers.push("GOLDEN_MEMORY_REGRESSION marker=MEMORY_MUTATION_VIOLATION");
+  }
+  const memoryStability = parseMemoryStability(stdout);
+  if (!memoryStability) {
+    regressionMarkers.push("GOLDEN_MEMORY_REGRESSION missing=MEMORY_STABILITY");
+  }
   if (combinedOutput.includes("DELTA_WITHOUT_LEDGER_EXPLANATION")) {
     regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION marker=DELTA_WITHOUT_LEDGER_EXPLANATION");
   }
@@ -623,6 +669,22 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
     regressionMarkers.push("GOLDEN_GUARD_SUMMARY_MISSING");
   }
 
+  if (regressionMarkers.length === 0 && memoryStability) {
+    const childSecond = spawnSync(
+      process.execPath,
+      ["--import", "tsx", replayScriptPath, `--support-package-path=${fixturePath}`],
+      { encoding: "utf8" },
+    );
+    if (childSecond.status !== 0) {
+      regressionMarkers.push(`GOLDEN_MEMORY_REGRESSION second_run_exit_code=${String(childSecond.status)}`);
+    } else {
+      const secondStability = parseMemoryStability(childSecond.stdout ?? "");
+      if (!secondStability || secondStability.memoryHash !== memoryStability.memoryHash) {
+        regressionMarkers.push("GOLDEN_MEMORY_REGRESSION memory_hash_unstable");
+      }
+    }
+  }
+
   if (regressionMarkers.length > 0) {
     const markers = [...regressionMarkers, ...collectFailureMarkers(`${stdout}\n${stderr}`)];
     return {
@@ -640,6 +702,7 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
       fixtureName,
       manifestHash: summary.manifestHash,
       finalStateHash: summary.finalStateHash,
+      memoryHash: memoryStability?.memoryHash ?? "",
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -685,7 +748,9 @@ function main(): void {
     const fixturePath = path.join(goldenDir, fixtureName);
     const result = runFixture(replayScriptPath, fixtureName, fixturePath);
     if (result.ok) {
-      console.log(`GOLDEN_OK ${result.fixtureName} MANIFEST_HASH=${result.manifestHash} FINAL_STATE_HASH=${result.finalStateHash}`);
+      console.log(
+        `GOLDEN_OK ${result.fixtureName} MANIFEST_HASH=${result.manifestHash} FINAL_STATE_HASH=${result.finalStateHash} MEMORY_HASH=${result.memoryHash}`,
+      );
       passCount += 1;
     } else {
       console.error(`GOLDEN_FAIL ${result.fixtureName}`);

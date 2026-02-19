@@ -76,11 +76,14 @@ function main() {
     assert(pos >= 0, `expected fixture success marker: ${marker}`);
     assert(pos > lastPos, `expected deterministic fixture output order for ${fixtureName}`);
     lastPos = pos;
+    const memoryHashPattern = new RegExp(`GOLDEN_OK\\s+${fixtureName.replace(/[.*+?^${}()|[\]\\\\]/g, "\\$&")}\\s+.*MEMORY_HASH=[a-f0-9]{64}`);
+    assert(memoryHashPattern.test(runA.stdout), `expected deterministic MEMORY_HASH in summary for ${fixtureName}`);
   }
   assert(
     runA.stdout.includes(`GOLDEN_SUMMARY TOTAL=${index.fixtures.length} PASS=${index.fixtures.length} FAIL=0`),
     "expected deterministic GOLDEN_SUMMARY line",
   );
+  assert(!runA.stdout.includes("GOLDEN_MEMORY_REGRESSION"), "did not expect memory regression markers in golden run");
   assert(!runA.stdout.includes("/Users/"), "expected no absolute unix path in output");
   assert(!runA.stdout.includes("C:\\"), "expected no absolute windows path in output");
 

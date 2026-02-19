@@ -45,6 +45,33 @@ const LEDGER_FORBIDDEN_PATTERNS = [
   /\b0\.\d{6,}\b/,
 ];
 
+const STORY_CARD_NON_DETERMINISTIC_PATTERNS = [
+  /\bdate\.now\b/i,
+  /\bperformance\.now\b/i,
+  /\btimestamp\b/i,
+  /\brandom\b/i,
+  /\bseed\b/i,
+  /\b\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z?\b/i,
+  /\b\d{13}\b/,
+];
+
+const PROTECTED_MEMORY_MUTATION_PREFIXES = [
+  "flags.tonelock",
+  "flags.genrelock",
+  "flags.pacinglock",
+  "world.flags.tonelock",
+  "world.flags.genrelock",
+  "world.flags.pacinglock",
+  "flags.stakes",
+  "flags.risk",
+  "flags.escalation",
+  "world.flags.stakes",
+  "world.flags.risk",
+  "world.flags.escalation",
+  "meta.stakes",
+  "world.meta.stakes",
+];
+
 type ReplayEvent = { seq: number; turnJson: any };
 export type FailForwardSignal =
   | "STATE_DELTA"
@@ -94,6 +121,12 @@ export type StyleStabilitySummary = {
   driftCount: number;
 };
 
+export type MemoryStabilitySummary = {
+  cardsTriggered: number;
+  cardsApplied: number;
+  memoryHash: string;
+};
+
 export type DeltaLedgerExplanationRow = {
   deltaPath: string;
   ledgerExplanations: string[];
@@ -105,6 +138,7 @@ export type ReplayGuardName =
   | "TURN_MONOTONICITY"
   | "LEDGER_CONSISTENCY"
   | "FAIL_FORWARD_INVARIANT"
+  | "MEMORY_STABILITY"
   | "CAUSAL_COVERAGE"
   | "DELTA_SHAPE"
   | "DELTA_NAMESPACE"
@@ -122,6 +156,7 @@ export const REPLAY_GUARD_ORDER: readonly ReplayGuardName[] = [
   "DELTA_ORDER",
   "DELTA_APPLY_IDEMPOTENCY",
   "STYLE_LOCK_INVARIANT",
+  "MEMORY_STABILITY",
   "CAUSAL_COVERAGE",
   "REPLAY_STATE_INVARIANT",
 ] as const;
@@ -345,6 +380,142 @@ function readsFailureBand(turnJson: unknown): boolean {
     return resolution.total <= 6;
   }
   return false;
+}
+
+function hash32Deterministic(input: string): number {
+  let hash = 2166136261 >>> 0;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+function stableHashHex64(text: string): string {
+  const parts: string[] = [];
+  for (let i = 0; i < 8; i++) {
+    const h = hash32Deterministic(`${i}:${text}`);
+    parts.push(h.toString(16).padStart(8, "0"));
+  }
+  return parts.join("");
+}
+
+function readCardIds(source: unknown): { ids: string[]; entries: unknown[] } {
+  if (!Array.isArray(source)) return { ids: [], entries: [] };
+  const ids: string[] = [];
+  const entries: unknown[] = [];
+  for (const entry of source) {
+    entries.push(entry);
+    if (typeof entry === "string") {
+      const id = entry.trim();
+      if (id.length > 0) ids.push(id);
+      continue;
+    }
+    if (isRecord(entry)) {
+      const cardIdRaw = typeof entry.cardId === "string" ? entry.cardId : typeof entry.id === "string" ? entry.id : "";
+      const cardId = cardIdRaw.trim();
+      if (cardId.length > 0) {
+        ids.push(cardId);
+      }
+    }
+  }
+  return { ids, entries };
+}
+
+function extractStoryCardSignals(turnJson: unknown): {
+  triggeredCardIds: string[];
+  appliedCardIds: string[];
+  triggerEntries: unknown[];
+} {
+  if (!isRecord(turnJson)) {
+    return { triggeredCardIds: [], appliedCardIds: [], triggerEntries: [] };
+  }
+  const memory = isRecord(turnJson.memory) ? turnJson.memory : null;
+  const triggeredCandidates = [
+    turnJson.storyCardsTriggered,
+    turnJson.storyCardTriggers,
+    memory?.matchedIds,
+    memory?.cardsTriggered,
+  ];
+  const appliedCandidates = [
+    turnJson.storyCardsApplied,
+    memory?.injected,
+    memory?.cardsApplied,
+  ];
+
+  const triggeredCardIds: string[] = [];
+  const triggerEntries: unknown[] = [];
+  for (const candidate of triggeredCandidates) {
+    const { ids, entries } = readCardIds(candidate);
+    for (const id of ids) {
+      triggeredCardIds.push(id);
+    }
+    for (const entry of entries) {
+      triggerEntries.push(entry);
+    }
+  }
+
+  const appliedCardIds: string[] = [];
+  for (const candidate of appliedCandidates) {
+    const { ids } = readCardIds(candidate);
+    for (const id of ids) {
+      appliedCardIds.push(id);
+    }
+  }
+  return { triggeredCardIds, appliedCardIds, triggerEntries };
+}
+
+function normalizeMutationPath(value: unknown): string | null {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized.length > 0 ? normalized : null;
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((entry) => String(entry).trim().toLowerCase())
+      .filter((entry) => entry.length > 0);
+    return parts.length > 0 ? parts.join(".") : null;
+  }
+  return null;
+}
+
+function readMemoryMutationPaths(turnJson: unknown): string[] {
+  if (!isRecord(turnJson)) return [];
+  const memory = isRecord(turnJson.memory) ? turnJson.memory : null;
+  const candidates = [
+    turnJson.memoryMutations,
+    memory?.mutations,
+    turnJson.storyCardMemoryMutations,
+    turnJson.memoryMutationPaths,
+  ];
+  const out: string[] = [];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    for (const entry of candidate) {
+      if (typeof entry === "string") {
+        const path = normalizeMutationPath(entry);
+        if (path) out.push(path);
+        continue;
+      }
+      if (!isRecord(entry)) continue;
+      const path =
+        normalizeMutationPath(entry.path) ??
+        normalizeMutationPath(entry.key) ??
+        normalizeMutationPath(entry.op);
+      if (path) out.push(path);
+    }
+  }
+  return out;
+}
+
+function assertMemoryMutationProtectedNamespace(turnJson: unknown, seq: number): void {
+  const paths = readMemoryMutationPaths(turnJson);
+  for (const path of paths) {
+    const clean = path.startsWith("/") ? path.slice(1) : path;
+    if (PROTECTED_MEMORY_MUTATION_PREFIXES.some((prefix) => clean.startsWith(prefix))) {
+      throw new Error(`MEMORY_MUTATION_VIOLATION seq=${seq} path=${clean}`);
+    }
+  }
 }
 
 function isQuestAdvanceMutation(delta: unknown): boolean {
@@ -1372,6 +1543,7 @@ export type ReplayWithGuardSummary = {
   guardSummary: readonly ReplayGuardName[];
   styleLockPresent: boolean;
   styleStability: StyleStabilitySummary;
+  memoryStability: MemoryStabilitySummary;
   failForwardCheck: "PASS" | "FAIL";
   failForwardSignal: FailForwardSignal | "NONE";
   causalCoverage: CausalCoverageSummary;
@@ -1400,6 +1572,12 @@ function replayStateFromTurnJsonInternal(
     pacingStable: true,
     driftCount: 0,
   };
+  let memoryStability: MemoryStabilitySummary = {
+    cardsTriggered: 0,
+    cardsApplied: 0,
+    memoryHash: stableHashHex64("[]"),
+  };
+  const memoryDigestRows: Array<{ seq: number; triggered: string[]; applied: string[] }> = [];
   let failForwardSignal: FailForwardSignal | "NONE" = "NONE";
   let causalCoverage: CausalCoverageSummary = {
     totalDeltas: 0,
@@ -1442,8 +1620,40 @@ function replayStateFromTurnJsonInternal(
       assertStyleLockInvariant(state, nextState, e.turnJson, e.seq, styleLockFlipCounts, styleStability) ||
       styleLockPresent;
     mark("STYLE_LOCK_INVARIANT");
+    const cardSignals = extractStoryCardSignals(e.turnJson);
+    for (const triggerEntry of cardSignals.triggerEntries) {
+      let triggerText = "";
+      try {
+        triggerText = stableStringifyDeterministic(triggerEntry, `story.trigger.${e.seq}`).toLowerCase();
+      } catch {
+        throw new Error(`STORY_CARD_NON_DETERMINISTIC_TRIGGER seq=${e.seq}`);
+      }
+      for (const pattern of STORY_CARD_NON_DETERMINISTIC_PATTERNS) {
+        if (pattern.test(triggerText)) {
+          throw new Error(`STORY_CARD_NON_DETERMINISTIC_TRIGGER seq=${e.seq}`);
+        }
+      }
+    }
+    const sortedTriggered = [...cardSignals.triggeredCardIds].sort(compareText);
+    if (cardSignals.triggeredCardIds.join("|") !== sortedTriggered.join("|")) {
+      throw new Error(`STORY_CARD_ORDER_UNSTABLE seq=${e.seq}`);
+    }
+    const sortedApplied = [...cardSignals.appliedCardIds].sort(compareText);
+    assertMemoryMutationProtectedNamespace(e.turnJson, e.seq);
+    memoryDigestRows.push({
+      seq: e.seq,
+      triggered: sortedTriggered,
+      applied: sortedApplied,
+    });
+    memoryStability = {
+      cardsTriggered: memoryStability.cardsTriggered + sortedTriggered.length,
+      cardsApplied: memoryStability.cardsApplied + sortedApplied.length,
+      memoryHash: memoryStability.memoryHash,
+    };
+    mark("MEMORY_STABILITY");
     state = nextState;
   }
+  memoryStability.memoryHash = stableHashHex64(stableStringifyDeterministic(memoryDigestRows, "memory.digest"));
   causalCoverage = assertCausalCoverage(events);
   mark("CAUSAL_COVERAGE");
   assertReplayStateInvariant(state);
@@ -1455,6 +1665,7 @@ function replayStateFromTurnJsonInternal(
       guardSummary: REPLAY_GUARD_ORDER.filter((name) => executedGuards.has(name)),
       styleLockPresent,
       styleStability,
+      memoryStability,
       failForwardCheck: "PASS",
       failForwardSignal,
       causalCoverage,

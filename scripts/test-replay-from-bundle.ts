@@ -770,6 +770,51 @@ async function main() {
     /STYLE_LOCK_DRIFT_VIOLATION/,
     "expected style lock to reject more than one flip per session",
   );
+  assert.throws(
+    () =>
+      replayStateFromTurnJson([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "flag.set", key: "story_ready", value: true, path: "flags.story_ready" }],
+            ledgerAdds: [{ id: "ledger_story_0", turnIndex: 0 }],
+            storyCardsTriggered: [{ cardId: "card_story", trigger: "Date.now() path" }],
+          },
+        },
+      ]),
+    /STORY_CARD_NON_DETERMINISTIC_TRIGGER/,
+    "expected story-card trigger with nondeterministic token to fail",
+  );
+  assert.throws(
+    () =>
+      replayStateFromTurnJson([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "flag.set", key: "story_ready", value: true, path: "flags.story_ready" }],
+            ledgerAdds: [{ id: "ledger_story_0", turnIndex: 0 }],
+            storyCardsTriggered: ["card-zeta", "card-alpha"],
+          },
+        },
+      ]),
+    /STORY_CARD_ORDER_UNSTABLE/,
+    "expected unstable story-card trigger order to fail",
+  );
+  assert.throws(
+    () =>
+      replayStateFromTurnJson([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "flag.set", key: "story_ready", value: true, path: "flags.story_ready" }],
+            ledgerAdds: [{ id: "ledger_story_0", turnIndex: 0 }],
+            memoryMutations: [{ path: "flags.toneLock", value: "locked" }],
+          },
+        },
+      ]),
+    /MEMORY_MUTATION_VIOLATION/,
+    "expected protected style-lock memory mutation to fail",
+  );
   let nonIdempotentTick = false;
   assert.throws(
     () =>
@@ -800,6 +845,18 @@ async function main() {
     guardSummaryReplay.styleStability,
     { toneStable: true, genreStable: true, pacingStable: true, driftCount: 0 },
     "expected default style stability summary for non-style-lock fixtures",
+  );
+  assert.deepEqual(
+    {
+      cardsTriggered: guardSummaryReplay.memoryStability.cardsTriggered,
+      cardsApplied: guardSummaryReplay.memoryStability.cardsApplied,
+    },
+    { cardsTriggered: 0, cardsApplied: 0 },
+    "expected deterministic default memory stability counts",
+  );
+  assert(
+    /^[a-f0-9]{64}$/.test(guardSummaryReplay.memoryStability.memoryHash),
+    "expected deterministic 64-char memory stability hash",
   );
 
   const styleDriftAllowedSummary = replayStateFromTurnJsonWithGuardSummary(
@@ -919,6 +976,19 @@ async function main() {
   assert(out.includes("pacingStable:"), "expected style stability pacing field");
   assert(out.includes("driftCount:"), "expected style stability drift count field");
   assert(/driftCount:\s*0/.test(out), "expected driftCount to be zero for deterministic fixture");
+  assert(out.includes("MEMORY_STABILITY"), "expected memory stability marker");
+  assert(out.includes("cardsTriggered:"), "expected memory stability triggered field");
+  assert(out.includes("cardsApplied:"), "expected memory stability applied field");
+  assert(out.includes("memoryHash:"), "expected memory stability hash field");
+  assert(/cardsTriggered:\s*0/.test(out), "expected cardsTriggered to be zero for deterministic fixture");
+  assert(/cardsApplied:\s*0/.test(out), "expected cardsApplied to be zero for deterministic fixture");
+  const memoryHashLine = out.split(/\r?\n/).find((line) => line.startsWith("memoryHash:")) ?? "";
+  assert(/memoryHash:\s*[a-f0-9]{64}$/.test(memoryHashLine), "expected deterministic 64-char memory hash");
+  const lineIndex = (lineText: string): number => {
+    return out
+      .split(/\r?\n/)
+      .findIndex((line) => line.trim().startsWith(lineText.trim()));
+  };
   const styleOrder = [
     "CONSEQUENCE_SUMMARY",
     "STYLE_STABILITY",
@@ -926,9 +996,13 @@ async function main() {
     "genreStable:",
     "pacingStable:",
     "driftCount:",
+    "MEMORY_STABILITY",
+    "cardsTriggered:",
+    "cardsApplied:",
+    "memoryHash:",
     `TELEMETRY_VERSION ${TELEMETRY_VERSION}`,
   ];
-  const styleOrderIndex = styleOrder.map((marker) => out.indexOf(marker));
+  const styleOrderIndex = styleOrder.map((marker) => lineIndex(marker));
   for (let i = 0; i < styleOrderIndex.length - 1; i++) {
     assert(
       styleOrderIndex[i] >= 0 && styleOrderIndex[i + 1] >= 0 && styleOrderIndex[i] < styleOrderIndex[i + 1],

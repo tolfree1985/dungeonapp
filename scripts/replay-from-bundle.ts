@@ -343,6 +343,10 @@ async function main() {
   console.log(`genreStable: ${guardSummary.styleStability.genreStable}`);
   console.log(`pacingStable: ${guardSummary.styleStability.pacingStable}`);
   console.log(`driftCount: ${guardSummary.styleStability.driftCount}`);
+  console.log("MEMORY_STABILITY");
+  console.log(`cardsTriggered: ${guardSummary.memoryStability.cardsTriggered}`);
+  console.log(`cardsApplied: ${guardSummary.memoryStability.cardsApplied}`);
+  console.log(`memoryHash: ${guardSummary.memoryStability.memoryHash}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");
