@@ -81,6 +81,17 @@ export default function CreatorPage() {
 
   const validation = useMemo(() => validateScenarioContentJson(contentJson), [contentJson]);
   const validationView = lastValidation ?? validation;
+  const preview = useMemo(() => {
+    try {
+      const parsed = JSON.parse(contentJson) as any;
+      if (!parsed || typeof parsed !== "object") {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, [contentJson]);
 
   return (
     <main className="mx-auto max-w-4xl p-6">
@@ -164,6 +175,36 @@ export default function CreatorPage() {
         {!validationView.parseError && validationView.issues.length === 0 && validationView.ok ? (
           <div className="mt-2">No schema issues.</div>
         ) : null}
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Scenario preview">
+        <h2 className="text-base font-semibold">Preview</h2>
+        {!preview ? (
+          <div className="mt-2">Preview unavailable until content JSON parses.</div>
+        ) : (
+          <div className="mt-2 space-y-1">
+            <div>ID: {typeof preview.id === "string" && preview.id ? preview.id : "(missing)"}</div>
+            <div>Version: {typeof preview.version === "string" && preview.version ? preview.version : "(missing)"}</div>
+            <div>
+              Title: {typeof preview.title === "string" && preview.title ? preview.title : "(missing)"}
+            </div>
+            <div>
+              Summary: {typeof preview.summary === "string" && preview.summary ? preview.summary : "(missing)"}
+            </div>
+            <div>
+              Start sceneId:{" "}
+              {typeof preview.start?.sceneId === "string" && preview.start.sceneId
+                ? preview.start.sceneId
+                : "(missing)"}
+            </div>
+            <div>Start prompt:</div>
+            <pre className="rounded border p-2 whitespace-pre-wrap">
+              {typeof preview.start?.prompt === "string" && preview.start.prompt
+                ? preview.start.prompt
+                : "(missing)"}
+            </pre>
+          </div>
+        )}
       </section>
     </main>
   );
