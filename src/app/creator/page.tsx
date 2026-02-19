@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { buildScenarioDraftBundleText } from "@/lib/buildScenarioDraftBundleText";
 
 type ValidationIssue = { path: string; code: string; message: string };
 type ScenarioListItem = {
@@ -81,6 +82,7 @@ export default function CreatorPage() {
   const [ownerId, setOwnerId] = useState("");
   const [myScenarios, setMyScenarios] = useState<MineViewItem[]>([]);
   const [mineStatus, setMineStatus] = useState("My scenarios not loaded.");
+  const [draftCopyStatus, setDraftCopyStatus] = useState("");
 
   const emptyState = useMemo(
     () => ({
@@ -148,6 +150,25 @@ export default function CreatorPage() {
       setMyScenarios([]);
       setMineStatus("Failed to load scenarios.");
     }
+  }
+
+  async function onCopyDraftBundle() {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      setDraftCopyStatus("Copy not supported");
+      return;
+    }
+
+    const text = buildScenarioDraftBundleText({
+      title: title.trim(),
+      summary: summary.trim(),
+      contentJson,
+      validationOk: validationView.ok,
+      parseError: validationView.parseError,
+      issues: validationView.issues,
+    });
+
+    await navigator.clipboard.writeText(text);
+    setDraftCopyStatus("Copied");
   }
 
   return (
@@ -271,6 +292,16 @@ export default function CreatorPage() {
             Publish scenario
           </button>
           <span>{publishEnabled ? "Publish enabled: validation passed." : "Publish disabled: validation must pass."}</span>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Draft export">
+        <h2 className="text-base font-semibold">Draft export</h2>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" onClick={onCopyDraftBundle} className="rounded border px-2 py-1 text-xs">
+            Copy scenario draft bundle
+          </button>
+          <span>{draftCopyStatus}</span>
         </div>
       </section>
 
