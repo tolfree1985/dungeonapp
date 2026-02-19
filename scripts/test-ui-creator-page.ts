@@ -11,9 +11,16 @@ function main() {
   assert(source.includes("Import JSON"), 'Expected "Import JSON" control');
   assert(source.includes("JSON import error"), 'Expected deterministic JSON import error block label');
   assert(source.includes("Validate scenario"), 'Expected "Validate scenario" control');
+  assert(
+    source.includes("validateScenarioDeterminism"),
+    "Expected deterministic scenario validation hook usage",
+  );
   assert(source.includes("Validation"), 'Expected "Validation" section');
   assert(source.includes("Path:"), 'Expected deterministic validation path grouping label');
   assert(source.includes("Preview"), 'Expected "Preview" section');
+  assert(source.includes("DETERMINISM VALIDATED"), 'Expected deterministic preview success banner');
+  assert(source.includes("DETERMINISM VALIDATION FAILED"), 'Expected deterministic preview failure banner');
+  assert(source.includes("Determinism errors"), 'Expected deterministic error list label');
   assert(source.includes("Memory preview:"), 'Expected deterministic memory preview label');
   assert(source.includes("Preflight checklist"), 'Expected "Preflight checklist" section');
   assert(source.includes("Validation pass"), 'Expected preflight validation pass checklist row');
@@ -27,6 +34,7 @@ function main() {
     'Expected source to gate "Publish scenario" disabled state',
   );
   assert(source.includes("Create draft"), 'Expected "Create draft" control');
+  assert(source.includes("Save blocked: determinism validation failed."), 'Expected deterministic save block reason');
   assert(source.includes("Fork scenario"), 'Expected "Fork scenario" control');
   assert(source.includes("sourceScenarioId"), 'Expected "sourceScenarioId" control label');
   assert(source.includes("newScenarioId"), 'Expected "newScenarioId" control label');

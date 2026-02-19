@@ -10,6 +10,7 @@ import {
   mapCreatorErrorMessage,
 } from "@/lib/creator/mapCreatorErrorMessage";
 import { buildPromptParts } from "@/lib/promptScaffold";
+import { validateScenarioDeterminism } from "@/lib/scenario/validateScenarioDeterminism";
 
 type ValidationIssue = { path: string; code: string; message: string };
 type ScenarioListItem = {
@@ -226,6 +227,10 @@ export default function CreatorPage() {
       return null;
     }
   }, [contentJson]);
+  const determinismValidation = useMemo(
+    () => (preview ? validateScenarioDeterminism(preview) : { valid: false, errors: ["SCENARIO_PARSE_INVALID"] }),
+    [preview],
+  );
   const promptParts = useMemo(() => {
     if (!preview) {
       return null;
@@ -378,6 +383,10 @@ export default function CreatorPage() {
     }
     if (!validation.ok || !preview) {
       setCreateDraftStatus("Cannot create draft: validation must pass.");
+      return;
+    }
+    if (!determinismValidation.valid) {
+      setCreateDraftStatus("Save blocked: determinism validation failed.");
       return;
     }
 
@@ -758,6 +767,19 @@ export default function CreatorPage() {
           <div className="mt-2">Preview unavailable until content JSON parses.</div>
         ) : (
           <div className="mt-2 space-y-1">
+            <div className={`rounded border p-2 text-xs ${determinismValidation.valid ? "border-emerald-500 text-emerald-700" : "border-red-500 text-red-700"}`}>
+              {determinismValidation.valid ? "DETERMINISM VALIDATED" : "DETERMINISM VALIDATION FAILED"}
+            </div>
+            {!determinismValidation.valid ? (
+              <div className="mt-2">
+                <div className="text-xs font-semibold">Determinism errors</div>
+                <ol className="mt-1 list-decimal space-y-1 pl-6">
+                  {determinismValidation.errors.map((errorCode) => (
+                    <li key={errorCode}>{errorCode}</li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
             <div>ID: {typeof preview.id === "string" && preview.id ? preview.id : "(missing)"}</div>
             <div>Version: {typeof preview.version === "string" && preview.version ? preview.version : "(missing)"}</div>
             <div>
@@ -839,6 +861,16 @@ export default function CreatorPage() {
             {createDraftStatus}
           </span>
         </div>
+        {!determinismValidation.valid && preview ? (
+          <div className="mt-2 rounded border border-red-500 p-2 text-xs">
+            Save blocked by determinism validation:
+            <ol className="mt-1 list-decimal space-y-1 pl-6">
+              {determinismValidation.errors.map((errorCode) => (
+                <li key={`save:${errorCode}`}>{errorCode}</li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <label htmlFor="fork-source-id" className="text-xs">
             sourceScenarioId

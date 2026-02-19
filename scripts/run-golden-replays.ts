@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { validateScenarioDeterminism } from "../src/lib/scenario/validateScenarioDeterminism";
 
 type GoldenIndex = {
   version: number;
@@ -120,6 +121,24 @@ function validateFixtureSchema(fixtureName: string, fixturePath: string): string
   return markers;
 }
 
+function readScenarioMetadataFromFixture(fixturePath: string): unknown | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+    if (!isRecord(parsed) || !isRecord(parsed.originalBundle)) return null;
+    const originalBundle = parsed.originalBundle;
+    if (isRecord(originalBundle.scenario)) return originalBundle.scenario;
+    if (isRecord(originalBundle.scenarioJson)) return originalBundle.scenarioJson;
+    if (typeof originalBundle.scenarioJson === "string") {
+      const maybe = JSON.parse(originalBundle.scenarioJson);
+      return isRecord(maybe) ? maybe : null;
+    }
+    if (isRecord(originalBundle.scenarioContent)) return originalBundle.scenarioContent;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function collectFailureMarkers(text: string): string[] {
   const markerPattern =
     /(REPRO_PACK_|DRIFT_|DELTA_|LEDGER_|STYLE_LOCK_|INVARIANT_|GOLDEN_|MISMATCH|VIOLATION|FAILED|ERROR|INVALID|MISSING)/;
@@ -202,6 +221,19 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
       markers: schemaMarkers,
       excerptLines: buildFailureExcerpt("", schemaMarkers),
     };
+  }
+  const scenarioMetadata = readScenarioMetadataFromFixture(fixturePath);
+  if (scenarioMetadata) {
+    const scenarioValidation = validateScenarioDeterminism(scenarioMetadata);
+    if (!scenarioValidation.valid) {
+      const markers = ["GOLDEN_SCENARIO_INVALID", ...scenarioValidation.errors];
+      return {
+        ok: false,
+        fixtureName,
+        markers,
+        excerptLines: buildFailureExcerpt("", markers),
+      };
+    }
   }
 
   const child = spawnSync(
