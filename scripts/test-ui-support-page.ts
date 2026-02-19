@@ -98,6 +98,15 @@ function main() {
   assert(dashboardSource.includes("Turn sequence integrity:"), "Expected turn sequence integrity signal");
   assert(dashboardSource.includes("FINAL_STATE_HASH:"), "Expected final state hash label");
   assert(dashboardSource.includes("Copy final state hash"), "Expected final state hash copy control");
+  assert(dashboardSource.includes("Replay Telemetry (Derived)"), "Expected derived telemetry panel");
+  assert(dashboardSource.includes("TELEMETRY"), "Expected telemetry marker in UI panel");
+  assert(dashboardSource.includes("TURN_COUNT:"), "Expected TURN_COUNT telemetry label in UI panel");
+  assert(dashboardSource.includes("TOTAL_LEDGER_ENTRIES:"), "Expected TOTAL_LEDGER_ENTRIES telemetry label");
+  assert(dashboardSource.includes("TOTAL_STATE_DELTAS:"), "Expected TOTAL_STATE_DELTAS telemetry label");
+  assert(dashboardSource.includes("MAX_DELTA_PER_TURN:"), "Expected MAX_DELTA_PER_TURN telemetry label");
+  assert(dashboardSource.includes("AVG_DELTA_PER_TURN:"), "Expected AVG_DELTA_PER_TURN telemetry label");
+  assert(dashboardSource.includes("MAX_LEDGER_PER_TURN:"), "Expected MAX_LEDGER_PER_TURN telemetry label");
+  assert(dashboardSource.includes("TELEMETRY DRIFT DETECTED"), "Expected telemetry drift warning signal");
 
   console.log("UI SUPPORT PAGE OK");
 }

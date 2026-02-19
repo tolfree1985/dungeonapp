@@ -44,6 +44,38 @@ function main() {
   assert(out.includes("TURNS"), "expected TURNS marker");
   assert(out.includes("INVARIANT_SEQ_CONTIGUOUS"), "expected sequence invariant marker");
   assert(out.includes("INVARIANT_LEDGER_COUNT"), "expected ledger invariant marker");
+  assert(out.includes("TELEMETRY"), "expected TELEMETRY marker");
+  assert(out.includes("TURN_COUNT:"), "expected TURN_COUNT telemetry field");
+  assert(out.includes("TOTAL_LEDGER_ENTRIES:"), "expected TOTAL_LEDGER_ENTRIES telemetry field");
+  assert(out.includes("TOTAL_STATE_DELTAS:"), "expected TOTAL_STATE_DELTAS telemetry field");
+  assert(out.includes("MAX_DELTA_PER_TURN:"), "expected MAX_DELTA_PER_TURN telemetry field");
+  assert(out.includes("AVG_DELTA_PER_TURN:"), "expected AVG_DELTA_PER_TURN telemetry field");
+  assert(out.includes("MAX_LEDGER_PER_TURN:"), "expected MAX_LEDGER_PER_TURN telemetry field");
+  assert(out.includes("FINAL_STATE_HASH:"), "expected telemetry FINAL_STATE_HASH field");
+
+  const telemetryValues: Record<string, number> = {};
+  for (const line of out.split(/\r?\n/)) {
+    const m = line.match(
+      /^(TURN_COUNT|TOTAL_LEDGER_ENTRIES|TOTAL_STATE_DELTAS|MAX_DELTA_PER_TURN|AVG_DELTA_PER_TURN|MAX_LEDGER_PER_TURN):\s+([0-9]+(?:\.[0-9]+)?)$/,
+    );
+    if (m) {
+      telemetryValues[m[1]] = Number(m[2]);
+    }
+  }
+
+  const positiveFields = [
+    "TURN_COUNT",
+    "TOTAL_LEDGER_ENTRIES",
+    "TOTAL_STATE_DELTAS",
+    "MAX_DELTA_PER_TURN",
+    "AVG_DELTA_PER_TURN",
+    "MAX_LEDGER_PER_TURN",
+  ] as const;
+
+  for (const field of positiveFields) {
+    const value = telemetryValues[field];
+    assert(Number.isFinite(value) && value > 0, `expected ${field} > 0, got ${String(value)}`);
+  }
 
   console.log("REPLAY FROM BUNDLE OK");
 }

@@ -77,6 +77,26 @@ type SequenceIntegrityStatus = {
   details: string[];
 };
 
+type ReplayTelemetryDerived = {
+  turnCount: number;
+  totalLedgerEntries: number;
+  totalStateDeltaCount: number;
+  maxDeltaPerTurn: number;
+  avgDeltaPerTurn: number;
+  maxLedgerPerTurn: number;
+  finalStateHash: string;
+};
+
+type ReplayTelemetryReference = {
+  turnCount: number | null;
+  totalLedgerEntries: number | null;
+  totalStateDeltaCount: number | null;
+  maxDeltaPerTurn: number | null;
+  avgDeltaPerTurn: number | null;
+  maxLedgerPerTurn: number | null;
+  finalStateHash: string;
+};
+
 const LARGE_DELTA_THRESHOLD = 8;
 
 const METADATA_FIELD_SPECS: MetadataFieldSpec[] = [
@@ -246,6 +266,18 @@ function readPathArray(bundle: unknown, candidates: string[][]): unknown[] {
   return [];
 }
 
+function readPathNumber(bundle: unknown, candidates: string[][]): number | null {
+  for (const candidate of candidates) {
+    const value = readPath(bundle, candidate);
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim().length > 0) {
+      const n = Number(value.trim());
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+}
+
 function extractMetadata(bundle: unknown): BundleMetadata {
   const result: BundleMetadata = {
     engineVersion: "",
@@ -272,6 +304,54 @@ function detectBundleShape(bundle: unknown): string {
   if (keys.includes("turns") && keys.includes("engineVersion")) return "shape:turn-bundle-v1";
   if (keys.includes("debug")) return "shape:debug";
   return `shape:keys:${keys.slice(0, 3).join("+")}`;
+}
+
+function extractTelemetryReference(bundle: unknown): ReplayTelemetryReference {
+  return {
+    turnCount: readPathNumber(bundle, [
+      ["telemetry", "turnCount"],
+      ["telemetry", "TURN_COUNT"],
+      ["replayTelemetry", "turnCount"],
+      ["debug", "telemetry", "turnCount"],
+    ]),
+    totalLedgerEntries: readPathNumber(bundle, [
+      ["telemetry", "totalLedgerEntries"],
+      ["telemetry", "TOTAL_LEDGER_ENTRIES"],
+      ["replayTelemetry", "totalLedgerEntries"],
+      ["debug", "telemetry", "totalLedgerEntries"],
+    ]),
+    totalStateDeltaCount: readPathNumber(bundle, [
+      ["telemetry", "totalStateDeltaCount"],
+      ["telemetry", "TOTAL_STATE_DELTAS"],
+      ["replayTelemetry", "totalStateDeltaCount"],
+      ["debug", "telemetry", "totalStateDeltaCount"],
+    ]),
+    maxDeltaPerTurn: readPathNumber(bundle, [
+      ["telemetry", "maxDeltaPerTurn"],
+      ["telemetry", "MAX_DELTA_PER_TURN"],
+      ["replayTelemetry", "maxDeltaPerTurn"],
+      ["debug", "telemetry", "maxDeltaPerTurn"],
+    ]),
+    avgDeltaPerTurn: readPathNumber(bundle, [
+      ["telemetry", "avgDeltaPerTurn"],
+      ["telemetry", "AVG_DELTA_PER_TURN"],
+      ["replayTelemetry", "avgDeltaPerTurn"],
+      ["debug", "telemetry", "avgDeltaPerTurn"],
+    ]),
+    maxLedgerPerTurn: readPathNumber(bundle, [
+      ["telemetry", "maxLedgerPerTurn"],
+      ["telemetry", "MAX_LEDGER_PER_TURN"],
+      ["replayTelemetry", "maxLedgerPerTurn"],
+      ["debug", "telemetry", "maxLedgerPerTurn"],
+    ]),
+    finalStateHash:
+      readPathString(bundle, [
+        ["telemetry", "finalStateHash"],
+        ["telemetry", "FINAL_STATE_HASH"],
+        ["replayTelemetry", "finalStateHash"],
+        ["debug", "telemetry", "finalStateHash"],
+      ]) || "",
+  };
 }
 
 function extractTurnRows(bundle: unknown): TurnRow[] {
@@ -610,6 +690,57 @@ export function SupportDashboard({
     const cliReady = reproCliText.trim().length > 0;
     return determinismIsGreen && sequenceIntegrity.isGreen && cliReady;
   }, [missingNonCriticalFields.length, missingRequiredFields.length, reproCliText, sequenceIntegrity.isGreen]);
+
+  const replayTelemetry = useMemo<ReplayTelemetryDerived>(() => {
+    const turnCount = turnRows.length;
+    const totalLedgerEntries = turnRows.reduce((sum, row) => sum + row.ledgerAdds.length, 0);
+    const totalStateDeltaCount = turnRows.reduce((sum, row) => sum + row.stateDeltas.length, 0);
+    const maxDeltaPerTurn = turnRows.reduce((max, row) => (row.stateDeltas.length > max ? row.stateDeltas.length : max), 0);
+    const maxLedgerPerTurn = turnRows.reduce((max, row) => (row.ledgerAdds.length > max ? row.ledgerAdds.length : max), 0);
+    const avgDeltaPerTurn = Number((totalStateDeltaCount / Math.max(turnCount, 1)).toFixed(6));
+
+    return {
+      turnCount,
+      totalLedgerEntries,
+      totalStateDeltaCount,
+      maxDeltaPerTurn,
+      avgDeltaPerTurn,
+      maxLedgerPerTurn,
+      finalStateHash,
+    };
+  }, [finalStateHash, turnRows]);
+
+  const telemetryReference = useMemo(() => extractTelemetryReference(bundleData), [bundleData]);
+
+  const telemetryDrift = useMemo(() => {
+    const details: string[] = [];
+    if (telemetryReference.finalStateHash && replayTelemetry.finalStateHash) {
+      if (telemetryReference.finalStateHash !== replayTelemetry.finalStateHash) {
+        details.push("FINAL_STATE_HASH mismatch");
+      }
+    }
+    if (
+      telemetryReference.turnCount != null &&
+      telemetryReference.turnCount !== replayTelemetry.turnCount
+    ) {
+      details.push("TURN_COUNT mismatch");
+    }
+    if (
+      telemetryReference.totalLedgerEntries != null &&
+      telemetryReference.totalLedgerEntries !== replayTelemetry.totalLedgerEntries
+    ) {
+      details.push("TOTAL_LEDGER_ENTRIES mismatch");
+    }
+
+    return {
+      hasReference:
+        telemetryReference.finalStateHash.length > 0 ||
+        telemetryReference.turnCount != null ||
+        telemetryReference.totalLedgerEntries != null,
+      isDrift: details.length > 0,
+      details,
+    };
+  }, [replayTelemetry, telemetryReference]);
 
   const shareBlockText = useMemo(
     () =>
@@ -1032,6 +1163,36 @@ export function SupportDashboard({
             {finalStateHashCopyStatus}
           </span>
         </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Replay Telemetry (Derived)">
+        <h2 className="text-base font-semibold">Replay Telemetry (Derived)</h2>
+        {telemetryDrift.isDrift ? (
+          <div className="mt-2 font-medium text-red-700">TELEMETRY DRIFT DETECTED</div>
+        ) : telemetryDrift.hasReference ? (
+          <div className="mt-2 font-medium text-green-700">Telemetry parity: no drift</div>
+        ) : (
+          <div className="mt-2 font-medium text-amber-700">Telemetry reference: not available</div>
+        )}
+        {telemetryDrift.details.length > 0 ? (
+          <ul className="mt-1 list-disc pl-5 text-xs">
+            {telemetryDrift.details.map((detail) => (
+              <li key={detail}>{detail}</li>
+            ))}
+          </ul>
+        ) : null}
+        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">
+          {[
+            "TELEMETRY",
+            `TURN_COUNT: ${replayTelemetry.turnCount}`,
+            `TOTAL_LEDGER_ENTRIES: ${replayTelemetry.totalLedgerEntries}`,
+            `TOTAL_STATE_DELTAS: ${replayTelemetry.totalStateDeltaCount}`,
+            `MAX_DELTA_PER_TURN: ${replayTelemetry.maxDeltaPerTurn}`,
+            `AVG_DELTA_PER_TURN: ${replayTelemetry.avgDeltaPerTurn}`,
+            `MAX_LEDGER_PER_TURN: ${replayTelemetry.maxLedgerPerTurn}`,
+            `FINAL_STATE_HASH: ${replayTelemetry.finalStateHash || "(none)"}`,
+          ].join("\n")}
+        </pre>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Reproduction Checklist">
