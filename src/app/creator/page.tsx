@@ -954,6 +954,24 @@ export default function CreatorPage() {
           </div>
         )}
       </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Commands help">
+        <h2 className="text-base font-semibold">/commands</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-6">
+          <li>
+            <code>/validate</code>: run scenario validation and inspect parse/schema status.
+          </li>
+          <li>
+            <code>/copy-draft</code>: copy the scenario draft bundle.
+          </li>
+          <li>
+            <code>/copy-debug</code>: copy the creator debug bundle (scenario + scaffold + validation + last error).
+          </li>
+          <li>
+            <code>/load-mine</code>: load owner scenarios into the My scenarios panel.
+          </li>
+        </ol>
+      </section>
     </main>
   );
 }
