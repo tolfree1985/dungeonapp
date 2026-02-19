@@ -183,6 +183,7 @@ export default function CreatorPage() {
   const [mineStatus, setMineStatus] = useState("My scenarios not loaded.");
   const [draftCopyStatus, setDraftCopyStatus] = useState("");
   const [debugBundleCopyStatus, setDebugBundleCopyStatus] = useState("");
+  const [shareLinkCopyStatus, setShareLinkCopyStatus] = useState("");
   const [promptBundleCopyStatus, setPromptBundleCopyStatus] = useState("");
   const [createDraftStatus, setCreateDraftStatus] = useState("");
   const [forkStatus, setForkStatus] = useState("");
@@ -584,6 +585,28 @@ export default function CreatorPage() {
     }));
   }
 
+  function buildCreatorShareablePath(pathname: string): string {
+    const params = new URLSearchParams();
+    const trimmedOwner = ownerId.trim();
+    if (trimmedOwner) params.set("ownerId", trimmedOwner);
+    params.set("tier", creatorTier);
+    const scenarioId = typeof preview?.id === "string" ? preview.id.trim() : "";
+    if (scenarioId) params.set("scenarioId", scenarioId);
+    params.set("validation", validationView.ok ? "valid" : "invalid");
+    const query = params.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  }
+
+  async function onCopyCreatorShareableLink() {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText || typeof location === "undefined") {
+      setShareLinkCopyStatus("Copy not supported");
+      return;
+    }
+    const path = buildCreatorShareablePath(location.pathname);
+    await navigator.clipboard.writeText(path);
+    setShareLinkCopyStatus("Copied");
+  }
+
   return (
     <main className="mx-auto max-w-4xl p-6">
       <h1 className="text-2xl font-semibold">Scenario Creator</h1>
@@ -848,6 +871,14 @@ export default function CreatorPage() {
           </button>
           <span role="status" aria-live="polite">
             {debugBundleCopyStatus}
+          </span>
+        </div>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" onClick={onCopyCreatorShareableLink} className="rounded border px-2 py-1 text-xs">
+            Copy creator shareable link
+          </button>
+          <span role="status" aria-live="polite">
+            {shareLinkCopyStatus}
           </span>
         </div>
       </section>
