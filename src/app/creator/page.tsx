@@ -125,6 +125,12 @@ export default function CreatorPage() {
   const [createDraftStatus, setCreateDraftStatus] = useState("");
   const [forkStatus, setForkStatus] = useState("");
   const [billingBanner, setBillingBanner] = useState("");
+  const [promptSectionOpen, setPromptSectionOpen] = useState({
+    preview: true,
+    system: false,
+    developer: false,
+    user: false,
+  });
 
   const emptyState = useMemo(
     () => ({
@@ -423,6 +429,13 @@ export default function CreatorPage() {
     setJsonImportStatus("Import complete.");
   }
 
+  function togglePromptSection(section: keyof typeof promptSectionOpen) {
+    setPromptSectionOpen((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  }
+
   return (
     <main className="mx-auto max-w-4xl p-6">
       <h1 className="text-2xl font-semibold">Scenario Creator</h1>
@@ -691,13 +704,55 @@ export default function CreatorPage() {
           <div className="mt-2">Prompt scaffold preview unavailable.</div>
         ) : (
           <div className="mt-2 space-y-2">
-            <div>Preview: {promptParts.preview}</div>
-            <div>System:</div>
-            <pre className="rounded border p-2 whitespace-pre-wrap">{promptParts.system}</pre>
-            <div>Developer:</div>
-            <pre className="rounded border p-2 whitespace-pre-wrap">{promptParts.developer}</pre>
-            <div>User:</div>
-            <pre className="rounded border p-2 whitespace-pre-wrap">{promptParts.user}</pre>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => togglePromptSection("preview")}
+                className="rounded border px-2 py-1 text-xs"
+              >
+                {promptSectionOpen.preview ? "Hide" : "Show"} preview
+              </button>
+            </div>
+            {promptSectionOpen.preview ? <div>Preview: {promptParts.preview}</div> : null}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => togglePromptSection("system")}
+                className="rounded border px-2 py-1 text-xs"
+              >
+                {promptSectionOpen.system ? "Hide" : "Show"} system
+              </button>
+            </div>
+            {promptSectionOpen.system ? (
+              <pre className="rounded border p-2 whitespace-pre-wrap">{promptParts.system}</pre>
+            ) : null}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => togglePromptSection("developer")}
+                className="rounded border px-2 py-1 text-xs"
+              >
+                {promptSectionOpen.developer ? "Hide" : "Show"} developer
+              </button>
+            </div>
+            {promptSectionOpen.developer ? (
+              <pre className="rounded border p-2 whitespace-pre-wrap">{promptParts.developer}</pre>
+            ) : null}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => togglePromptSection("user")}
+                className="rounded border px-2 py-1 text-xs"
+              >
+                {promptSectionOpen.user ? "Hide" : "Show"} user
+              </button>
+            </div>
+            {promptSectionOpen.user ? (
+              <pre className="rounded border p-2 whitespace-pre-wrap">{promptParts.user}</pre>
+            ) : null}
           </div>
         )}
       </section>
