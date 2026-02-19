@@ -87,6 +87,13 @@ type ReplayTelemetryDerived = {
   finalStateHash: string;
 };
 
+type PerTurnTelemetryRow = {
+  turnIndex: number;
+  deltaCount: number;
+  ledgerCount: number;
+  hasResolution: boolean;
+};
+
 type ReplayTelemetryReference = {
   turnCount: number | null;
   totalLedgerEntries: number | null;
@@ -96,6 +103,13 @@ type ReplayTelemetryReference = {
   maxLedgerPerTurn: number | null;
   finalStateHash: string;
 };
+
+type DriftLocator = {
+  turnIndex: number | null;
+  metric: string;
+  derived: PerTurnTelemetryRow | null;
+  reference: PerTurnTelemetryRow | null;
+} | null;
 
 const LARGE_DELTA_THRESHOLD = 8;
 
@@ -278,6 +292,63 @@ function readPathNumber(bundle: unknown, candidates: string[][]): number | null 
   return null;
 }
 
+function readPathPerTurnTelemetry(bundle: unknown, candidates: string[][]): PerTurnTelemetryRow[] {
+  for (const candidate of candidates) {
+    const value = readPath(bundle, candidate);
+    if (!Array.isArray(value)) continue;
+
+    const rows: PerTurnTelemetryRow[] = [];
+    for (let index = 0; index < value.length; index++) {
+      const row = value[index];
+      if (!isRecord(row)) continue;
+
+      const turnIndexRaw = row.turnIndex ?? row.TURN_INDEX ?? index;
+      const deltaCountRaw = row.deltaCount ?? row.DELTA_COUNT ?? 0;
+      const ledgerCountRaw = row.ledgerCount ?? row.LEDGER_COUNT ?? 0;
+      const hasResolutionRaw = row.hasResolution ?? row.HAS_RESOLUTION ?? false;
+
+      const turnIndex =
+        typeof turnIndexRaw === "number" && Number.isFinite(turnIndexRaw)
+          ? Math.trunc(turnIndexRaw)
+          : typeof turnIndexRaw === "string" && turnIndexRaw.trim().length > 0 && Number.isFinite(Number(turnIndexRaw))
+            ? Math.trunc(Number(turnIndexRaw))
+            : index;
+
+      const deltaCount =
+        typeof deltaCountRaw === "number" && Number.isFinite(deltaCountRaw)
+          ? Math.max(0, Math.trunc(deltaCountRaw))
+          : typeof deltaCountRaw === "string" &&
+              deltaCountRaw.trim().length > 0 &&
+              Number.isFinite(Number(deltaCountRaw))
+            ? Math.max(0, Math.trunc(Number(deltaCountRaw)))
+            : 0;
+
+      const ledgerCount =
+        typeof ledgerCountRaw === "number" && Number.isFinite(ledgerCountRaw)
+          ? Math.max(0, Math.trunc(ledgerCountRaw))
+          : typeof ledgerCountRaw === "string" &&
+              ledgerCountRaw.trim().length > 0 &&
+              Number.isFinite(Number(ledgerCountRaw))
+            ? Math.max(0, Math.trunc(Number(ledgerCountRaw)))
+            : 0;
+
+      const hasResolution =
+        typeof hasResolutionRaw === "boolean"
+          ? hasResolutionRaw
+          : typeof hasResolutionRaw === "string"
+            ? hasResolutionRaw.trim().toLowerCase() === "true"
+            : false;
+
+      rows.push({ turnIndex, deltaCount, ledgerCount, hasResolution });
+    }
+
+    rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
+    return rows;
+  }
+
+  return [];
+}
+
 function extractMetadata(bundle: unknown): BundleMetadata {
   const result: BundleMetadata = {
     engineVersion: "",
@@ -352,6 +423,35 @@ function extractTelemetryReference(bundle: unknown): ReplayTelemetryReference {
         ["debug", "telemetry", "finalStateHash"],
       ]) || "",
   };
+}
+
+function findFirstDrift(
+  derivedRows: PerTurnTelemetryRow[],
+  referenceRows: PerTurnTelemetryRow[],
+): DriftLocator {
+  if (referenceRows.length === 0) return null;
+
+  const maxLen = Math.max(derivedRows.length, referenceRows.length);
+  for (let i = 0; i < maxLen; i++) {
+    const derived = i < derivedRows.length ? derivedRows[i] : null;
+    const reference = i < referenceRows.length ? referenceRows[i] : null;
+    const turnIndex = derived?.turnIndex ?? reference?.turnIndex ?? null;
+
+    if (!derived || !reference) {
+      return { turnIndex, metric: "missing_turn", derived, reference };
+    }
+    if (derived.deltaCount !== reference.deltaCount) {
+      return { turnIndex, metric: "delta_count", derived, reference };
+    }
+    if (derived.ledgerCount !== reference.ledgerCount) {
+      return { turnIndex, metric: "ledger_count", derived, reference };
+    }
+    if (derived.hasResolution !== reference.hasResolution) {
+      return { turnIndex, metric: "has_resolution", derived, reference };
+    }
+  }
+
+  return null;
 }
 
 function extractTurnRows(bundle: unknown): TurnRow[] {
@@ -554,6 +654,7 @@ export function SupportDashboard({
   const [turnReproCopyStatus, setTurnReproCopyStatus] = useState("");
   const [finalStateHash, setFinalStateHash] = useState("");
   const [finalStateHashCopyStatus, setFinalStateHashCopyStatus] = useState("");
+  const [driftReportCopyStatus, setDriftReportCopyStatus] = useState("");
   const [runbookCopyStatus, setRunbookCopyStatus] = useState<Record<string, string>>({});
   const [leftCompareJson, setLeftCompareJson] = useState("");
   const [rightCompareJson, setRightCompareJson] = useState("");
@@ -710,10 +811,33 @@ export function SupportDashboard({
     };
   }, [finalStateHash, turnRows]);
 
+  const perTurnTelemetry = useMemo<PerTurnTelemetryRow[]>(() => {
+    const rows = turnRows.map((row, index) => ({
+      turnIndex: parseTurnIndex(row.turnIndex, index),
+      deltaCount: row.stateDeltas.length,
+      ledgerCount: row.ledgerAdds.length,
+      hasResolution: row.resolution !== "(none)",
+    }));
+    rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
+    return rows;
+  }, [turnRows]);
+
   const telemetryReference = useMemo(() => extractTelemetryReference(bundleData), [bundleData]);
+  const telemetryReferencePerTurn = useMemo(
+    () =>
+      readPathPerTurnTelemetry(bundleData, [
+        ["telemetry", "perTurn"],
+        ["telemetry", "PER_TURN_TELEMETRY"],
+        ["replayTelemetry", "perTurn"],
+        ["debug", "telemetry", "perTurn"],
+      ]),
+    [bundleData],
+  );
 
   const telemetryDrift = useMemo(() => {
     const details: string[] = [];
+    const firstPerTurnDrift = findFirstDrift(perTurnTelemetry, telemetryReferencePerTurn);
+
     if (telemetryReference.finalStateHash && replayTelemetry.finalStateHash) {
       if (telemetryReference.finalStateHash !== replayTelemetry.finalStateHash) {
         details.push("FINAL_STATE_HASH mismatch");
@@ -731,16 +855,98 @@ export function SupportDashboard({
     ) {
       details.push("TOTAL_LEDGER_ENTRIES mismatch");
     }
+    if (firstPerTurnDrift) {
+      details.push(`PER_TURN mismatch (${firstPerTurnDrift.metric})`);
+    }
+
+    let firstDrift: DriftLocator = firstPerTurnDrift;
+    if (!firstDrift) {
+      if (
+        telemetryReference.turnCount != null &&
+        telemetryReference.turnCount !== replayTelemetry.turnCount
+      ) {
+        firstDrift = {
+          turnIndex: Math.min(telemetryReference.turnCount, replayTelemetry.turnCount),
+          metric: "missing_turn",
+          derived: null,
+          reference: null,
+        };
+      } else if (
+        telemetryReference.totalLedgerEntries != null &&
+        telemetryReference.totalLedgerEntries !== replayTelemetry.totalLedgerEntries
+      ) {
+        firstDrift = {
+          turnIndex: perTurnTelemetry.length > 0 ? perTurnTelemetry[0].turnIndex : null,
+          metric: "ledger_count",
+          derived: perTurnTelemetry.length > 0 ? perTurnTelemetry[0] : null,
+          reference: null,
+        };
+      } else if (
+        telemetryReference.finalStateHash &&
+        replayTelemetry.finalStateHash &&
+        telemetryReference.finalStateHash !== replayTelemetry.finalStateHash
+      ) {
+        const last = perTurnTelemetry.length > 0 ? perTurnTelemetry[perTurnTelemetry.length - 1] : null;
+        firstDrift = {
+          turnIndex: last?.turnIndex ?? null,
+          metric: "final_state_hash",
+          derived: last,
+          reference: null,
+        };
+      }
+    }
+
+    const hasReference =
+      telemetryReference.finalStateHash.length > 0 ||
+      telemetryReference.turnCount != null ||
+      telemetryReference.totalLedgerEntries != null ||
+      telemetryReferencePerTurn.length > 0;
 
     return {
-      hasReference:
-        telemetryReference.finalStateHash.length > 0 ||
-        telemetryReference.turnCount != null ||
-        telemetryReference.totalLedgerEntries != null,
+      hasReference,
       isDrift: details.length > 0,
       details,
+      firstDrift,
     };
-  }, [replayTelemetry, telemetryReference]);
+  }, [perTurnTelemetry, replayTelemetry, telemetryReference, telemetryReferencePerTurn]);
+
+  const driftReportText = useMemo(() => {
+    const rowFromDerived = telemetryDrift.firstDrift?.derived;
+    const rowFromReference = telemetryDrift.firstDrift?.reference;
+    const rowForReport = rowFromDerived ?? rowFromReference;
+    const firstDriftTurnIndex =
+      telemetryDrift.firstDrift?.turnIndex == null ? "(none)" : String(telemetryDrift.firstDrift.turnIndex);
+    const firstDriftMetric = telemetryDrift.firstDrift?.metric ?? "(none)";
+    const driftSummary = telemetryDrift.isDrift
+      ? telemetryDrift.details.join("; ")
+      : telemetryDrift.hasReference
+        ? "No drift"
+        : "No telemetry reference";
+
+    return [
+      "DRIFT REPORT",
+      `BUNDLE_ID: ${bundleId.trim() || "(none)"}`,
+      `ENGINE_VERSION: ${metadata.engineVersion.trim() || "(none)"}`,
+      `SCENARIO_HASH: ${metadata.scenarioContentHash.trim() || "(none)"}`,
+      `FINAL_STATE_HASH: ${replayTelemetry.finalStateHash || "(none)"}`,
+      `DRIFT_SUMMARY: ${driftSummary}`,
+      `FIRST_DRIFT_TURN_INDEX: ${firstDriftTurnIndex}`,
+      `FIRST_DRIFT_METRIC: ${firstDriftMetric}`,
+      `TURN_INDEX: ${rowForReport ? rowForReport.turnIndex : "(none)"}`,
+      `DELTA_COUNT: ${rowForReport ? rowForReport.deltaCount : "(none)"}`,
+      `LEDGER_COUNT: ${rowForReport ? rowForReport.ledgerCount : "(none)"}`,
+      `HAS_RESOLUTION: ${rowForReport ? String(rowForReport.hasResolution) : "(none)"}`,
+    ].join("\n");
+  }, [
+    bundleId,
+    metadata.engineVersion,
+    metadata.scenarioContentHash,
+    replayTelemetry.finalStateHash,
+    telemetryDrift.details,
+    telemetryDrift.firstDrift,
+    telemetryDrift.hasReference,
+    telemetryDrift.isDrift,
+  ]);
 
   const shareBlockText = useMemo(
     () =>
@@ -997,6 +1203,10 @@ export function SupportDashboard({
     await copyText(finalStateHash, setFinalStateHashCopyStatus);
   }
 
+  async function onCopyDriftReport() {
+    await copyText(driftReportText, setDriftReportCopyStatus);
+  }
+
   return (
     <main className="mx-auto max-w-6xl p-6">
       <h1 className="text-2xl font-semibold">Support Dashboard</h1>
@@ -1174,6 +1384,13 @@ export function SupportDashboard({
         ) : (
           <div className="mt-2 font-medium text-amber-700">Telemetry reference: not available</div>
         )}
+        <div className="mt-1 text-xs">
+          FIRST_DRIFT_TURN_INDEX:{" "}
+          {telemetryDrift.firstDrift?.turnIndex == null ? "(none)" : telemetryDrift.firstDrift.turnIndex}
+        </div>
+        <div className="text-xs">
+          FIRST_DRIFT_METRIC: {telemetryDrift.firstDrift?.metric ?? "(none)"}
+        </div>
         {telemetryDrift.details.length > 0 ? (
           <ul className="mt-1 list-disc pl-5 text-xs">
             {telemetryDrift.details.map((detail) => (
@@ -1181,6 +1398,14 @@ export function SupportDashboard({
             ))}
           </ul>
         ) : null}
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={onCopyDriftReport}>
+            Copy Drift Report
+          </button>
+          <span role="status" aria-live="polite">
+            {driftReportCopyStatus}
+          </span>
+        </div>
         <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">
           {[
             "TELEMETRY",
@@ -1193,6 +1418,36 @@ export function SupportDashboard({
             `FINAL_STATE_HASH: ${replayTelemetry.finalStateHash || "(none)"}`,
           ].join("\n")}
         </pre>
+        <div className="mt-2 overflow-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className="border p-2 text-left">TURN_INDEX</th>
+                <th className="border p-2 text-left">DELTA_COUNT</th>
+                <th className="border p-2 text-left">LEDGER_COUNT</th>
+                <th className="border p-2 text-left">HAS_RESOLUTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {perTurnTelemetry.length === 0 ? (
+                <tr>
+                  <td className="border p-2" colSpan={4}>
+                    (none)
+                  </td>
+                </tr>
+              ) : (
+                perTurnTelemetry.map((row) => (
+                  <tr key={`per-turn-${row.turnIndex}`}>
+                    <td className="border p-2">{row.turnIndex}</td>
+                    <td className="border p-2">{row.deltaCount}</td>
+                    <td className="border p-2">{row.ledgerCount}</td>
+                    <td className="border p-2">{String(row.hasResolution)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Reproduction Checklist">

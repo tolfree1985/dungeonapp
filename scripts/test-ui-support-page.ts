@@ -107,6 +107,13 @@ function main() {
   assert(dashboardSource.includes("AVG_DELTA_PER_TURN:"), "Expected AVG_DELTA_PER_TURN telemetry label");
   assert(dashboardSource.includes("MAX_LEDGER_PER_TURN:"), "Expected MAX_LEDGER_PER_TURN telemetry label");
   assert(dashboardSource.includes("TELEMETRY DRIFT DETECTED"), "Expected telemetry drift warning signal");
+  assert(dashboardSource.includes("TURN_INDEX"), "Expected per-turn telemetry TURN_INDEX header");
+  assert(dashboardSource.includes("DELTA_COUNT"), "Expected per-turn telemetry DELTA_COUNT header");
+  assert(dashboardSource.includes("LEDGER_COUNT"), "Expected per-turn telemetry LEDGER_COUNT header");
+  assert(dashboardSource.includes("HAS_RESOLUTION"), "Expected per-turn telemetry HAS_RESOLUTION header");
+  assert(dashboardSource.includes("FIRST_DRIFT_TURN_INDEX:"), "Expected first-drift turn index signal");
+  assert(dashboardSource.includes("FIRST_DRIFT_METRIC:"), "Expected first-drift metric signal");
+  assert(dashboardSource.includes("Copy Drift Report"), "Expected copy drift report control");
 
   console.log("UI SUPPORT PAGE OK");
 }

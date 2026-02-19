@@ -52,6 +52,12 @@ function main() {
   assert(out.includes("AVG_DELTA_PER_TURN:"), "expected AVG_DELTA_PER_TURN telemetry field");
   assert(out.includes("MAX_LEDGER_PER_TURN:"), "expected MAX_LEDGER_PER_TURN telemetry field");
   assert(out.includes("FINAL_STATE_HASH:"), "expected telemetry FINAL_STATE_HASH field");
+  assert(out.includes("PER_TURN_TELEMETRY"), "expected PER_TURN_TELEMETRY marker");
+  assert(
+    /TURN_INDEX:\s+\d+\s+DELTA_COUNT:\s+\d+\s+LEDGER_COUNT:\s+\d+\s+HAS_RESOLUTION:\s+(true|false)/.test(out),
+    "expected at least one per-turn telemetry row",
+  );
+  assert(!out.includes("TELEMETRY_JSON "), "did not expect TELEMETRY_JSON without flag");
 
   const telemetryValues: Record<string, number> = {};
   for (const line of out.split(/\r?\n/)) {
@@ -76,6 +82,22 @@ function main() {
     const value = telemetryValues[field];
     assert(Number.isFinite(value) && value > 0, `expected ${field} > 0, got ${String(value)}`);
   }
+
+  const withJson = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=test-bundle",
+      "--telemetry-json",
+      `--bundle-json=${JSON.stringify(bundle)}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(withJson.status, 0, `replay script (--telemetry-json) failed: ${withJson.stderr || withJson.stdout}`);
+  const outJson = withJson.stdout ?? "";
+  assert(outJson.includes("TELEMETRY_JSON "), "expected TELEMETRY_JSON output when flag is present");
 
   console.log("REPLAY FROM BUNDLE OK");
 }

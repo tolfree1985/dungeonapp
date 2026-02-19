@@ -3,6 +3,12 @@ import crypto from "node:crypto";
 import { replayStateFromTurnJson } from "../src/lib/game/replay";
 
 type ReplayEvent = { seq: number; turnJson: any };
+type PerTurnTelemetryRow = {
+  turnIndex: number;
+  deltaCount: number;
+  ledgerCount: number;
+  hasResolution: boolean;
+};
 type ReplayTelemetry = {
   turnCount: number;
   totalLedgerEntries: number;
@@ -11,6 +17,7 @@ type ReplayTelemetry = {
   avgDeltaPerTurn: number;
   maxLedgerPerTurn: number;
   finalStateHash: string;
+  perTurn: PerTurnTelemetryRow[];
 };
 
 function stableStringify(value: unknown): string {
@@ -82,7 +89,7 @@ function toTurnJson(source: any): any {
         : Array.isArray(source?.stateDeltas)
           ? source.stateDeltas
           : [];
-    return { ...direct, deltas };
+    return { ...direct, deltas, resolution: direct?.resolution ?? source?.resolution };
   }
 
   const deltas = Array.isArray(source?.deltas)
@@ -94,6 +101,7 @@ function toTurnJson(source: any): any {
   return {
     deltas,
     ledgerAdds: Array.isArray(source?.ledgerAdds) ? source.ledgerAdds : [],
+    resolution: source?.resolution,
   };
 }
 
@@ -158,6 +166,17 @@ function deriveTelemetry(events: ReplayEvent[], finalStateHash: string): ReplayT
   const maxDeltaPerTurn = maxDeltasPerTurn(events);
   const maxLedgerPerTurn = maxLedgerEntriesPerTurn(events);
   const avgDeltaPerTurn = Number((totalStateDeltaCount / Math.max(turnCount, 1)).toFixed(6));
+  const perTurn = events.map((event) => {
+    const deltaCount = Array.isArray(event?.turnJson?.deltas) ? event.turnJson.deltas.length : 0;
+    const ledgerCount = Array.isArray(event?.turnJson?.ledgerAdds) ? event.turnJson.ledgerAdds.length : 0;
+    const hasResolution = event?.turnJson?.resolution !== undefined && event?.turnJson?.resolution !== null;
+    return {
+      turnIndex: event.seq,
+      deltaCount,
+      ledgerCount,
+      hasResolution,
+    };
+  });
 
   return {
     turnCount,
@@ -167,6 +186,7 @@ function deriveTelemetry(events: ReplayEvent[], finalStateHash: string): ReplayT
     avgDeltaPerTurn,
     maxLedgerPerTurn,
     finalStateHash,
+    perTurn,
   };
 }
 
@@ -209,6 +229,15 @@ function main() {
   console.log(`AVG_DELTA_PER_TURN: ${telemetry.avgDeltaPerTurn}`);
   console.log(`MAX_LEDGER_PER_TURN: ${telemetry.maxLedgerPerTurn}`);
   console.log(`FINAL_STATE_HASH: ${telemetry.finalStateHash}`);
+  console.log("PER_TURN_TELEMETRY");
+  telemetry.perTurn.forEach((row) => {
+    console.log(
+      `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution}`,
+    );
+  });
+  if (args["telemetry-json"] === "true") {
+    console.log(`TELEMETRY_JSON ${stableStringify(telemetry)}`);
+  }
 }
 
 try {
