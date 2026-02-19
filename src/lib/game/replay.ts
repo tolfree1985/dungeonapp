@@ -53,6 +53,16 @@ export type FailForwardSignal =
   | "RELATIONSHIP_SHIFT"
   | "SYSTEM_NO_LEDGER";
 
+export type ConsequenceRiskLevel = "LOW" | "MODERATE" | "HIGH";
+export type ConsequenceCostType = "TIME" | "HEALTH" | "RESOURCE" | "RELATIONSHIP" | "REPUTATION" | "FLAG";
+export type ConsequenceEscalation = "NONE" | "MINOR" | "MAJOR";
+
+export type ConsequenceSummary = {
+  riskLevel: ConsequenceRiskLevel;
+  costTypes: ConsequenceCostType[];
+  escalation: ConsequenceEscalation;
+};
+
 export type CausalCoverageSummary = {
   totalDeltas: number;
   explainedDeltas: number;
@@ -357,8 +367,184 @@ const FAIL_FORWARD_SIGNAL_PRIORITY: readonly FailForwardSignal[] = [
   "STATE_DELTA",
 ] as const;
 
+const CONSEQUENCE_COST_ORDER: readonly ConsequenceCostType[] = [
+  "TIME",
+  "HEALTH",
+  "RESOURCE",
+  "RELATIONSHIP",
+  "REPUTATION",
+  "FLAG",
+] as const;
+
+const CONSEQUENCE_RISK_ORDER: readonly ConsequenceRiskLevel[] = ["LOW", "MODERATE", "HIGH"] as const;
+const CONSEQUENCE_ESCALATION_ORDER: readonly ConsequenceEscalation[] = ["NONE", "MINOR", "MAJOR"] as const;
+
 function compareFailForwardSignalPriority(a: FailForwardSignal, b: FailForwardSignal): number {
   return FAIL_FORWARD_SIGNAL_PRIORITY.indexOf(a) - FAIL_FORWARD_SIGNAL_PRIORITY.indexOf(b);
+}
+
+function compareConsequenceRisk(a: ConsequenceRiskLevel, b: ConsequenceRiskLevel): number {
+  return CONSEQUENCE_RISK_ORDER.indexOf(a) - CONSEQUENCE_RISK_ORDER.indexOf(b);
+}
+
+function compareConsequenceEscalation(a: ConsequenceEscalation, b: ConsequenceEscalation): number {
+  return CONSEQUENCE_ESCALATION_ORDER.indexOf(a) - CONSEQUENCE_ESCALATION_ORDER.indexOf(b);
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function readTurnDeltasForConsequence(source: unknown): unknown[] {
+  if (!isRecord(source)) return [];
+  if (Array.isArray(source.deltas)) return source.deltas;
+  if (Array.isArray(source.stateDeltas)) return source.stateDeltas;
+  if (isRecord(source.turnJson)) {
+    if (Array.isArray(source.turnJson.deltas)) return source.turnJson.deltas;
+    if (Array.isArray(source.turnJson.stateDeltas)) return source.turnJson.stateDeltas;
+  }
+  return [];
+}
+
+function readTurnLedgerForConsequence(source: unknown): unknown[] {
+  if (!isRecord(source)) return [];
+  if (Array.isArray(source.ledgerAdds)) return source.ledgerAdds;
+  if (isRecord(source.turnJson) && Array.isArray(source.turnJson.ledgerAdds)) {
+    return source.turnJson.ledgerAdds;
+  }
+  return [];
+}
+
+function numericDecreaseForDelta(delta: unknown): number {
+  if (!isRecord(delta)) return 0;
+  const before = asNumber(delta.before);
+  const after = asNumber(delta.after);
+  if (before != null && after != null && before > after) {
+    return before - after;
+  }
+  const by = asNumber(delta.by);
+  const value = asNumber(delta.value);
+  const op = normalizeText(delta.op) ?? "";
+  if ((op.includes("dec") || op.includes("decrease") || op.includes("remove")) && by != null && by > 0) {
+    return by;
+  }
+  if ((op.includes("dec") || op.includes("decrease") || op.includes("remove")) && value != null && value > 0) {
+    return value;
+  }
+  return 0;
+}
+
+function ledgerMentions(text: string, token: string): boolean {
+  return tokenInText(text, token.toLowerCase());
+}
+
+function consequenceFromTurn(source: unknown): {
+  summary: ConsequenceSummary;
+  namespacesChanged: Set<string>;
+} {
+  const deltas = readTurnDeltasForConsequence(source);
+  const ledgerAdds = readTurnLedgerForConsequence(source);
+
+  const namespacesChanged = new Set<string>();
+  let healthDecreaseMax = 0;
+  let relationshipNegative = false;
+  let reputationNegative = false;
+  let riskyFlagMutation = false;
+
+  const costTypes = new Set<ConsequenceCostType>();
+  const ledgerText = ledgerAdds.map((entry) => ledgerEntrySearchText(entry)).join("\n");
+
+  for (const delta of deltas) {
+    const explicitPath = explicitDeltaPath(delta);
+    const opPath =
+      isRecord(delta) && typeof delta.op === "string" && delta.op.trim().length > 0
+        ? normalizeReferenceToken(delta.op)
+        : "";
+    const op = isRecord(delta) ? normalizeText(delta.op) ?? "" : "";
+    const path = explicitPath ? normalizeReferenceToken(explicitPath) : opPath;
+    let namespace = path ? topNamespaceFromPath(path) : "";
+    if (!namespace) {
+      if (op.startsWith("flag.")) namespace = "flags";
+      else if (op.startsWith("quest.")) namespace = "quests";
+      else if (op.startsWith("relationship.")) namespace = "relationships";
+      else if (op.startsWith("inv.") || op.startsWith("inventory.")) namespace = "inventory";
+      else if (op.startsWith("time.")) namespace = "world";
+    }
+    if (namespace) namespacesChanged.add(namespace);
+
+    const decrease = numericDecreaseForDelta(delta);
+    if (path.startsWith("stats.health")) {
+      if (decrease > 0) {
+        costTypes.add("HEALTH");
+        healthDecreaseMax = Math.max(healthDecreaseMax, decrease);
+      }
+    }
+    if (namespace === "relationships") {
+      if (decrease > 0) relationshipNegative = true;
+      costTypes.add("RELATIONSHIP");
+    }
+    if (namespace === "inventory") {
+      costTypes.add("RESOURCE");
+    }
+    if (namespace === "flags" || op.startsWith("flag.")) {
+      costTypes.add("FLAG");
+      const keyText =
+        (isRecord(delta) && typeof delta.key === "string" ? delta.key.trim().toLowerCase() : "") || "";
+      const riskText = `${path} ${keyText}`.trim();
+      if (riskText.includes("failed") || riskText.includes("injury") || riskText.includes("harm")) {
+        riskyFlagMutation = true;
+      }
+    }
+    if (path.includes("reputation")) {
+      if (decrease > 0) reputationNegative = true;
+      costTypes.add("REPUTATION");
+    }
+    if (path.startsWith("world.time") || path.startsWith("time.")) {
+      costTypes.add("TIME");
+    }
+  }
+
+  if (ledgerMentions(ledgerText, "health")) costTypes.add("HEALTH");
+  if (ledgerMentions(ledgerText, "relationship")) costTypes.add("RELATIONSHIP");
+  if (ledgerMentions(ledgerText, "reputation")) costTypes.add("REPUTATION");
+  if (ledgerMentions(ledgerText, "resource") || ledgerMentions(ledgerText, "inventory")) costTypes.add("RESOURCE");
+  if (ledgerMentions(ledgerText, "time")) costTypes.add("TIME");
+  if (ledgerMentions(ledgerText, "flag")) costTypes.add("FLAG");
+
+  let riskLevel: ConsequenceRiskLevel = "LOW";
+  if (healthDecreaseMax > 3) {
+    riskLevel = "HIGH";
+  } else if (healthDecreaseMax > 0 || relationshipNegative || reputationNegative || riskyFlagMutation) {
+    riskLevel = "MODERATE";
+  }
+  if (namespacesChanged.size >= 3) {
+    riskLevel = "HIGH";
+  } else if (namespacesChanged.size >= 2 && compareConsequenceRisk(riskLevel, "MODERATE") < 0) {
+    riskLevel = "MODERATE";
+  }
+  let escalation: ConsequenceEscalation = "NONE";
+  if (namespacesChanged.size >= 3 || riskLevel === "HIGH") {
+    escalation = "MAJOR";
+  } else if (namespacesChanged.size >= 2 || riskLevel === "MODERATE") {
+    escalation = "MINOR";
+  }
+
+  const orderedCostTypes = [...costTypes].sort(
+    (a, b) => CONSEQUENCE_COST_ORDER.indexOf(a) - CONSEQUENCE_COST_ORDER.indexOf(b),
+  );
+  return {
+    summary: {
+      riskLevel,
+      costTypes: orderedCostTypes,
+      escalation,
+    },
+    namespacesChanged,
+  };
 }
 
 export function classifyFailForwardSignal(turnJson: unknown): FailForwardSignal | null {
@@ -377,6 +563,33 @@ export function classifyFailForwardSignal(turnJson: unknown): FailForwardSignal 
   if (systemNoLedger) return "SYSTEM_NO_LEDGER";
   if (hasStateDelta) return "STATE_DELTA";
   return null;
+}
+
+export function classifyConsequence(turnEvent: unknown): ConsequenceSummary {
+  return consequenceFromTurn(turnEvent).summary;
+}
+
+export function aggregateConsequences(turnEvents: unknown[]): ConsequenceSummary {
+  let riskLevel: ConsequenceRiskLevel = "LOW";
+  let escalation: ConsequenceEscalation = "NONE";
+  const costTypes = new Set<ConsequenceCostType>();
+  for (const event of turnEvents) {
+    const summary = classifyConsequence(event);
+    if (compareConsequenceRisk(summary.riskLevel, riskLevel) > 0) {
+      riskLevel = summary.riskLevel;
+    }
+    if (compareConsequenceEscalation(summary.escalation, escalation) > 0) {
+      escalation = summary.escalation;
+    }
+    for (const costType of summary.costTypes) {
+      costTypes.add(costType);
+    }
+  }
+  return {
+    riskLevel,
+    costTypes: [...costTypes].sort((a, b) => CONSEQUENCE_COST_ORDER.indexOf(a) - CONSEQUENCE_COST_ORDER.indexOf(b)),
+    escalation,
+  };
 }
 
 function getReplayDeltas(event: ReplayEvent): unknown[] {
@@ -846,6 +1059,18 @@ export function assertFailForwardInvariant(events: ReplayEvent[]): Map<number, F
   return byTurnIndex;
 }
 
+export function assertFailForwardConsequenceAlignment(events: ReplayEvent[]): void {
+  for (const event of events) {
+    const turnJson = isRecord(event.turnJson) ? event.turnJson : {};
+    if (!readsFailureBand(turnJson)) continue;
+    const consequence = classifyConsequence(turnJson);
+    const validEscalation = consequence.escalation === "MINOR" || consequence.escalation === "MAJOR";
+    if (consequence.riskLevel === "LOW" || !validEscalation) {
+      throw new Error(`FAIL_FORWARD_LOW_STAKES_VIOLATION seq=${event.seq}`);
+    }
+  }
+}
+
 export function assertTurnMonotonicity(events: ReplayEvent[]): void {
   let prev: number | null = null;
   for (const event of events) {
@@ -940,6 +1165,7 @@ export type ReplayWithGuardSummary = {
   failForwardCheck: "PASS" | "FAIL";
   failForwardSignal: FailForwardSignal | "NONE";
   causalCoverage: CausalCoverageSummary;
+  consequenceSummary: ConsequenceSummary;
 };
 
 /**
@@ -964,6 +1190,11 @@ function replayStateFromTurnJsonInternal(
     unexplainedDeltas: 0,
     coverageRatio: 1,
   };
+  let consequenceSummary: ConsequenceSummary = {
+    riskLevel: "LOW",
+    costTypes: [],
+    escalation: "NONE",
+  };
 
   assertTurnMonotonicity(events);
   mark("TURN_MONOTONICITY");
@@ -972,6 +1203,8 @@ function replayStateFromTurnJsonInternal(
   const failForwardSignals = assertFailForwardInvariant(events);
   failForwardSignal = [...failForwardSignals.values()].sort(compareFailForwardSignalPriority)[0] ?? "NONE";
   mark("FAIL_FORWARD_INVARIANT");
+  consequenceSummary = aggregateConsequences(events.map((event) => event.turnJson));
+  assertFailForwardConsequenceAlignment(events);
 
   for (const e of events) {
     const rawDeltas = getReplayDeltasStrict(e);
@@ -1005,6 +1238,7 @@ function replayStateFromTurnJsonInternal(
       failForwardCheck: "PASS",
       failForwardSignal,
       causalCoverage,
+      consequenceSummary,
     };
   }
 

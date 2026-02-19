@@ -485,6 +485,9 @@ async function main() {
     "expected fail-forward signal classification marker",
   );
   assert(failForwardOut.includes("FAIL_FORWARD_CHECK: PASS"), "expected fail-forward check pass output");
+  assert(failForwardOut.includes("CONSEQUENCE_SUMMARY"), "expected consequence summary block");
+  assert(failForwardOut.includes("RISK_LEVEL: MODERATE"), "expected fail-forward consequence risk level");
+  assert(failForwardOut.includes("ESCALATION: MINOR"), "expected fail-forward consequence escalation");
   const failForwardManifestLine =
     failForwardOut.split(/\r?\n/).find((line) => line.startsWith("SUPPORT_MANIFEST_JSON ")) ?? "";
   assert(failForwardManifestLine.length > 0, "expected fail-forward manifest output");
@@ -533,6 +536,40 @@ async function main() {
   assert(
     (failForwardViolationReplay.stdout ?? "").includes("FAIL_FORWARD_CHECK: FAIL"),
     "expected fail-forward check fail output",
+  );
+  const failForwardLowStakesBundle = {
+    bundleId: "bundle-fail-forward-low-stakes",
+    engineVersion: "engine-test",
+    scenarioContentHash: "hash-test",
+    turns: [
+      {
+        turnIndex: 0,
+        stateDeltas: [{ op: "quests.set", path: "quests.tutorial", value: "step_1" }],
+        ledgerAdds: [{ id: "ledger_ffls_0", turnIndex: 0, path: "quests.tutorial" }],
+      },
+      {
+        turnIndex: 1,
+        resolution: { tier: "fail" },
+        stateDeltas: [{ op: "quests.set", path: "quests.tutorial", value: "step_2" }],
+        ledgerAdds: [{ id: "ledger_ffls_1", turnIndex: 1, path: "quests.tutorial" }],
+      },
+    ],
+  };
+  const failForwardLowStakesReplay = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=fail-forward-low-stakes",
+      `--bundle-json=${JSON.stringify(failForwardLowStakesBundle)}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(failForwardLowStakesReplay.status, 1, "expected low-stakes failure replay to fail");
+  assert(
+    (failForwardLowStakesReplay.stderr ?? "").includes("FAIL_FORWARD_LOW_STAKES_VIOLATION"),
+    "expected low-stakes fail-forward marker in stderr",
   );
   assert.throws(
     () =>
@@ -723,6 +760,10 @@ async function main() {
   assert(out.includes("coverageRatio:"), "expected causal coverage ratio field");
   assert(/unexplainedDeltas:\s*0/.test(out), "expected unexplainedDeltas to be zero for deterministic fixtures");
   assert(/coverageRatio:\s*1(\.0+)?/.test(out), "expected coverageRatio to be 1 for deterministic fixtures");
+  assert(out.includes("CONSEQUENCE_SUMMARY"), "expected consequence summary marker");
+  assert(out.includes("RISK_LEVEL:"), "expected consequence summary risk field");
+  assert(out.includes("COST_TYPES:"), "expected consequence summary cost field");
+  assert(out.includes("ESCALATION:"), "expected consequence summary escalation field");
   assert(out.includes("FINAL_STATE_HASH"), "expected FINAL_STATE_HASH marker");
   assert(out.includes("TURNS"), "expected TURNS marker");
   assert(out.includes("INVARIANT_SEQ_CONTIGUOUS"), "expected sequence invariant marker");
@@ -738,7 +779,7 @@ async function main() {
   assert(out.includes("FINAL_STATE_HASH:"), "expected telemetry FINAL_STATE_HASH field");
   assert(out.includes("PER_TURN_TELEMETRY"), "expected PER_TURN_TELEMETRY marker");
   assert(
-    /TURN_INDEX:\s+\d+\s+DELTA_COUNT:\s+\d+\s+LEDGER_COUNT:\s+\d+\s+HAS_RESOLUTION:\s+(true|false)\s+FAIL_FORWARD_SIGNAL:\s*(STATE_DELTA|QUEST_ADVANCE|FLAG_SET|RELATIONSHIP_SHIFT|SYSTEM_NO_LEDGER)?/.test(
+    /TURN_INDEX:\s+\d+\s+DELTA_COUNT:\s+\d+\s+LEDGER_COUNT:\s+\d+\s+HAS_RESOLUTION:\s+(true|false)\s+FAIL_FORWARD_SIGNAL:\s*(STATE_DELTA|QUEST_ADVANCE|FLAG_SET|RELATIONSHIP_SHIFT|SYSTEM_NO_LEDGER)?\s+RISK_LEVEL:\s+(LOW|MODERATE|HIGH)\s+COST_TYPES:\s*.*\s+ESCALATION:\s+(NONE|MINOR|MAJOR)/.test(
       out,
     ),
     "expected at least one per-turn telemetry row",

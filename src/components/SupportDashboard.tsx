@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { buildDeltaLedgerExplanationRows, classifyFailForwardSignal } from "@/lib/game/replay";
+import { buildDeltaLedgerExplanationRows, classifyConsequence, classifyFailForwardSignal } from "@/lib/game/replay";
 import { categorizeDeltaPath } from "@/lib/support/deltaPathMeaningMap";
 import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministicReproCliText";
 import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
@@ -108,6 +108,9 @@ type PerTurnTelemetryRow = {
   ledgerCount: number;
   hasResolution: boolean;
   failForwardSignal: string;
+  riskLevel: "LOW" | "MODERATE" | "HIGH";
+  costTypes: string;
+  escalation: "NONE" | "MINOR" | "MAJOR";
 };
 
 type ReplayTelemetryReference = {
@@ -482,6 +485,9 @@ function readPathPerTurnTelemetry(bundle: unknown, candidates: string[][]): PerT
       const ledgerCountRaw = row.ledgerCount ?? row.LEDGER_COUNT ?? 0;
       const hasResolutionRaw = row.hasResolution ?? row.HAS_RESOLUTION ?? false;
       const failForwardSignalRaw = row.failForwardSignal ?? row.FAIL_FORWARD_SIGNAL ?? "";
+      const riskLevelRaw = row.riskLevel ?? row.RISK_LEVEL ?? "LOW";
+      const costTypesRaw = row.costTypes ?? row.COST_TYPES ?? "";
+      const escalationRaw = row.escalation ?? row.ESCALATION ?? "NONE";
 
       const turnIndex =
         typeof turnIndexRaw === "number" && Number.isFinite(turnIndexRaw)
@@ -516,8 +522,15 @@ function readPathPerTurnTelemetry(bundle: unknown, candidates: string[][]): PerT
             : false;
       const failForwardSignal =
         typeof failForwardSignalRaw === "string" ? failForwardSignalRaw.trim() : "";
+      const normalizedRisk = typeof riskLevelRaw === "string" ? riskLevelRaw.trim().toUpperCase() : "LOW";
+      const riskLevel: "LOW" | "MODERATE" | "HIGH" =
+        normalizedRisk === "HIGH" ? "HIGH" : normalizedRisk === "MODERATE" ? "MODERATE" : "LOW";
+      const costTypes = typeof costTypesRaw === "string" ? costTypesRaw.trim() : "";
+      const normalizedEscalation = typeof escalationRaw === "string" ? escalationRaw.trim().toUpperCase() : "NONE";
+      const escalation: "NONE" | "MINOR" | "MAJOR" =
+        normalizedEscalation === "MAJOR" ? "MAJOR" : normalizedEscalation === "MINOR" ? "MINOR" : "NONE";
 
-      rows.push({ turnIndex, deltaCount, ledgerCount, hasResolution, failForwardSignal });
+      rows.push({ turnIndex, deltaCount, ledgerCount, hasResolution, failForwardSignal, riskLevel, costTypes, escalation });
     }
 
     rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
@@ -1299,12 +1312,15 @@ export function SupportDashboard({
 
   const perTurnTelemetry = useMemo<PerTurnTelemetryRow[]>(() => {
     const failForwardSignalByTurn = new Map<number, string>();
+    const consequenceByTurn = new Map<number, ReturnType<typeof classifyConsequence>>();
     turnRows.forEach((row, index) => {
       const turnIndex = parseTurnIndex(row.turnIndex, index);
       const signal = classifyFailForwardSignal(row.rawTurn);
+      const consequence = classifyConsequence(row.rawTurn);
       if (signal) {
         failForwardSignalByTurn.set(turnIndex, signal);
       }
+      consequenceByTurn.set(turnIndex, consequence);
     });
 
     if (supportManifest) {
@@ -1312,6 +1328,9 @@ export function SupportDashboard({
         .map((row) => ({
           ...row,
           failForwardSignal: failForwardSignalByTurn.get(row.turnIndex) ?? "",
+          riskLevel: (consequenceByTurn.get(row.turnIndex)?.riskLevel ?? "LOW") as "LOW" | "MODERATE" | "HIGH",
+          costTypes: (consequenceByTurn.get(row.turnIndex)?.costTypes ?? []).join(","),
+          escalation: (consequenceByTurn.get(row.turnIndex)?.escalation ?? "NONE") as "NONE" | "MINOR" | "MAJOR",
         }))
         .sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
     }
@@ -1322,6 +1341,9 @@ export function SupportDashboard({
       ledgerCount: row.ledgerAdds.length,
       hasResolution: row.resolution !== "(none)",
       failForwardSignal: classifyFailForwardSignal(row.rawTurn) ?? "",
+      riskLevel: classifyConsequence(row.rawTurn).riskLevel,
+      costTypes: classifyConsequence(row.rawTurn).costTypes.join(","),
+      escalation: classifyConsequence(row.rawTurn).escalation,
     }));
     rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
     return rows;
@@ -1447,6 +1469,9 @@ export function SupportDashboard({
       `LEDGER_COUNT: ${rowForReport ? rowForReport.ledgerCount : "(none)"}`,
       `HAS_RESOLUTION: ${rowForReport ? String(rowForReport.hasResolution) : "(none)"}`,
       `FAIL_FORWARD_SIGNAL: ${rowForReport ? rowForReport.failForwardSignal || "(none)" : "(none)"}`,
+      `RISK_LEVEL: ${rowForReport ? rowForReport.riskLevel : "(none)"}`,
+      `COST_TYPES: ${rowForReport ? rowForReport.costTypes || "(none)" : "(none)"}`,
+      `ESCALATION: ${rowForReport ? rowForReport.escalation : "(none)"}`,
     ].join("\n");
   }, [
     bundleId,
@@ -1514,7 +1539,7 @@ export function SupportDashboard({
         : perTurnTelemetry
             .map(
               (row) =>
-                `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution} FAIL_FORWARD_SIGNAL: ${row.failForwardSignal}`,
+                `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution} FAIL_FORWARD_SIGNAL: ${row.failForwardSignal} RISK_LEVEL: ${row.riskLevel} COST_TYPES: ${row.costTypes} ESCALATION: ${row.escalation}`,
             )
             .join("\n"),
     [perTurnTelemetry],
@@ -2548,23 +2573,32 @@ export function SupportDashboard({
                 <th className="border p-2 text-left">LEDGER_COUNT</th>
                 <th className="border p-2 text-left">HAS_RESOLUTION</th>
                 <th className="border p-2 text-left">FAIL_FORWARD_SIGNAL</th>
+                <th className="border p-2 text-left">RISK_LEVEL</th>
+                <th className="border p-2 text-left">COST_TYPES</th>
+                <th className="border p-2 text-left">ESCALATION</th>
               </tr>
             </thead>
             <tbody>
               {perTurnTelemetry.length === 0 ? (
                 <tr>
-                  <td className="border p-2" colSpan={5}>
+                  <td className="border p-2" colSpan={8}>
                     (none)
                   </td>
                 </tr>
               ) : (
                 perTurnTelemetry.map((row) => (
-                  <tr key={`per-turn-${row.turnIndex}`}>
+                  <tr
+                    key={`per-turn-${row.turnIndex}`}
+                    className={row.riskLevel === "HIGH" ? "bg-red-50 text-red-800" : ""}
+                  >
                     <td className="border p-2">{row.turnIndex}</td>
                     <td className="border p-2">{row.deltaCount}</td>
                     <td className="border p-2">{row.ledgerCount}</td>
                     <td className="border p-2">{String(row.hasResolution)}</td>
                     <td className="border p-2">{row.failForwardSignal}</td>
+                    <td className="border p-2">{row.riskLevel}</td>
+                    <td className="border p-2">{row.costTypes || "(none)"}</td>
+                    <td className="border p-2">{row.escalation}</td>
                   </tr>
                 ))
               )}

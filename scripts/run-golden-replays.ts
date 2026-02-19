@@ -277,6 +277,9 @@ function parsePerTurnTelemetryRows(stdout: string): Array<{
   ledgerCount: number;
   hasResolution: boolean;
   failForwardSignal: string;
+  riskLevel: string;
+  costTypes: string;
+  escalation: string;
 }> {
   const rows: Array<{
     turnIndex: number;
@@ -284,9 +287,12 @@ function parsePerTurnTelemetryRows(stdout: string): Array<{
     ledgerCount: number;
     hasResolution: boolean;
     failForwardSignal: string;
+    riskLevel: string;
+    costTypes: string;
+    escalation: string;
   }> = [];
   const pattern =
-    /^TURN_INDEX:\s+(-?\d+)\s+DELTA_COUNT:\s+(\d+)\s+LEDGER_COUNT:\s+(\d+)\s+HAS_RESOLUTION:\s+(true|false)(?:\s+FAIL_FORWARD_SIGNAL:\s*(.*))?$/;
+    /^TURN_INDEX:\s+(-?\d+)\s+DELTA_COUNT:\s+(\d+)\s+LEDGER_COUNT:\s+(\d+)\s+HAS_RESOLUTION:\s+(true|false)\s+FAIL_FORWARD_SIGNAL:\s*(.*?)\s+RISK_LEVEL:\s*(LOW|MODERATE|HIGH)\s+COST_TYPES:\s*(.*?)\s+ESCALATION:\s*(NONE|MINOR|MAJOR)$/;
   for (const line of stdout.split(/\r?\n/)) {
     const match = line.match(pattern);
     if (!match) continue;
@@ -296,6 +302,9 @@ function parsePerTurnTelemetryRows(stdout: string): Array<{
       ledgerCount: Number(match[3]),
       hasResolution: match[4] === "true",
       failForwardSignal: (match[5] ?? "").trim(),
+      riskLevel: (match[6] ?? "").trim(),
+      costTypes: (match[7] ?? "").trim(),
+      escalation: (match[8] ?? "").trim(),
     });
   }
   rows.sort((a, b) => a.turnIndex - b.turnIndex);
@@ -469,6 +478,30 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   if (combinedOutput.includes("LEDGER_WITHOUT_DELTA_MUTATION")) {
     regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION marker=LEDGER_WITHOUT_DELTA_MUTATION");
   }
+  if (combinedOutput.includes("FAIL_FORWARD_LOW_STAKES_VIOLATION")) {
+    regressionMarkers.push("GOLDEN_CONSEQUENCE_REGRESSION marker=FAIL_FORWARD_LOW_STAKES_VIOLATION");
+  }
+  if (!stdout.includes("CONSEQUENCE_SUMMARY")) {
+    regressionMarkers.push("GOLDEN_CONSEQUENCE_REGRESSION missing=CONSEQUENCE_SUMMARY");
+  }
+  if (!stdout.includes("RISK_LEVEL:")) {
+    regressionMarkers.push("GOLDEN_CONSEQUENCE_REGRESSION missing=RISK_LEVEL");
+  }
+  if (!stdout.includes("COST_TYPES:")) {
+    regressionMarkers.push("GOLDEN_CONSEQUENCE_REGRESSION missing=COST_TYPES");
+  }
+  if (!stdout.includes("ESCALATION:")) {
+    regressionMarkers.push("GOLDEN_CONSEQUENCE_REGRESSION missing=ESCALATION");
+  }
+  const consequenceRows = parsePerTurnTelemetryRows(stdout);
+  for (const row of consequenceRows) {
+    if (!row.riskLevel) {
+      regressionMarkers.push(`GOLDEN_CONSEQUENCE_REGRESSION turn=${row.turnIndex} reason=missing_risk_level`);
+    }
+    if (!row.escalation) {
+      regressionMarkers.push(`GOLDEN_CONSEQUENCE_REGRESSION turn=${row.turnIndex} reason=missing_escalation`);
+    }
+  }
   if (combinedOutput.includes("LEDGER_TOO_BROAD_EXPLANATION")) {
     regressionMarkers.push("GOLDEN_CAUSAL_PRECISION_REGRESSION marker=LEDGER_TOO_BROAD_EXPLANATION");
   }
@@ -494,7 +527,7 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
     if (combinedOutput.includes("FAIL_FORWARD_VIOLATION")) {
       regressionMarkers.push("GOLDEN_FAIL_FORWARD_REGRESSION marker=FAIL_FORWARD_VIOLATION");
     }
-    const perTurnRows = parsePerTurnTelemetryRows(stdout);
+    const perTurnRows = consequenceRows;
     const failureSignals: string[] = [];
     for (const failureTurnIndex of failureTurnIndexes) {
       const row = perTurnRows.find((entry) => entry.turnIndex === failureTurnIndex);
@@ -514,6 +547,24 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
         );
       } else {
         failureSignals.push(row.failForwardSignal);
+      }
+      if (!row || row.riskLevel.length === 0) {
+        regressionMarkers.push(
+          `GOLDEN_CONSEQUENCE_REGRESSION turn=${failureTurnIndex} reason=missing_risk_level`,
+        );
+      } else if (row.riskLevel === "LOW") {
+        regressionMarkers.push(
+          `GOLDEN_CONSEQUENCE_REGRESSION turn=${failureTurnIndex} reason=low_risk_failure`,
+        );
+      }
+      if (!row || row.escalation.length === 0) {
+        regressionMarkers.push(
+          `GOLDEN_CONSEQUENCE_REGRESSION turn=${failureTurnIndex} reason=missing_escalation`,
+        );
+      } else if (row.escalation !== "MINOR" && row.escalation !== "MAJOR") {
+        regressionMarkers.push(
+          `GOLDEN_CONSEQUENCE_REGRESSION turn=${failureTurnIndex} reason=invalid_escalation`,
+        );
       }
     }
     const uniqueSignals = [...new Set(failureSignals)].sort();

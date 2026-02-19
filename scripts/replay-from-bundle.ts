@@ -8,7 +8,12 @@ import {
   serializeSupportManifest,
 } from "../src/lib/support/supportManifest";
 import { SUPPORT_PACKAGE_VERSION, type DriftSeverity, type SupportPackageV1 } from "../src/lib/support/supportPackage";
-import { classifyFailForwardSignal, replayStateFromTurnJsonWithGuardSummary } from "../src/lib/game/replay";
+import {
+  classifyConsequence,
+  classifyFailForwardSignal,
+  replayStateFromTurnJsonWithGuardSummary,
+  type ConsequenceSummary,
+} from "../src/lib/game/replay";
 
 type ReplaySupportPackage = Omit<SupportPackageV1, "drift"> & {
   drift?: SupportPackageV1["drift"];
@@ -301,11 +306,14 @@ async function main() {
   const replayEvents = extractEvents(bundle, turnLimit);
   const guardSummary = replayStateFromTurnJsonWithGuardSummary(replayEvents);
   const failForwardSignalByTurn = new Map<number, string>();
+  const consequenceByTurn = new Map<number, ReturnType<typeof classifyConsequence>>();
+  const emptyConsequence: ConsequenceSummary = { riskLevel: "LOW", costTypes: [], escalation: "NONE" };
   for (const event of replayEvents) {
     const signal = classifyFailForwardSignal(event.turnJson);
     if (signal) {
       failForwardSignalByTurn.set(event.seq, signal);
     }
+    consequenceByTurn.set(event.seq, classifyConsequence(event.turnJson));
   }
   const contiguous = isSeqContiguous(perTurn.map((row) => row.turnIndex));
   const ledgerCount = manifest.telemetry.totalLedgerEntries;
@@ -326,6 +334,10 @@ async function main() {
   console.log(`  explainedDeltas: ${guardSummary.causalCoverage.explainedDeltas}`);
   console.log(`  unexplainedDeltas: ${guardSummary.causalCoverage.unexplainedDeltas}`);
   console.log(`  coverageRatio: ${guardSummary.causalCoverage.coverageRatio}`);
+  console.log("CONSEQUENCE_SUMMARY");
+  console.log(`RISK_LEVEL: ${guardSummary.consequenceSummary.riskLevel}`);
+  console.log(`COST_TYPES: ${guardSummary.consequenceSummary.costTypes.join(",")}`);
+  console.log(`ESCALATION: ${guardSummary.consequenceSummary.escalation}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");
@@ -338,8 +350,9 @@ async function main() {
   console.log(`FINAL_STATE_HASH: ${manifest.replay.finalStateHash}`);
   console.log("PER_TURN_TELEMETRY");
   perTurn.forEach((row) => {
+    const consequence = consequenceByTurn.get(row.turnIndex) ?? emptyConsequence;
     console.log(
-      `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution} FAIL_FORWARD_SIGNAL: ${failForwardSignalByTurn.get(row.turnIndex) ?? ""}`,
+      `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution} FAIL_FORWARD_SIGNAL: ${failForwardSignalByTurn.get(row.turnIndex) ?? ""} RISK_LEVEL: ${consequence.riskLevel} COST_TYPES: ${consequence.costTypes.join(",")} ESCALATION: ${consequence.escalation}`,
     );
   });
   if (args["telemetry-json"] === "true") {
@@ -356,6 +369,9 @@ async function main() {
         perTurn: perTurn.map((row) => ({
           ...row,
           failForwardSignal: failForwardSignalByTurn.get(row.turnIndex) ?? "",
+          riskLevel: (consequenceByTurn.get(row.turnIndex) ?? emptyConsequence).riskLevel,
+          costTypes: (consequenceByTurn.get(row.turnIndex) ?? emptyConsequence).costTypes,
+          escalation: (consequenceByTurn.get(row.turnIndex) ?? emptyConsequence).escalation,
         })),
       })}`,
     );
@@ -420,6 +436,9 @@ async function main() {
 main().catch((err) => {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes("FAIL_FORWARD_VIOLATION")) {
+    console.log("FAIL_FORWARD_CHECK: FAIL");
+  }
+  if (message.includes("FAIL_FORWARD_LOW_STAKES_VIOLATION")) {
     console.log("FAIL_FORWARD_CHECK: FAIL");
   }
   console.error(message);
