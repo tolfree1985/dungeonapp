@@ -88,10 +88,13 @@ export default function CreatorPage() {
   );
   const [ownerId, setOwnerId] = useState("");
   const [creatorTier, setCreatorTier] = useState<CreatorTier>("NOMAD");
+  const [forkSourceScenarioId, setForkSourceScenarioId] = useState("");
+  const [forkNewScenarioId, setForkNewScenarioId] = useState("");
   const [myScenarios, setMyScenarios] = useState<MineViewItem[]>([]);
   const [mineStatus, setMineStatus] = useState("My scenarios not loaded.");
   const [draftCopyStatus, setDraftCopyStatus] = useState("");
-  const [creatorRequestStatus, setCreatorRequestStatus] = useState("");
+  const [createDraftStatus, setCreateDraftStatus] = useState("");
+  const [forkStatus, setForkStatus] = useState("");
 
   const emptyState = useMemo(
     () => ({
@@ -209,11 +212,11 @@ export default function CreatorPage() {
   async function onCreateDraft() {
     const trimmedOwnerId = ownerId.trim();
     if (!trimmedOwnerId) {
-      setCreatorRequestStatus("ownerId is required.");
+      setCreateDraftStatus("ownerId is required.");
       return;
     }
     if (!validation.ok || !preview) {
-      setCreatorRequestStatus("Cannot create draft: validation must pass.");
+      setCreateDraftStatus("Cannot create draft: validation must pass.");
       return;
     }
 
@@ -221,7 +224,7 @@ export default function CreatorPage() {
     const scenarioTitle =
       title.trim() || (typeof preview.title === "string" ? preview.title : "");
     if (!scenarioId || !scenarioTitle) {
-      setCreatorRequestStatus("Cannot create draft: id and title are required.");
+      setCreateDraftStatus("Cannot create draft: id and title are required.");
       return;
     }
 
@@ -252,12 +255,55 @@ export default function CreatorPage() {
           retryAfterHeader: res.headers.get("Retry-After"),
         });
         const parts = [message, detail, retryAfter].filter(Boolean);
-        setCreatorRequestStatus(parts.join(" "));
+        setCreateDraftStatus(parts.join(" "));
         return;
       }
-      setCreatorRequestStatus("Draft created.");
+      setCreateDraftStatus("Draft created.");
     } catch {
-      setCreatorRequestStatus("Request failed.");
+      setCreateDraftStatus("Request failed.");
+    }
+  }
+
+  async function onForkScenario() {
+    const trimmedOwnerId = ownerId.trim();
+    const sourceScenarioId = forkSourceScenarioId.trim();
+    const newScenarioId = forkNewScenarioId.trim();
+
+    if (!trimmedOwnerId) {
+      setForkStatus("ownerId is required.");
+      return;
+    }
+    if (!sourceScenarioId || !newScenarioId) {
+      setForkStatus("sourceScenarioId and newScenarioId are required.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/scenario/${encodeURIComponent(sourceScenarioId)}/fork`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          newId: newScenarioId,
+          ownerId: trimmedOwnerId,
+          tier: creatorTier,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message = mapCreatorErrorMessage({ status: res.status, payload: json });
+        const detail = formatCreatorCapDetail(json);
+        const retryAfter = formatCreatorRetryAfterText({
+          status: res.status,
+          payload: json,
+          retryAfterHeader: res.headers.get("Retry-After"),
+        });
+        const parts = [message, detail, retryAfter].filter(Boolean);
+        setForkStatus(parts.join(" "));
+        return;
+      }
+      setForkStatus("Scenario forked.");
+    } catch {
+      setForkStatus("Request failed.");
     }
   }
 
@@ -424,7 +470,33 @@ export default function CreatorPage() {
           <button type="button" onClick={onCreateDraft} className="rounded border px-2 py-1 text-xs">
             Create draft
           </button>
-          <span>{creatorRequestStatus}</span>
+          <span>{createDraftStatus}</span>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <label htmlFor="fork-source-id" className="text-xs">
+            sourceScenarioId
+          </label>
+          <input
+            id="fork-source-id"
+            value={forkSourceScenarioId}
+            onChange={(e) => setForkSourceScenarioId(e.target.value)}
+            className="rounded border px-2 py-1 text-xs"
+            placeholder="source scenario id"
+          />
+          <label htmlFor="fork-new-id" className="text-xs">
+            newScenarioId
+          </label>
+          <input
+            id="fork-new-id"
+            value={forkNewScenarioId}
+            onChange={(e) => setForkNewScenarioId(e.target.value)}
+            className="rounded border px-2 py-1 text-xs"
+            placeholder="new scenario id"
+          />
+          <button type="button" onClick={onForkScenario} className="rounded border px-2 py-1 text-xs">
+            Fork scenario
+          </button>
+          <span>{forkStatus}</span>
         </div>
       </section>
 
