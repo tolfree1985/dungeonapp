@@ -10,6 +10,7 @@ type PerTurnTelemetryRow = {
   hasResolution: boolean;
 };
 type ReplayTelemetry = {
+  telemetryVersion: number;
   turnCount: number;
   totalLedgerEntries: number;
   totalStateDeltaCount: number;
@@ -166,19 +167,22 @@ function deriveTelemetry(events: ReplayEvent[], finalStateHash: string): ReplayT
   const maxDeltaPerTurn = maxDeltasPerTurn(events);
   const maxLedgerPerTurn = maxLedgerEntriesPerTurn(events);
   const avgDeltaPerTurn = Number((totalStateDeltaCount / Math.max(turnCount, 1)).toFixed(6));
-  const perTurn = events.map((event) => {
-    const deltaCount = Array.isArray(event?.turnJson?.deltas) ? event.turnJson.deltas.length : 0;
-    const ledgerCount = Array.isArray(event?.turnJson?.ledgerAdds) ? event.turnJson.ledgerAdds.length : 0;
-    const hasResolution = event?.turnJson?.resolution !== undefined && event?.turnJson?.resolution !== null;
-    return {
-      turnIndex: event.seq,
-      deltaCount,
-      ledgerCount,
-      hasResolution,
-    };
-  });
+  const perTurn = events
+    .map((event) => {
+      const deltaCount = Array.isArray(event?.turnJson?.deltas) ? event.turnJson.deltas.length : 0;
+      const ledgerCount = Array.isArray(event?.turnJson?.ledgerAdds) ? event.turnJson.ledgerAdds.length : 0;
+      const hasResolution = event?.turnJson?.resolution !== undefined && event?.turnJson?.resolution !== null;
+      return {
+        turnIndex: event.seq,
+        deltaCount,
+        ledgerCount,
+        hasResolution,
+      };
+    })
+    .sort((a, b) => a.turnIndex - b.turnIndex);
 
   return {
+    telemetryVersion: 1,
     turnCount,
     totalLedgerEntries,
     totalStateDeltaCount,
@@ -205,22 +209,24 @@ function main() {
     throw new Error("No replayable turns/events in bundle");
   }
 
-  const state = replayStateFromTurnJson(events);
+  const orderedEvents = [...events].sort((a, b) => a.seq - b.seq);
+  const state = replayStateFromTurnJson(orderedEvents);
   const finalStateHash = sha256Hex(stableStringify(state));
-  const telemetry = deriveTelemetry(events, finalStateHash);
+  const telemetry = deriveTelemetry(orderedEvents, finalStateHash);
 
   const bundleId = args["bundle-id"] ?? "(none)";
-  const contiguous = isSeqContiguous(events);
-  const ledgerCount = sumLedgerAdds(events);
-  const deltaCount = sumDeltas(events);
+  const contiguous = isSeqContiguous(orderedEvents);
+  const ledgerCount = sumLedgerAdds(orderedEvents);
+  const deltaCount = sumDeltas(orderedEvents);
 
   console.log(`BUNDLE_ID ${bundleId}`);
-  console.log(`TURNS ${events.length}`);
+  console.log(`TURNS ${orderedEvents.length}`);
   console.log(`INVARIANT_SEQ_CONTIGUOUS ${contiguous ? "PASS" : "FAIL"}`);
   console.log(`INVARIANT_LEDGER_COUNT ${ledgerCount}`);
   console.log(`INVARIANT_DELTA_COUNT ${deltaCount}`);
   console.log(`FINAL_STATE_HASH ${finalStateHash}`);
   console.log("REPLAY COMPLETE");
+  console.log(`TELEMETRY_VERSION ${telemetry.telemetryVersion}`);
   console.log("TELEMETRY");
   console.log(`TURN_COUNT: ${telemetry.turnCount}`);
   console.log(`TOTAL_LEDGER_ENTRIES: ${telemetry.totalLedgerEntries}`);

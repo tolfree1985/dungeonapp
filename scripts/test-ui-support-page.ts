@@ -99,6 +99,7 @@ function main() {
   assert(dashboardSource.includes("FINAL_STATE_HASH:"), "Expected final state hash label");
   assert(dashboardSource.includes("Copy final state hash"), "Expected final state hash copy control");
   assert(dashboardSource.includes("Replay Telemetry (Derived)"), "Expected derived telemetry panel");
+  assert(dashboardSource.includes("TELEMETRY_VERSION 1"), "Expected telemetry version marker in UI panel");
   assert(dashboardSource.includes("TELEMETRY"), "Expected telemetry marker in UI panel");
   assert(dashboardSource.includes("TURN_COUNT:"), "Expected TURN_COUNT telemetry label in UI panel");
   assert(dashboardSource.includes("TOTAL_LEDGER_ENTRIES:"), "Expected TOTAL_LEDGER_ENTRIES telemetry label");
@@ -113,6 +114,11 @@ function main() {
   assert(dashboardSource.includes("HAS_RESOLUTION"), "Expected per-turn telemetry HAS_RESOLUTION header");
   assert(dashboardSource.includes("FIRST_DRIFT_TURN_INDEX:"), "Expected first-drift turn index signal");
   assert(dashboardSource.includes("FIRST_DRIFT_METRIC:"), "Expected first-drift metric signal");
+  assert(dashboardSource.includes("DRIFT_SEVERITY:"), "Expected drift severity signal");
+  assert(dashboardSource.includes("HASH_DRIFT"), "Expected drift severity taxonomy");
+  assert(dashboardSource.includes("STRUCTURAL_DRIFT"), "Expected drift severity taxonomy");
+  assert(dashboardSource.includes("PER_TURN_DRIFT"), "Expected drift severity taxonomy");
+  assert(dashboardSource.includes("PER_TURN_TELEMETRY"), "Expected per-turn telemetry marker");
   assert(dashboardSource.includes("Copy Drift Report"), "Expected copy drift report control");
 
   console.log("UI SUPPORT PAGE OK");

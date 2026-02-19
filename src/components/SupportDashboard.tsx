@@ -837,16 +837,19 @@ export function SupportDashboard({
   const telemetryDrift = useMemo(() => {
     const details: string[] = [];
     const firstPerTurnDrift = findFirstDrift(perTurnTelemetry, telemetryReferencePerTurn);
-
-    if (telemetryReference.finalStateHash && replayTelemetry.finalStateHash) {
-      if (telemetryReference.finalStateHash !== replayTelemetry.finalStateHash) {
-        details.push("FINAL_STATE_HASH mismatch");
-      }
-    }
-    if (
+    const hashDrift =
+      telemetryReference.finalStateHash.length > 0 &&
+      replayTelemetry.finalStateHash.length > 0 &&
+      telemetryReference.finalStateHash !== replayTelemetry.finalStateHash;
+    const structuralDrift =
       telemetryReference.turnCount != null &&
-      telemetryReference.turnCount !== replayTelemetry.turnCount
-    ) {
+      telemetryReference.turnCount !== replayTelemetry.turnCount;
+    const perTurnDrift = !!firstPerTurnDrift;
+
+    if (hashDrift) {
+      details.push("FINAL_STATE_HASH mismatch");
+    }
+    if (structuralDrift) {
       details.push("TURN_COUNT mismatch");
     }
     if (
@@ -855,16 +858,13 @@ export function SupportDashboard({
     ) {
       details.push("TOTAL_LEDGER_ENTRIES mismatch");
     }
-    if (firstPerTurnDrift) {
+    if (perTurnDrift) {
       details.push(`PER_TURN mismatch (${firstPerTurnDrift.metric})`);
     }
 
     let firstDrift: DriftLocator = firstPerTurnDrift;
     if (!firstDrift) {
-      if (
-        telemetryReference.turnCount != null &&
-        telemetryReference.turnCount !== replayTelemetry.turnCount
-      ) {
+      if (structuralDrift) {
         firstDrift = {
           turnIndex: Math.min(telemetryReference.turnCount, replayTelemetry.turnCount),
           metric: "missing_turn",
@@ -881,11 +881,7 @@ export function SupportDashboard({
           derived: perTurnTelemetry.length > 0 ? perTurnTelemetry[0] : null,
           reference: null,
         };
-      } else if (
-        telemetryReference.finalStateHash &&
-        replayTelemetry.finalStateHash &&
-        telemetryReference.finalStateHash !== replayTelemetry.finalStateHash
-      ) {
+      } else if (hashDrift) {
         const last = perTurnTelemetry.length > 0 ? perTurnTelemetry[perTurnTelemetry.length - 1] : null;
         firstDrift = {
           turnIndex: last?.turnIndex ?? null,
@@ -901,12 +897,20 @@ export function SupportDashboard({
       telemetryReference.turnCount != null ||
       telemetryReference.totalLedgerEntries != null ||
       telemetryReferencePerTurn.length > 0;
+    const severity = hashDrift
+      ? "HASH_DRIFT"
+      : structuralDrift
+        ? "STRUCTURAL_DRIFT"
+        : perTurnDrift
+          ? "PER_TURN_DRIFT"
+          : "NONE";
 
     return {
       hasReference,
-      isDrift: details.length > 0,
+      isDrift: severity !== "NONE" || details.length > 0,
       details,
       firstDrift,
+      severity,
     };
   }, [perTurnTelemetry, replayTelemetry, telemetryReference, telemetryReferencePerTurn]);
 
@@ -929,6 +933,7 @@ export function SupportDashboard({
       `ENGINE_VERSION: ${metadata.engineVersion.trim() || "(none)"}`,
       `SCENARIO_HASH: ${metadata.scenarioContentHash.trim() || "(none)"}`,
       `FINAL_STATE_HASH: ${replayTelemetry.finalStateHash || "(none)"}`,
+      `DRIFT_SEVERITY: ${telemetryDrift.severity}`,
       `DRIFT_SUMMARY: ${driftSummary}`,
       `FIRST_DRIFT_TURN_INDEX: ${firstDriftTurnIndex}`,
       `FIRST_DRIFT_METRIC: ${firstDriftMetric}`,
@@ -946,6 +951,7 @@ export function SupportDashboard({
     telemetryDrift.firstDrift,
     telemetryDrift.hasReference,
     telemetryDrift.isDrift,
+    telemetryDrift.severity,
   ]);
 
   const shareBlockText = useMemo(
@@ -1391,6 +1397,7 @@ export function SupportDashboard({
         <div className="text-xs">
           FIRST_DRIFT_METRIC: {telemetryDrift.firstDrift?.metric ?? "(none)"}
         </div>
+        <div className="text-xs">DRIFT_SEVERITY: {telemetryDrift.severity}</div>
         {telemetryDrift.details.length > 0 ? (
           <ul className="mt-1 list-disc pl-5 text-xs">
             {telemetryDrift.details.map((detail) => (
@@ -1408,6 +1415,7 @@ export function SupportDashboard({
         </div>
         <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">
           {[
+            "TELEMETRY_VERSION 1",
             "TELEMETRY",
             `TURN_COUNT: ${replayTelemetry.turnCount}`,
             `TOTAL_LEDGER_ENTRIES: ${replayTelemetry.totalLedgerEntries}`,
@@ -1416,6 +1424,7 @@ export function SupportDashboard({
             `AVG_DELTA_PER_TURN: ${replayTelemetry.avgDeltaPerTurn}`,
             `MAX_LEDGER_PER_TURN: ${replayTelemetry.maxLedgerPerTurn}`,
             `FINAL_STATE_HASH: ${replayTelemetry.finalStateHash || "(none)"}`,
+            "PER_TURN_TELEMETRY",
           ].join("\n")}
         </pre>
         <div className="mt-2 overflow-auto">
