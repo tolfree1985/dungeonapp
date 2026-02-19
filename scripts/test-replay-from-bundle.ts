@@ -10,6 +10,12 @@ import {
   assertSupportManifestConsistency,
 } from "../src/lib/support/supportManifest";
 import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
+import {
+  assertLedgerConsistency,
+  assertStateDeltaShape,
+  replayStateFromTurnJson,
+} from "../src/lib/game/replay";
+import { roll2d6 as resolveRoll2d6, tierFor2d6 } from "../src/lib/game/resolve";
 
 function extractSection(output: string, startMarker: string, endMarker?: string): string {
   const lines = output.split(/\r?\n/);
@@ -18,6 +24,15 @@ function extractSection(output: string, startMarker: string, endMarker?: string)
   const end = endMarker ? lines.findIndex((line, idx) => idx > start && line.trim() === endMarker) : -1;
   const slice = end > start ? lines.slice(start, end) : lines.slice(start);
   return slice.join("\n").trim();
+}
+
+function fixedRng(values: number[]): () => number {
+  let idx = 0;
+  return () => {
+    const value = values[idx] ?? values[values.length - 1] ?? 0;
+    idx += 1;
+    return value;
+  };
 }
 
 function main() {
@@ -47,6 +62,245 @@ function main() {
       },
     ],
   };
+
+  assert.doesNotThrow(
+    () => assertStateDeltaShape({ op: "flag.set", path: "flags.dockSeen", key: "dockSeen", value: true }),
+    "expected valid state delta shape to pass",
+  );
+  assert.throws(
+    () => assertStateDeltaShape({ op: "flag.set", path: "", key: "dockSeen", value: true }),
+    /STATE_DELTA_PATH_INVALID/,
+    "expected empty delta path to fail",
+  );
+  assert.throws(
+    () => assertStateDeltaShape({ op: "flag.set", path: "flags.dockSeen", value: { createdAt: "x" } }),
+    /STATE_DELTA_FORBIDDEN_KEY/,
+    "expected forbidden timestamp-like key to fail",
+  );
+  assert.throws(
+    () => assertStateDeltaShape({ op: "flag.set", path: "flags.dockSeen", value: () => "x" }),
+    /STATE_DELTA_FUNCTION_VALUE/,
+    "expected function-valued delta payload to fail",
+  );
+  assert.throws(
+    () => assertStateDeltaShape({ op: "flag.set", path: "flags.dockSeen", value: new Date() }),
+    /STATE_DELTA_DATE_VALUE/,
+    "expected date-valued delta payload to fail",
+  );
+
+  assert.doesNotThrow(
+    () =>
+      assertLedgerConsistency([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "time.inc", by: 1 }],
+            ledgerAdds: [{ id: "ledger_ok_0", turnIndex: 0 }],
+          },
+        },
+      ]),
+    "expected valid ledger consistency to pass",
+  );
+  assert.throws(
+    () =>
+      assertLedgerConsistency([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "time.inc", by: 1 }],
+            ledgerAdds: [{ id: "ledger_bad_ref", turnIndex: 3 }],
+          },
+        },
+      ]),
+    /LEDGER_REFERENCE_INVALID/,
+    "expected invalid ledger reference to fail",
+  );
+  assert.throws(
+    () =>
+      assertLedgerConsistency([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [],
+            ledgerAdds: [{ id: "ledger_without_delta", turnIndex: 0 }],
+          },
+        },
+      ]),
+    /LEDGER_WITHOUT_DELTA/,
+    "expected ledger entry without delta to fail",
+  );
+  assert.throws(
+    () =>
+      assertLedgerConsistency([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "time.inc", by: 1 }],
+            ledgerAdds: [{ id: "dup-ledger", turnIndex: 0 }],
+          },
+        },
+        {
+          seq: 1,
+          turnJson: {
+            deltas: [{ op: "time.inc", by: 1 }],
+            ledgerAdds: [{ id: "dup-ledger", turnIndex: 1 }],
+          },
+        },
+      ]),
+    /LEDGER_DUPLICATE_ID/,
+    "expected duplicate ledger ids to fail",
+  );
+
+  const resolutionSuccess = resolveRoll2d6(fixedRng([0.5, 0.9]));
+  const resolutionCost = resolveRoll2d6(fixedRng([0.35, 0.5]));
+  const resolutionFail = resolveRoll2d6(fixedRng([0, 0]));
+  const toOutcomeBand = (tier: "fail" | "cost" | "hit" | "crit") =>
+    tier === "fail" ? "fail-forward" : tier === "cost" ? "success-with-cost" : "success";
+  assert.equal(resolutionSuccess.total, 10, "expected deterministic 2d6 success total");
+  assert.equal(resolutionCost.total, 7, "expected deterministic 2d6 cost total");
+  assert.equal(resolutionFail.total, 2, "expected deterministic 2d6 fail total");
+  assert.equal(toOutcomeBand(tierFor2d6(resolutionSuccess.total)), "success", "expected 10-12 success band");
+  assert.equal(
+    toOutcomeBand(tierFor2d6(resolutionCost.total)),
+    "success-with-cost",
+    "expected 7-9 success-with-cost band",
+  );
+  assert.equal(toOutcomeBand(tierFor2d6(resolutionFail.total)), "fail-forward", "expected 2-6 fail-forward band");
+
+  const failForwardEvents = [
+    { seq: 0, turnJson: { deltas: [{ op: "time.inc", by: 1 }], ledgerAdds: [] } },
+    {
+      seq: 1,
+      turnJson: {
+        resolution: { tier: "fail" },
+        deltas: [{ op: "flag.set", key: "failed_once", value: true }],
+        ledgerAdds: [{ id: "ledger_failforward_1", turnIndex: 1 }],
+      },
+    },
+    {
+      seq: 2,
+      turnJson: {
+        deltas: [{ op: "time.inc", by: 1 }],
+        ledgerAdds: [{ id: "ledger_followup_2", turnIndex: 2 }],
+      },
+    },
+  ];
+  const failForwardState = replayStateFromTurnJson(failForwardEvents);
+  assert(failForwardState !== undefined && failForwardState !== null, "expected non-empty replay state after fail-forward");
+  assert.equal((failForwardState as any)?.world?.flags?.failed_once, true, "expected fail-forward state mutation");
+  const failForwardBundle = {
+    bundleId: "bundle-fail-forward",
+    engineVersion: "engine-test",
+    scenarioContentHash: "hash-test",
+    turns: failForwardEvents.map((event) => ({
+      turnIndex: event.seq,
+      resolution: event.turnJson.resolution,
+      stateDeltas: event.turnJson.deltas,
+      ledgerAdds: event.turnJson.ledgerAdds,
+    })),
+  };
+  const failForwardReplay = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=fail-forward-bundle",
+      "--manifest-json",
+      `--bundle-json=${JSON.stringify(failForwardBundle)}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(
+    failForwardReplay.status,
+    0,
+    `fail-forward replay failed: ${failForwardReplay.stderr || failForwardReplay.stdout}`,
+  );
+  const failForwardOut = failForwardReplay.stdout ?? "";
+  assert(failForwardOut.includes("TURNS 3"), "expected fail-forward fixture to increment turn count");
+  const failForwardManifestLine =
+    failForwardOut.split(/\r?\n/).find((line) => line.startsWith("SUPPORT_MANIFEST_JSON ")) ?? "";
+  assert(failForwardManifestLine.length > 0, "expected fail-forward manifest output");
+  const failForwardManifestJson = JSON.parse(failForwardManifestLine.replace(/^SUPPORT_MANIFEST_JSON\s+/, ""));
+  const failForwardRow = Array.isArray(failForwardManifestJson.perTurn)
+    ? failForwardManifestJson.perTurn.find((row: any) => row?.turnIndex === 1)
+    : null;
+  assert(failForwardRow && failForwardRow.deltaCount > 0, "expected fail-forward turn to include state delta");
+  assert.throws(
+    () =>
+      replayStateFromTurnJson(
+        [{ seq: 0, turnJson: { deltas: [{ op: "flag.set", key: "k", value: true, path: "engine.meta.k" }] } }],
+      ),
+    /DELTA_NAMESPACE_NOT_ALLOWED/,
+    "expected namespace guard to reject out-of-namespace delta paths",
+  );
+  assert.throws(
+    () =>
+      replayStateFromTurnJson(
+        [{ seq: 0, turnJson: { kind: "GENESIS" } }],
+        { rogue: true } as any,
+      ),
+    /REPLAY_STATE_TOP_KEY_NOT_ALLOWED/,
+    "expected top-level state namespace lock to reject rogue keys",
+  );
+
+  const invalidDeltaBundle = {
+    bundleId: "bundle-invalid-delta",
+    engineVersion: "engine-test",
+    scenarioContentHash: "hash-test",
+    turns: [
+      {
+        turnIndex: 0,
+        stateDeltas: [{ op: "flag.set", path: "", key: "k", value: true }],
+        ledgerAdds: [],
+      },
+    ],
+  };
+  const invalidDeltaReplay = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=invalid-delta-bundle",
+      `--bundle-json=${JSON.stringify(invalidDeltaBundle)}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(invalidDeltaReplay.status, 1, "expected invalid delta bundle replay to fail");
+  assert(
+    (invalidDeltaReplay.stderr ?? "").includes("STATE_DELTA_PATH_INVALID"),
+    "expected invalid delta bundle failure marker",
+  );
+
+  const invalidLedgerBundle = {
+    bundleId: "bundle-invalid-ledger",
+    engineVersion: "engine-test",
+    scenarioContentHash: "hash-test",
+    turns: [
+      {
+        turnIndex: 0,
+        stateDeltas: [{ op: "time.inc", by: 1 }],
+        ledgerAdds: [{ id: "ledger_bad_turn_ref", turnIndex: 99 }],
+      },
+    ],
+  };
+  const invalidLedgerReplay = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--bundle-id=invalid-ledger-bundle",
+      `--bundle-json=${JSON.stringify(invalidLedgerBundle)}`,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(invalidLedgerReplay.status, 1, "expected invalid ledger bundle replay to fail");
+  assert(
+    (invalidLedgerReplay.stderr ?? "").includes("LEDGER_REFERENCE_INVALID"),
+    "expected invalid ledger bundle failure marker",
+  );
 
   const result = spawnSync(
     process.execPath,
