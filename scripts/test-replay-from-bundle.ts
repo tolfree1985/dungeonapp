@@ -13,10 +13,13 @@ import {
 } from "../src/lib/support/supportManifest";
 import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
 import {
+  REPLAY_GUARD_ORDER,
+  assertDeltaApplyIdempotency,
   assertLedgerConsistency,
   assertStateDeltaShape,
   assertTurnMonotonicity,
   replayStateFromTurnJson,
+  replayStateFromTurnJsonWithGuardSummary,
 } from "../src/lib/game/replay";
 import { roll2d6 as resolveRoll2d6, tierFor2d6 } from "../src/lib/game/resolve";
 
@@ -108,6 +111,26 @@ async function main() {
     /STATE_DELTA_DATE_VALUE/,
     "expected date-valued delta payload to fail",
   );
+  assert.throws(
+    () => assertStateDeltaShape({ op: "flag.set", path: "flags.dockSeen", value: Number.NaN }),
+    /DELTA_VALUE_INVALID/,
+    "expected NaN delta payload to fail",
+  );
+  assert.throws(
+    () => assertStateDeltaShape({ op: "flag.set", path: "flags.dockSeen", value: Number.POSITIVE_INFINITY }),
+    /DELTA_VALUE_INVALID/,
+    "expected infinite delta payload to fail",
+  );
+  assert.throws(
+    () => assertStateDeltaShape({ op: "flag.set", path: "flags.dockSeen", value: BigInt(1) }),
+    /DELTA_VALUE_INVALID/,
+    "expected bigint delta payload to fail",
+  );
+  assert.throws(
+    () => assertStateDeltaShape({ op: "flag.set", path: "stats.hp", value: 10.5 }),
+    /DELTA_VALUE_INVALID/,
+    "expected float stats delta payload to fail",
+  );
 
   assert.doesNotThrow(
     () =>
@@ -147,8 +170,36 @@ async function main() {
           },
         },
       ]),
-    /LEDGER_WITHOUT_DELTA/,
+    /LEDGER_DELTA_COUPLING_VIOLATION/,
     "expected ledger entry without delta to fail",
+  );
+  assert.throws(
+    () =>
+      assertLedgerConsistency([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "time.inc", by: 1 }],
+            ledgerAdds: [],
+          },
+        },
+      ]),
+    /LEDGER_DELTA_COUPLING_VIOLATION/,
+    "expected delta entry without ledger to fail",
+  );
+  assert.doesNotThrow(
+    () =>
+      assertLedgerConsistency([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "time.inc", by: 1 }],
+            tags: ["system/no-ledger"],
+            ledgerAdds: [],
+          },
+        },
+      ]),
+    "expected system/no-ledger tagged turn to pass delta/ledger coupling guard",
   );
   assert.throws(
     () =>
@@ -224,7 +275,13 @@ async function main() {
   assert.equal(toOutcomeBand(tierFor2d6(resolutionFail.total)), "fail-forward", "expected 2-6 fail-forward band");
 
   const failForwardEvents = [
-    { seq: 0, turnJson: { deltas: [{ op: "time.inc", by: 1 }], ledgerAdds: [] } },
+    {
+      seq: 0,
+      turnJson: {
+        deltas: [{ op: "time.inc", by: 1 }],
+        ledgerAdds: [{ id: "ledger_failforward_0", turnIndex: 0 }],
+      },
+    },
     {
       seq: 1,
       turnJson: {
@@ -285,7 +342,15 @@ async function main() {
   assert.throws(
     () =>
       replayStateFromTurnJson(
-        [{ seq: 0, turnJson: { deltas: [{ op: "flag.set", key: "k", value: true, path: "engine.meta.k" }] } }],
+        [
+          {
+            seq: 0,
+            turnJson: {
+              deltas: [{ op: "flag.set", key: "k", value: true, path: "engine.meta.k" }],
+              ledgerAdds: [{ id: "ledger_namespace_0", turnIndex: 0 }],
+            },
+          },
+        ],
       ),
     /DELTA_NAMESPACE_NOT_ALLOWED/,
     "expected namespace guard to reject out-of-namespace delta paths",
@@ -309,6 +374,7 @@ async function main() {
               { op: "flag.set", key: "quest_seen", value: true, path: "quests.seen" },
               { op: "flag.set", key: "alpha", value: true, path: "flags.alpha" },
             ],
+            ledgerAdds: [{ id: "ledger_order_0", turnIndex: 0 }],
           },
         },
       ]),
@@ -329,6 +395,55 @@ async function main() {
     /LEDGER_TEXT_NON_DETERMINISTIC/,
     "expected non-deterministic ledger text to fail",
   );
+  assert.throws(
+    () =>
+      replayStateFromTurnJson(
+        [
+          {
+            seq: 0,
+            turnJson: {
+              deltas: [{ op: "flag.set", key: "toneLock", value: "unlocked", path: "flags.toneLock" }],
+              ledgerAdds: [{ id: "ledger_style_0", turnIndex: 0 }],
+            },
+          },
+        ],
+        {
+          stateVersion: "v1",
+          world: { time: 0, locationId: "room_start", clocks: {}, flags: { toneLock: "locked" } },
+          inventory: {},
+          map: { nodes: {} },
+          npcs: {},
+        } as any,
+      ),
+    /STYLE_LOCK_VIOLATION/,
+    "expected locked style key downgrade to fail",
+  );
+  let nonIdempotentTick = false;
+  assert.throws(
+    () =>
+      assertDeltaApplyIdempotency({ ok: true }, [], () => {
+        nonIdempotentTick = !nonIdempotentTick;
+        return { tick: nonIdempotentTick ? 1 : 2 };
+      }),
+    /DELTA_APPLY_NON_IDEMPOTENT/,
+    "expected delta apply idempotency guard to fail on unstable applier",
+  );
+
+  const guardSummaryReplay = replayStateFromTurnJsonWithGuardSummary([
+    {
+      seq: 0,
+      turnJson: {
+        deltas: [{ op: "flag.set", key: "dockSeen", value: true, path: "flags.dockSeen" }],
+        ledgerAdds: [{ id: "ledger_guard_0", turnIndex: 0 }],
+      },
+    },
+  ]);
+  assert.deepEqual(
+    guardSummaryReplay.guardSummary,
+    REPLAY_GUARD_ORDER,
+    "expected guard summary names in deterministic order",
+  );
+  assert.equal(guardSummaryReplay.styleLockPresent, false, "expected no style lock marker when no style lock keys are present");
 
   const invalidDeltaBundle = {
     bundleId: "bundle-invalid-delta",
@@ -338,7 +453,7 @@ async function main() {
       {
         turnIndex: 0,
         stateDeltas: [{ op: "flag.set", path: "", key: "k", value: true }],
-        ledgerAdds: [],
+        ledgerAdds: [{ id: "ledger_invalid_delta_0", turnIndex: 0 }],
       },
     ],
   };

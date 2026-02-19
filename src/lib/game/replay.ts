@@ -18,6 +18,9 @@ export const ALLOWED_STATE_NAMESPACES = new Set([
   "flags",
 ]);
 
+const STYLE_LOCK_KEYS = ["toneLock", "genreLock", "pacingLock"] as const;
+const STYLE_LOCK_ALLOWED_VALUES = new Set(["none", "unlocked", "locked"]);
+
 const ALLOWED_REPLAY_TOP_LEVEL_KEYS = new Set([
   "stateVersion",
   "world",
@@ -44,6 +47,27 @@ const LEDGER_FORBIDDEN_PATTERNS = [
 
 type ReplayEvent = { seq: number; turnJson: any };
 
+export type ReplayGuardName =
+  | "TURN_MONOTONICITY"
+  | "LEDGER_CONSISTENCY"
+  | "DELTA_SHAPE"
+  | "DELTA_NAMESPACE"
+  | "DELTA_ORDER"
+  | "DELTA_APPLY_IDEMPOTENCY"
+  | "STYLE_LOCK_INVARIANT"
+  | "REPLAY_STATE_INVARIANT";
+
+export const REPLAY_GUARD_ORDER: readonly ReplayGuardName[] = [
+  "TURN_MONOTONICITY",
+  "LEDGER_CONSISTENCY",
+  "DELTA_SHAPE",
+  "DELTA_NAMESPACE",
+  "DELTA_ORDER",
+  "DELTA_APPLY_IDEMPOTENCY",
+  "STYLE_LOCK_INVARIANT",
+  "REPLAY_STATE_INVARIANT",
+] as const;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -51,6 +75,55 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function compareText(a: string, b: string): number {
   if (a === b) return 0;
   return a < b ? -1 : 1;
+}
+
+function stableNormalizeValue(value: unknown, path: string, seen: WeakSet<object>): unknown {
+  if (value === undefined) {
+    throw new Error(`STATE_DELTA_UNDEFINED_VALUE path=${path}`);
+  }
+  if (typeof value === "function") {
+    throw new Error(`STATE_DELTA_FUNCTION_VALUE path=${path}`);
+  }
+  if (value instanceof Date) {
+    throw new Error(`STATE_DELTA_DATE_VALUE path=${path}`);
+  }
+  if (typeof value === "bigint" || typeof value === "symbol") {
+    throw new Error(`DELTA_VALUE_INVALID path=${path}`);
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new Error(`DELTA_VALUE_INVALID path=${path}`);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry, idx) => stableNormalizeValue(entry, `${path}[${idx}]`, seen));
+  }
+  if (isRecord(value)) {
+    if (seen.has(value)) {
+      throw new Error(`DELTA_VALUE_INVALID path=${path}`);
+    }
+    seen.add(value);
+
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      throw new Error(`DELTA_VALUE_INVALID path=${path}`);
+    }
+
+    const out: Record<string, unknown> = {};
+    const keys = Object.keys(value).sort(compareText);
+    for (const key of keys) {
+      const normalizedKey = key.toLowerCase();
+      if (FORBIDDEN_DELTA_KEYS.has(normalizedKey)) {
+        throw new Error(`STATE_DELTA_FORBIDDEN_KEY key=${key}`);
+      }
+      out[key] = stableNormalizeValue(value[key], path ? `${path}.${key}` : key, seen);
+    }
+    return out;
+  }
+  return value;
+}
+
+function stableStringifyDeterministic(value: unknown, path: string): string {
+  const normalized = stableNormalizeValue(value, path, new WeakSet());
+  return JSON.stringify(normalized);
 }
 
 function normalizeDeltaPath(path: unknown): string | null {
@@ -75,28 +148,21 @@ function explicitDeltaPath(delta: unknown): string | null {
   return normalized;
 }
 
-function assertNoForbiddenDeltaValues(value: unknown, path: string): void {
-  if (value === undefined) {
-    throw new Error(`STATE_DELTA_UNDEFINED_VALUE path=${path}`);
-  }
-  if (typeof value === "function") {
-    throw new Error(`STATE_DELTA_FUNCTION_VALUE path=${path}`);
-  }
-  if (value instanceof Date) {
-    throw new Error(`STATE_DELTA_DATE_VALUE path=${path}`);
+function assertStatsIntegerValues(value: unknown, path: string): void {
+  if (typeof value === "number") {
+    if (!Number.isInteger(value)) {
+      throw new Error(`DELTA_VALUE_INVALID path=${path}`);
+    }
+    return;
   }
   if (Array.isArray(value)) {
-    value.forEach((entry, idx) => assertNoForbiddenDeltaValues(entry, `${path}[${idx}]`));
+    value.forEach((entry, idx) => assertStatsIntegerValues(entry, `${path}[${idx}]`));
     return;
   }
   if (isRecord(value)) {
-    const keys = Object.keys(value).sort();
+    const keys = Object.keys(value).sort(compareText);
     for (const key of keys) {
-      const normalizedKey = key.toLowerCase();
-      if (FORBIDDEN_DELTA_KEYS.has(normalizedKey)) {
-        throw new Error(`STATE_DELTA_FORBIDDEN_KEY key=${key}`);
-      }
-      assertNoForbiddenDeltaValues(value[key], path ? `${path}.${key}` : key);
+      assertStatsIntegerValues(value[key], path ? `${path}.${key}` : key);
     }
   }
 }
@@ -115,7 +181,10 @@ export function assertStateDeltaShape(delta: unknown): void {
     throw new Error("STATE_DELTA_PATH_INVALID");
   }
 
-  assertNoForbiddenDeltaValues(delta, "delta");
+  stableStringifyDeterministic(delta, "delta");
+  if (path.startsWith("stats.")) {
+    assertStatsIntegerValues(delta, "delta");
+  }
 }
 
 function deltaOrderKey(delta: unknown): string {
@@ -207,6 +276,24 @@ function getReplayDeltasStrict(event: ReplayEvent): unknown[] {
   return tj.deltas;
 }
 
+function hasSystemNoLedgerTag(turnJson: unknown): boolean {
+  if (!isRecord(turnJson)) return false;
+  const tagsCandidates = [
+    turnJson.tags,
+    isRecord(turnJson.meta) ? turnJson.meta.tags : undefined,
+    turnJson.turnTags,
+  ];
+  for (const candidate of tagsCandidates) {
+    if (!Array.isArray(candidate)) continue;
+    for (const entry of candidate) {
+      if (typeof entry === "string" && entry.trim() === "system/no-ledger") {
+        return true;
+      }
+    }
+  }
+  return typeof turnJson.tag === "string" && turnJson.tag.trim() === "system/no-ledger";
+}
+
 export function assertLedgerConsistency(events: ReplayEvent[]): void {
   const turnIndexes = new Set<number>(events.map((event) => event.seq));
   const seenLedgerIds = new Set<string>();
@@ -217,8 +304,12 @@ export function assertLedgerConsistency(events: ReplayEvent[]): void {
     const deltas = getReplayDeltas(event);
     const ledgerAdds = Array.isArray(tj?.ledgerAdds) ? tj.ledgerAdds : [];
 
+    const noLedgerTagged = hasSystemNoLedgerTag(tj);
+    if (deltas.length > 0 && ledgerAdds.length === 0 && !noLedgerTagged) {
+      throw new Error(`LEDGER_DELTA_COUPLING_VIOLATION seq=${event.seq} reason=delta_without_ledger`);
+    }
     if (ledgerAdds.length > 0 && deltas.length === 0) {
-      throw new Error(`LEDGER_WITHOUT_DELTA seq=${event.seq}`);
+      throw new Error(`LEDGER_DELTA_COUPLING_VIOLATION seq=${event.seq} reason=ledger_without_delta`);
     }
 
     ledgerAdds.forEach((entry, idx) => {
@@ -285,19 +376,88 @@ function assertReplayStateInvariant(state: unknown): void {
   }
 }
 
+function readStyleLockFromState(state: unknown, key: (typeof STYLE_LOCK_KEYS)[number]): unknown {
+  if (!isRecord(state)) return undefined;
+  if (isRecord(state.flags) && key in state.flags) {
+    return state.flags[key];
+  }
+  if (isRecord(state.world) && isRecord(state.world.flags) && key in state.world.flags) {
+    return state.world.flags[key];
+  }
+  return undefined;
+}
+
+function assertStyleLockInvariant(prevState: unknown, nextState: unknown, seq: number): boolean {
+  let styleLockSeen = false;
+  for (const key of STYLE_LOCK_KEYS) {
+    const prevValue = readStyleLockFromState(prevState, key);
+    const nextValue = readStyleLockFromState(nextState, key);
+    if (prevValue !== undefined || nextValue !== undefined) {
+      styleLockSeen = true;
+    }
+
+    if (prevValue !== undefined && nextValue === undefined) {
+      throw new Error(`STYLE_LOCK_VIOLATION seq=${seq} key=${key} reason=deleted`);
+    }
+
+    if (prevValue !== undefined) {
+      if (typeof prevValue !== "string" || !STYLE_LOCK_ALLOWED_VALUES.has(prevValue)) {
+        throw new Error(`STYLE_LOCK_VIOLATION seq=${seq} key=${key} reason=invalid_previous_value`);
+      }
+    }
+    if (nextValue !== undefined) {
+      if (typeof nextValue !== "string" || !STYLE_LOCK_ALLOWED_VALUES.has(nextValue)) {
+        throw new Error(`STYLE_LOCK_VIOLATION seq=${seq} key=${key} reason=invalid_next_value`);
+      }
+    }
+
+    if (prevValue === "locked" && nextValue !== undefined && nextValue !== "locked") {
+      throw new Error(`STYLE_LOCK_VIOLATION seq=${seq} key=${key} reason=locked_transition`);
+    }
+  }
+  return styleLockSeen;
+}
+
+export function assertDeltaApplyIdempotency(
+  state: unknown,
+  deltas: unknown[],
+  applyFn: (base: any, inputDeltas: unknown[]) => unknown = (base, inputDeltas) => applyDeltas(base, inputDeltas as any),
+): void {
+  const stateA = applyFn(structuredClone(state), deltas);
+  const stateB = applyFn(structuredClone(state), deltas);
+  const hashA = stableStringifyDeterministic(stateA, "idempotency.a");
+  const hashB = stableStringifyDeterministic(stateB, "idempotency.b");
+  if (hashA !== hashB) {
+    throw new Error("DELTA_APPLY_NON_IDEMPOTENT");
+  }
+}
+
+export type ReplayWithGuardSummary = {
+  state: any;
+  guardSummary: readonly ReplayGuardName[];
+  styleLockPresent: boolean;
+};
+
 /**
  * Deterministic replay of canonical event log payloads.
  *
  * NOTE: We allow an explicit "anchor" genesis event (seq=0) to omit deltas.
  * This enables fork/anchor strategies without rewriting history.
  */
-export function replayStateFromTurnJson(
+function replayStateFromTurnJsonInternal(
   events: ReplayEvent[],
-  genesisState?: any
-) {
+  genesisState: any,
+  withGuardSummary: boolean,
+): any | ReplayWithGuardSummary {
+  const executedGuards = new Set<ReplayGuardName>();
+  const mark = (name: ReplayGuardName) => executedGuards.add(name);
   let state: any = genesisState ?? createInitialStateV1();
+  let styleLockPresent = false;
+
   assertTurnMonotonicity(events);
+  mark("TURN_MONOTONICITY");
   assertLedgerConsistency(events);
+  mark("LEDGER_CONSISTENCY");
 
   for (const e of events) {
     const rawDeltas = getReplayDeltasStrict(e);
@@ -305,11 +465,43 @@ export function replayStateFromTurnJson(
       assertStateDeltaShape(delta);
       assertDeltaNamespaceAllowed(delta);
     });
+    mark("DELTA_SHAPE");
+    mark("DELTA_NAMESPACE");
     const deltas = assertDeltaOrderIsSorted(rawDeltas, e.seq);
+    mark("DELTA_ORDER");
 
-    state = applyDeltas(state, deltas);
+    assertDeltaApplyIdempotency(state, deltas);
+    mark("DELTA_APPLY_IDEMPOTENCY");
+
+    const nextState = applyDeltas(state, deltas as any);
+    styleLockPresent = assertStyleLockInvariant(state, nextState, e.seq) || styleLockPresent;
+    mark("STYLE_LOCK_INVARIANT");
+    state = nextState;
   }
   assertReplayStateInvariant(state);
+  mark("REPLAY_STATE_INVARIANT");
+
+  if (withGuardSummary) {
+    return {
+      state,
+      guardSummary: REPLAY_GUARD_ORDER.filter((name) => executedGuards.has(name)),
+      styleLockPresent,
+    };
+  }
 
   return state;
+}
+
+export function replayStateFromTurnJson(
+  events: ReplayEvent[],
+  genesisState?: any,
+) {
+  return replayStateFromTurnJsonInternal(events, genesisState, false) as any;
+}
+
+export function replayStateFromTurnJsonWithGuardSummary(
+  events: ReplayEvent[],
+  genesisState?: any,
+): ReplayWithGuardSummary {
+  return replayStateFromTurnJsonInternal(events, genesisState, true) as ReplayWithGuardSummary;
 }
