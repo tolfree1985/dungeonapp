@@ -194,6 +194,37 @@ export default function CreatorPage() {
       return null;
     }
   }, [preview]);
+  const preflightChecklist = useMemo(
+    () => [
+      {
+        label: "Title present",
+        ok:
+          title.trim().length > 0 ||
+          (typeof preview?.title === "string" && preview.title.trim().length > 0),
+      },
+      {
+        label: "Summary present",
+        ok:
+          summary.trim().length > 0 ||
+          (typeof preview?.summary === "string" && preview.summary.trim().length > 0),
+      },
+      {
+        label: "Content JSON present",
+        ok: contentJson.trim().length > 0,
+      },
+      {
+        label: "Start prompt present",
+        ok:
+          typeof preview?.start?.prompt === "string" &&
+          preview.start.prompt.trim().length > 0,
+      },
+      {
+        label: "Validation pass",
+        ok: validation.ok,
+      },
+    ],
+    [contentJson, preview, summary, title, validation.ok],
+  );
 
   async function loadMyScenarios() {
     const trimmedOwnerId = ownerId.trim();
@@ -528,6 +559,17 @@ export default function CreatorPage() {
             </pre>
           </div>
         )}
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Preflight checklist">
+        <h2 className="text-base font-semibold">Preflight checklist</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-6">
+          {preflightChecklist.map((item) => (
+            <li key={item.label}>
+              {item.label}: {item.ok ? "pass" : "fail"}
+            </li>
+          ))}
+        </ol>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Publish controls">
