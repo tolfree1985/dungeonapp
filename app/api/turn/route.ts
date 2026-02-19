@@ -34,6 +34,7 @@ type StubModelResult = {
 };
 
 type BudgetExceededCode = "CONCURRENCY_LIMIT_EXCEEDED" | "MONTHLY_TOKEN_CAP_EXCEEDED";
+type TurnApiErrorCode = BudgetExceededCode | "RATE_LIMITED";
 
 function hashHex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
@@ -61,6 +62,18 @@ function coalesceUnknownArray(...values: unknown[]): unknown[] {
     if (Array.isArray(value)) return value;
   }
   return [];
+}
+
+function safeTurnErrorPayload(args: {
+  error: string;
+  code: TurnApiErrorCode;
+  extra?: Record<string, unknown>;
+}) {
+  return {
+    error: args.error,
+    code: args.code,
+    ...(args.extra ?? {}),
+  };
 }
 
 async function runModelStub(args: { prompt: string; max_tokens: number }): Promise<StubModelResult> {
@@ -102,7 +115,10 @@ async function postHandler(req: Request) {
       });
       if (!rateLimit.allowed) {
         return NextResponse.json(
-          { error: "RATE_LIMITED" },
+          safeTurnErrorPayload({
+            error: "RATE_LIMITED",
+            code: "RATE_LIMITED",
+          }),
           {
             status: 429,
             headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
@@ -211,18 +227,20 @@ async function postHandler(req: Request) {
             ? new Date(new Date().getTime() + 60_000)
             : new Date(new Date().getTime() + 1_000));
         return NextResponse.json(
-          {
+          safeTurnErrorPayload({
             error: "BUDGET_EXCEEDED",
             code,
-            retryAt: retryAt.toISOString(),
-            idempotencyKey,
-            tier,
-            monthKey,
-            cap: details?.cap ?? null,
-            used: details?.used ?? null,
-            reserved: details?.reserved ?? null,
-            requestedReserve: details?.requestedReserve ?? null,
-          },
+            extra: {
+              retryAt: retryAt.toISOString(),
+              idempotencyKey,
+              tier,
+              monthKey,
+              cap: details?.cap ?? null,
+              used: details?.used ?? null,
+              reserved: details?.reserved ?? null,
+              requestedReserve: details?.requestedReserve ?? null,
+            },
+          }),
           { status: 429 }
         );
       }
