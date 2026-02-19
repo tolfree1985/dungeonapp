@@ -7,6 +7,8 @@ const SCRIPTS = [
   "scripts/test-route-scenario-mine-page.ts",
   "scripts/test-route-scenario-create-cap.ts",
   "scripts/test-route-scenario-fork-cap.ts",
+  "scripts/test-route-turn-error-normalization.ts",
+  "scripts/test-creator-error-mapping.ts",
   "scripts/test-ui-creator-page.ts",
 ];
 
