@@ -811,6 +811,11 @@ export default function CreatorPage() {
           <span>Request tier: {creatorTier}</span>
         </div>
         <div className="mt-1 text-xs">Tier selection is deterministic and attached to creator requests.</div>
+        <div className="mt-2 rounded border p-2 text-xs" aria-label="Max output length policy">
+          Max output length is enforced server-side per tier.
+          {" "}
+          If exceeded, creator errors map to: Per-turn output cap exceeded.
+        </div>
         <div className="mt-2 flex items-center gap-3">
           <button type="button" disabled={!publishEnabled} className="rounded border px-2 py-1 text-xs disabled:opacity-50">
             Publish scenario
