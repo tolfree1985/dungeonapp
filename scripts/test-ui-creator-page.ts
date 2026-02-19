@@ -20,6 +20,15 @@ function main() {
     'Expected source to gate "Publish scenario" disabled state',
   );
   assert(source.includes("Create draft"), 'Expected "Create draft" control');
+  assert(source.includes("Fork scenario"), 'Expected "Fork scenario" control');
+  assert(source.includes("sourceScenarioId"), 'Expected "sourceScenarioId" control label');
+  assert(source.includes("newScenarioId"), 'Expected "newScenarioId" control label');
+  assert(source.includes("Request tier:"), 'Expected deterministic request tier text');
+  assert(source.includes("Tier"), 'Expected "Tier" control label');
+  assert(source.includes("setCreateDraftStatus"), 'Expected isolated create draft status region state');
+  assert(source.includes("setForkStatus"), 'Expected isolated fork status region state');
+  assert(source.includes("Retry-After"), 'Expected retry-after support in creator status text path');
+  assert(source.includes("formatCreatorCapDetail"), 'Expected deterministic cap detail formatting usage');
   assert(
     source.includes("Copy scenario draft bundle"),
     'Expected "Copy scenario draft bundle" control',
