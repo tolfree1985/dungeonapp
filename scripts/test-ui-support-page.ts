@@ -99,7 +99,7 @@ function main() {
   assert(dashboardSource.includes("FINAL_STATE_HASH:"), "Expected final state hash label");
   assert(dashboardSource.includes("Copy final state hash"), "Expected final state hash copy control");
   assert(dashboardSource.includes("Replay Telemetry (Derived)"), "Expected derived telemetry panel");
-  assert(dashboardSource.includes("TELEMETRY_VERSION 1"), "Expected telemetry version marker in UI panel");
+  assert(dashboardSource.includes("TELEMETRY_VERSION"), "Expected telemetry version marker in UI panel");
   assert(dashboardSource.includes("TELEMETRY"), "Expected telemetry marker in UI panel");
   assert(dashboardSource.includes("TURN_COUNT:"), "Expected TURN_COUNT telemetry label in UI panel");
   assert(dashboardSource.includes("TOTAL_LEDGER_ENTRIES:"), "Expected TOTAL_LEDGER_ENTRIES telemetry label");
@@ -123,6 +123,7 @@ function main() {
   assert(dashboardSource.includes("Canonical Manifest (V1)"), "Expected canonical manifest panel");
   assert(dashboardSource.includes("Manifest version:"), "Expected manifest version field");
   assert(dashboardSource.includes("Replay telemetryVersion:"), "Expected manifest replay telemetry version field");
+  assert(dashboardSource.includes("Manifest hash:"), "Expected manifest hash field");
   assert(dashboardSource.includes("Per-turn rows:"), "Expected manifest per-turn row count field");
   assert(dashboardSource.includes("Copy Manifest JSON"), "Expected copy manifest json control");
 

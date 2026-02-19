@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import path from "node:path";
+import {
+  SUPPORT_MANIFEST_VERSION,
+  TELEMETRY_VERSION,
+  assertSupportManifestConsistency,
+} from "../src/lib/support/supportManifest";
 
 function extractSection(output: string, startMarker: string, endMarker?: string): string {
   const lines = output.split(/\r?\n/);
@@ -14,6 +20,11 @@ function extractSection(output: string, startMarker: string, endMarker?: string)
 function main() {
   const scriptPath = path.join(process.cwd(), "scripts", "replay-from-bundle.ts");
   const bundle = {
+    bundleId: "bundle-test-1",
+    engineVersion: "engine-test",
+    scenarioContentHash: "hash-test",
+    adventureId: "adv-test",
+    buildVersion: "build-test",
     turns: [
       {
         turnIndex: 0,
@@ -53,7 +64,7 @@ function main() {
   assert(out.includes("TURNS"), "expected TURNS marker");
   assert(out.includes("INVARIANT_SEQ_CONTIGUOUS"), "expected sequence invariant marker");
   assert(out.includes("INVARIANT_LEDGER_COUNT"), "expected ledger invariant marker");
-  assert(out.includes("TELEMETRY_VERSION 1"), "expected TELEMETRY_VERSION marker");
+  assert(out.includes(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`), "expected TELEMETRY_VERSION marker");
   assert(out.includes("TELEMETRY"), "expected TELEMETRY marker");
   assert(out.includes("TURN_COUNT:"), "expected TURN_COUNT telemetry field");
   assert(out.includes("TOTAL_LEDGER_ENTRIES:"), "expected TOTAL_LEDGER_ENTRIES telemetry field");
@@ -135,6 +146,7 @@ function main() {
   const outJson = withJson.stdout ?? "";
   assert(outJson.includes("TELEMETRY_JSON "), "expected TELEMETRY_JSON output when flag is present");
   assert(outJson.includes("SUPPORT_MANIFEST_JSON "), "expected SUPPORT_MANIFEST_JSON output when flag is present");
+  assert(outJson.includes("MANIFEST_HASH "), "expected MANIFEST_HASH output when flag is present");
   const telemetryJsonLine =
     outJson.split(/\r?\n/).find((line) => line.startsWith("TELEMETRY_JSON ")) ?? "";
   assert(telemetryJsonLine.length > 0, "expected TELEMETRY_JSON line");
@@ -148,9 +160,25 @@ function main() {
   const manifestLine =
     outJson.split(/\r?\n/).find((line) => line.startsWith("SUPPORT_MANIFEST_JSON ")) ?? "";
   assert(manifestLine.length > 0, "expected SUPPORT_MANIFEST_JSON line");
-  const manifestJson = JSON.parse(manifestLine.replace(/^SUPPORT_MANIFEST_JSON\s+/, ""));
-  assert.equal(manifestJson.manifestVersion, 1, "manifestVersion should be 1");
-  assert.equal(manifestJson.replay?.telemetryVersion, 1, "replay.telemetryVersion should be 1");
+  const manifestJsonRaw = manifestLine.replace(/^SUPPORT_MANIFEST_JSON\s+/, "");
+  const manifestHashLine =
+    outJson.split(/\r?\n/).find((line) => line.startsWith("MANIFEST_HASH ")) ?? "";
+  assert(manifestHashLine.length > 0, "expected MANIFEST_HASH line");
+  const manifestHash = manifestHashLine.replace(/^MANIFEST_HASH\s+/, "").trim();
+  const expectedManifestHash = crypto.createHash("sha256").update(manifestJsonRaw).digest("hex");
+  assert.equal(manifestHash, expectedManifestHash, "manifest hash should match sha256(manifest json)");
+
+  const manifestJson = JSON.parse(manifestJsonRaw);
+  assert.equal(
+    manifestJson.manifestVersion,
+    SUPPORT_MANIFEST_VERSION,
+    "manifestVersion should match SUPPORT_MANIFEST_VERSION",
+  );
+  assert.equal(
+    manifestJson.replay?.telemetryVersion,
+    TELEMETRY_VERSION,
+    "replay.telemetryVersion should match TELEMETRY_VERSION",
+  );
   assert.equal(
     manifestJson.perTurn?.length,
     manifestJson.replay?.turnCount,
@@ -161,6 +189,29 @@ function main() {
     baseHash,
     "manifest replay.finalStateHash should match base FINAL_STATE_HASH",
   );
+  assert(
+    !/timestamp|duration|token|random|seed|Date\.now|performance\.now/i.test(manifestJsonRaw),
+    "manifest json should not include timing/entropy fields",
+  );
+
+  const orderedKeys = [
+    "\"manifestVersion\"",
+    "\"bundleId\"",
+    "\"engineVersion\"",
+    "\"scenarioContentHash\"",
+    "\"adventureId\"",
+    "\"buildVersion\"",
+    "\"replay\"",
+    "\"telemetry\"",
+    "\"perTurn\"",
+  ];
+  const keyPositions = orderedKeys.map((key) => manifestJsonRaw.indexOf(key));
+  for (let i = 0; i < keyPositions.length - 1; i++) {
+    assert(
+      keyPositions[i] >= 0 && keyPositions[i + 1] >= 0 && keyPositions[i] < keyPositions[i + 1],
+      `expected manifest key order for ${orderedKeys[i]} before ${orderedKeys[i + 1]}`,
+    );
+  }
 
   const withManifest2 = spawnSync(
     process.execPath,
@@ -183,6 +234,18 @@ function main() {
     (withManifest2.stdout ?? "").split(/\r?\n/).find((line) => line.startsWith("SUPPORT_MANIFEST_JSON ")) ?? "";
   assert(manifestLine2.length > 0, "expected SUPPORT_MANIFEST_JSON line in second manifest run");
   assert.equal(manifestLine, manifestLine2, "manifest json output should be stable across runs");
+  const manifestHashLine2 =
+    (withManifest2.stdout ?? "").split(/\r?\n/).find((line) => line.startsWith("MANIFEST_HASH ")) ?? "";
+  assert(manifestHashLine2.length > 0, "expected MANIFEST_HASH line in second manifest run");
+  assert.equal(manifestHashLine, manifestHashLine2, "manifest hash output should be stable across runs");
+
+  const corruptedManifest = JSON.parse(JSON.stringify(manifestJson));
+  corruptedManifest.perTurn = [];
+  assert.throws(
+    () => assertSupportManifestConsistency(corruptedManifest),
+    /SUPPORT_MANIFEST_INTEGRITY_ERROR/,
+    "expected manifest consistency guard to throw on corrupted manifest",
+  );
 
   console.log("REPLAY FROM BUNDLE OK");
 }

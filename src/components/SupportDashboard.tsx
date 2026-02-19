@@ -6,7 +6,10 @@ import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministic
 import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
 import { buildSupportTurnReproBlockText } from "@/lib/support/buildSupportTurnReproBlockText";
 import {
+  SUPPORT_MANIFEST_VERSION,
+  TELEMETRY_VERSION,
   buildSupportManifestFromBundle,
+  hashSupportManifest,
   serializeSupportManifest,
   type SupportManifestV1,
 } from "@/lib/support/supportManifest";
@@ -660,6 +663,7 @@ export function SupportDashboard({
   const [finalStateHashCopyStatus, setFinalStateHashCopyStatus] = useState("");
   const [supportManifest, setSupportManifest] = useState<SupportManifestV1 | null>(null);
   const [supportManifestJson, setSupportManifestJson] = useState("");
+  const [supportManifestHash, setSupportManifestHash] = useState("");
   const [manifestCopyStatus, setManifestCopyStatus] = useState("");
   const [driftReportCopyStatus, setDriftReportCopyStatus] = useState("");
   const [runbookCopyStatus, setRunbookCopyStatus] = useState<Record<string, string>>({});
@@ -1083,6 +1087,7 @@ export function SupportDashboard({
         if (!cancelled) {
           setSupportManifest(null);
           setSupportManifestJson("");
+          setSupportManifestHash("");
           setFinalStateHash("");
         }
         return;
@@ -1090,15 +1095,18 @@ export function SupportDashboard({
 
       try {
         const manifest = await buildSupportManifestFromBundle(bundleData);
+        const manifestHash = await hashSupportManifest(manifest);
         if (!cancelled) {
           setSupportManifest(manifest);
           setSupportManifestJson(serializeSupportManifest(manifest));
+          setSupportManifestHash(manifestHash);
           setFinalStateHash(manifest.replay.finalStateHash);
         }
       } catch {
         if (!cancelled) {
           setSupportManifest(null);
           setSupportManifestJson("");
+          setSupportManifestHash("");
           setFinalStateHash("ERROR");
         }
       }
@@ -1439,7 +1447,7 @@ export function SupportDashboard({
         </div>
         <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">
           {[
-            "TELEMETRY_VERSION 1",
+            `TELEMETRY_VERSION ${TELEMETRY_VERSION}`,
             "TELEMETRY",
             `TURN_COUNT: ${replayTelemetry.turnCount}`,
             `TOTAL_LEDGER_ENTRIES: ${replayTelemetry.totalLedgerEntries}`,
@@ -1486,14 +1494,17 @@ export function SupportDashboard({
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Canonical Manifest (V1)">
         <h2 className="text-base font-semibold">Canonical Manifest (V1)</h2>
         <div className="mt-2 text-xs">
-          Manifest version: {supportManifest?.manifestVersion ?? 1}
+          Manifest version: {supportManifest?.manifestVersion ?? SUPPORT_MANIFEST_VERSION}
         </div>
         <div className="text-xs">Replay turnCount: {supportManifest?.replay.turnCount ?? 0}</div>
         <div className="text-xs">
-          Replay telemetryVersion: {supportManifest?.replay.telemetryVersion ?? 1}
+          Replay telemetryVersion: {supportManifest?.replay.telemetryVersion ?? TELEMETRY_VERSION}
         </div>
         <div className="text-xs">
           Replay finalStateHash: {supportManifest?.replay.finalStateHash || "(none)"}
+        </div>
+        <div className="text-xs">
+          Manifest hash: {supportManifestHash ? `${supportManifestHash.slice(0, 16)}...` : "(none)"}
         </div>
         <div className="mt-1 text-xs">
           Telemetry: deltas={supportManifest?.telemetry.totalStateDeltas ?? 0} ledger=

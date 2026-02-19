@@ -1,5 +1,11 @@
 import fs from "node:fs";
-import { buildSupportManifestFromBundle, serializeSupportManifest } from "../src/lib/support/supportManifest";
+import {
+  SUPPORT_MANIFEST_VERSION,
+  TELEMETRY_VERSION,
+  buildSupportManifestFromBundle,
+  hashSupportManifest,
+  serializeSupportManifest,
+} from "../src/lib/support/supportManifest";
 
 function stableStringify(value: unknown): string {
   const normalize = (input: unknown): unknown => {
@@ -83,7 +89,7 @@ async function main() {
   console.log(`INVARIANT_DELTA_COUNT ${deltaCount}`);
   console.log(`FINAL_STATE_HASH ${manifest.replay.finalStateHash}`);
   console.log("REPLAY COMPLETE");
-  console.log(`TELEMETRY_VERSION ${manifest.replay.telemetryVersion}`);
+  console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");
   console.log(`TURN_COUNT: ${manifest.replay.turnCount}`);
   console.log(`TOTAL_LEDGER_ENTRIES: ${manifest.telemetry.totalLedgerEntries}`);
@@ -114,7 +120,13 @@ async function main() {
     );
   }
   if (args["manifest-json"] === "true") {
-    console.log(`SUPPORT_MANIFEST_JSON ${serializeSupportManifest(manifest)}`);
+    if (manifest.manifestVersion !== SUPPORT_MANIFEST_VERSION) {
+      throw new Error("SUPPORT_MANIFEST_VERSION_MISMATCH");
+    }
+    const manifestJson = serializeSupportManifest(manifest);
+    const manifestHash = await hashSupportManifest(manifest);
+    console.log(`SUPPORT_MANIFEST_JSON ${manifestJson}`);
+    console.log(`MANIFEST_HASH ${manifestHash}`);
   }
 }
 
