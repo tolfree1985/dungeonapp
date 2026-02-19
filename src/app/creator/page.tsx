@@ -21,6 +21,33 @@ type ScenarioListItem = {
 type MineViewItem = ScenarioListItem & { visibilityBadge: "DRAFT" | "PUBLIC" };
 type CreatorTier = "NOMAD" | "TRAILBLAZOR" | "CHRONICLER" | "LOREMASTER";
 
+function compareText(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+function groupValidationIssues(issues: ValidationIssue[]): Array<{ path: string; issues: ValidationIssue[] }> {
+  const sorted = [...issues].sort((a, b) => {
+    const byPath = compareText(a.path, b.path);
+    if (byPath !== 0) return byPath;
+    const byCode = compareText(a.code, b.code);
+    if (byCode !== 0) return byCode;
+    return compareText(a.message, b.message);
+  });
+
+  const groups: Array<{ path: string; issues: ValidationIssue[] }> = [];
+  for (const issue of sorted) {
+    const path = issue.path || "(root)";
+    const last = groups[groups.length - 1];
+    if (!last || last.path !== path) {
+      groups.push({ path, issues: [issue] });
+      continue;
+    }
+    last.issues.push(issue);
+  }
+  return groups;
+}
+
 function validateScenarioContentJson(raw: string): {
   ok: boolean;
   parseError: string | null;
@@ -109,6 +136,7 @@ export default function CreatorPage() {
 
   const validation = useMemo(() => validateScenarioContentJson(contentJson), [contentJson]);
   const validationView = lastValidation ?? validation;
+  const groupedValidation = useMemo(() => groupValidationIssues(validationView.issues), [validationView.issues]);
   const publishEnabled = validation.ok;
   const preview = useMemo(() => {
     try {
@@ -452,13 +480,20 @@ export default function CreatorPage() {
         </div>
         {validationView.parseError ? <div className="mt-2">Parse error: {validationView.parseError}</div> : null}
         {!validationView.parseError && validationView.issues.length > 0 ? (
-          <ol className="mt-2 list-decimal space-y-1 pl-6">
-            {validationView.issues.map((issue, i) => (
-              <li key={`${issue.path}:${issue.code}:${i}`}>
-                {issue.path} {issue.code}: {issue.message}
-              </li>
+          <div className="mt-2 space-y-2">
+            {groupedValidation.map((group, groupIndex) => (
+              <div key={`${group.path}:${groupIndex}`}>
+                <div className="text-xs font-semibold">Path: {group.path}</div>
+                <ol className="mt-1 list-decimal space-y-1 pl-6">
+                  {group.issues.map((issue, issueIndex) => (
+                    <li key={`${group.path}:${issue.code}:${issue.message}:${issueIndex}`}>
+                      {issue.code}: {issue.message}
+                    </li>
+                  ))}
+                </ol>
+              </div>
             ))}
-          </ol>
+          </div>
         ) : null}
         {!validationView.parseError && validationView.issues.length === 0 && validationView.ok ? (
           <div className="mt-2">No schema issues.</div>
