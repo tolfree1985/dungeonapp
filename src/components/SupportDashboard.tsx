@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { categorizeDeltaPath } from "@/lib/support/deltaPathMeaningMap";
 import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministicReproCliText";
 import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
 import { buildSupportTurnReproBlockText } from "@/lib/support/buildSupportTurnReproBlockText";
+import { replayStateFromTurnJson } from "@/lib/game/replay";
 
 type RunbookLink = {
   label: string;
@@ -67,6 +68,13 @@ type MetadataFieldSpec = {
   label: string;
   required: boolean;
   paths: string[][];
+};
+
+type SequenceIntegrityStatus = {
+  isGreen: boolean;
+  label: string;
+  cls: string;
+  details: string[];
 };
 
 const LARGE_DELTA_THRESHOLD = 8;
@@ -342,6 +350,22 @@ function summarizeDeltaKinds(deltas: unknown[]): string[] {
   return ordered;
 }
 
+function parseTurnIndex(value: string, fallback: number): number {
+  const n = Number(value);
+  if (Number.isInteger(n)) return n;
+  return fallback;
+}
+
+function readLedgerTurnReference(entry: unknown): string {
+  if (!isRecord(entry)) return "";
+  const candidates = [entry.refTurnIndex, entry.turnIndex, entry.turn, entry.refEventId];
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isInteger(candidate)) return String(candidate);
+    if (typeof candidate === "string" && candidate.trim().length > 0) return candidate.trim();
+  }
+  return "";
+}
+
 function truncateText(value: string, maxLen: number): string {
   if (value.length <= maxLen) return value;
   return `${value.slice(0, maxLen)}...(truncated)`;
@@ -448,6 +472,8 @@ export function SupportDashboard({
   const [reproCliCopyStatus, setReproCliCopyStatus] = useState("");
   const [shareBlockCopyStatus, setShareBlockCopyStatus] = useState("");
   const [turnReproCopyStatus, setTurnReproCopyStatus] = useState("");
+  const [finalStateHash, setFinalStateHash] = useState("");
+  const [finalStateHashCopyStatus, setFinalStateHashCopyStatus] = useState("");
   const [runbookCopyStatus, setRunbookCopyStatus] = useState<Record<string, string>>({});
   const [leftCompareJson, setLeftCompareJson] = useState("");
   const [rightCompareJson, setRightCompareJson] = useState("");
@@ -500,6 +526,65 @@ export function SupportDashboard({
     return { label: "GREEN: Required deterministic invariants present", cls: "text-green-700" };
   }, [missingNonCriticalFields.length, missingRequiredFields.length]);
 
+  const sequenceIntegrity = useMemo<SequenceIntegrityStatus>(() => {
+    if (turnRows.length === 0) {
+      return {
+        isGreen: false,
+        label: "RED: Turn sequence integrity missing replay events",
+        cls: "text-red-700",
+        details: ["No replay events"],
+      };
+    }
+
+    const parsedIndices = turnRows.map((row, index) => parseTurnIndex(row.turnIndex, index));
+    const sorted = [...parsedIndices].sort((a, b) => a - b);
+    const unique = new Set<number>(sorted);
+    const details: string[] = [];
+
+    if (unique.size !== sorted.length) {
+      details.push("Duplicate turnIndex values");
+    }
+
+    if (sorted.length > 1) {
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i] !== sorted[i - 1] + 1) {
+          details.push("Turn indices are not sequential");
+          break;
+        }
+      }
+    }
+
+    const knownTurns = new Set<string>(parsedIndices.map((value) => String(value)));
+    let invalidLedgerRefs = 0;
+    for (const row of turnRows) {
+      for (const entry of row.ledgerAdds) {
+        const ref = readLedgerTurnReference(entry);
+        if (ref && !knownTurns.has(ref)) {
+          invalidLedgerRefs += 1;
+        }
+      }
+    }
+    if (invalidLedgerRefs > 0) {
+      details.push("Ledger references unknown turns");
+    }
+
+    if (details.length === 0) {
+      return {
+        isGreen: true,
+        label: "GREEN: Turn sequence integrity valid",
+        cls: "text-green-700",
+        details: [],
+      };
+    }
+
+    return {
+      isGreen: false,
+      label: "RED: Turn sequence integrity failed",
+      cls: "text-red-700",
+      details,
+    };
+  }, [turnRows]);
+
   const issueBlockText = useMemo(
     () =>
       buildIssueBlock({
@@ -519,6 +604,12 @@ export function SupportDashboard({
       }),
     [bundleId, metadata.engineVersion, metadata.scenarioContentHash],
   );
+
+  const replayReady = useMemo(() => {
+    const determinismIsGreen = missingRequiredFields.length === 0 && missingNonCriticalFields.length === 0;
+    const cliReady = reproCliText.trim().length > 0;
+    return determinismIsGreen && sequenceIntegrity.isGreen && cliReady;
+  }, [missingNonCriticalFields.length, missingRequiredFields.length, reproCliText, sequenceIntegrity.isGreen]);
 
   const shareBlockText = useMemo(
     () =>
@@ -615,6 +706,50 @@ export function SupportDashboard({
       ledgerAdds: selectedTurn.ledgerAdds,
     });
   }, [bundleId, metadata, selectedTurn]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function computeFinalStateHash() {
+      if (turnRows.length === 0) {
+        if (!cancelled) setFinalStateHash("");
+        return;
+      }
+
+      try {
+        if (typeof window === "undefined" || !window.crypto?.subtle) {
+          if (!cancelled) setFinalStateHash("UNAVAILABLE");
+          return;
+        }
+
+        const events = turnRows
+          .map((row, index) => ({
+            seq: parseTurnIndex(row.turnIndex, index),
+            turnJson: {
+              deltas: row.stateDeltas,
+              ledgerAdds: row.ledgerAdds,
+            },
+          }))
+          .sort((a, b) => a.seq - b.seq);
+
+        const replayState = replayStateFromTurnJson(events);
+        const source = stableStringify(replayState);
+        const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
+        const hash = Array.from(new Uint8Array(digest))
+          .map((part) => part.toString(16).padStart(2, "0"))
+          .join("");
+
+        if (!cancelled) setFinalStateHash(hash);
+      } catch {
+        if (!cancelled) setFinalStateHash("ERROR");
+      }
+    }
+
+    void computeFinalStateHash();
+    return () => {
+      cancelled = true;
+    };
+  }, [turnRows]);
 
   const anomalies = useMemo(() => {
     const rows: string[] = [];
@@ -721,6 +856,14 @@ export function SupportDashboard({
     await copyText(buildRunbookSectionCopyText(section), (status) => {
       setRunbookCopyStatus((prev) => ({ ...prev, [section.label]: status }));
     });
+  }
+
+  async function onCopyFinalStateHash() {
+    if (!/^[a-f0-9]{64}$/.test(finalStateHash)) {
+      setFinalStateHashCopyStatus("Copy not supported");
+      return;
+    }
+    await copyText(finalStateHash, setFinalStateHashCopyStatus);
   }
 
   return (
@@ -857,6 +1000,38 @@ export function SupportDashboard({
             </ul>
           </div>
         ) : null}
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Replay readiness">
+        <h2 className="text-base font-semibold">Replay Readiness</h2>
+        <div className={`mt-2 font-medium ${replayReady ? "text-green-700" : "text-red-700"}`}>
+          Replay-Ready: {replayReady ? "YES" : "NO"}
+        </div>
+        <div className={`mt-1 ${sequenceIntegrity.cls}`}>Turn sequence integrity: {sequenceIntegrity.label}</div>
+        {sequenceIntegrity.details.length > 0 ? (
+          <ul className="mt-1 list-disc pl-5 text-xs">
+            {sequenceIntegrity.details.map((detail) => (
+              <li key={detail}>{detail}</li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="mt-2 text-xs">
+          FINAL_STATE_HASH:{" "}
+          {finalStateHash.length > 16 ? `${finalStateHash.slice(0, 16)}...` : finalStateHash || "(none)"}
+        </div>
+        <div className="mt-1 flex items-center gap-3">
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
+            onClick={onCopyFinalStateHash}
+            disabled={!/^[a-f0-9]{64}$/.test(finalStateHash)}
+          >
+            Copy final state hash
+          </button>
+          <span role="status" aria-live="polite">
+            {finalStateHashCopyStatus}
+          </span>
+        </div>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Reproduction Checklist">

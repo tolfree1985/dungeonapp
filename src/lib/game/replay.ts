@@ -1,5 +1,5 @@
-import { createInitialStateV1 } from "@/lib/game/bootstrap";
-import { applyDeltas } from "@/lib/game/state";
+import { createInitialStateV1 } from "./bootstrap";
+import { applyDeltas } from "./state";
 
 /**
  * Deterministic replay of canonical event log payloads.

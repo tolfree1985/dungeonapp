@@ -93,6 +93,11 @@ function main() {
     dashboardSource.includes("Bundle Size + Field Count Inspector"),
     'Expected bundle size and field count inspector',
   );
+  assert(dashboardSource.includes("Replay Readiness"), "Expected replay readiness section");
+  assert(dashboardSource.includes("Replay-Ready:"), "Expected replay-ready badge text");
+  assert(dashboardSource.includes("Turn sequence integrity:"), "Expected turn sequence integrity signal");
+  assert(dashboardSource.includes("FINAL_STATE_HASH:"), "Expected final state hash label");
+  assert(dashboardSource.includes("Copy final state hash"), "Expected final state hash copy control");
 
   console.log("UI SUPPORT PAGE OK");
 }

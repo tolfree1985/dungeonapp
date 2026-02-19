@@ -12,6 +12,7 @@ const SCRIPTS = [
   "scripts/test-creator-error-mapping.ts",
   "scripts/test-ui-creator-page.ts",
   "scripts/test-ui-support-page.ts",
+  "scripts/test-replay-from-bundle.ts",
 ];
 
 function runScript(script: string): Promise<void> {
