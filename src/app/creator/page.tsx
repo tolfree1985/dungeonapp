@@ -3,6 +3,15 @@
 import { useMemo, useState } from "react";
 
 type ValidationIssue = { path: string; code: string; message: string };
+type ScenarioListItem = {
+  id: string;
+  title: string;
+  summary: string | null;
+  ownerId: string | null;
+  sourceScenarioId: string | null;
+  updatedAt: string;
+};
+type MineViewItem = ScenarioListItem & { visibilityBadge: "DRAFT" | "PUBLIC" };
 
 function validateScenarioContentJson(raw: string): {
   ok: boolean;
@@ -69,6 +78,9 @@ export default function CreatorPage() {
   const [lastValidation, setLastValidation] = useState<ReturnType<typeof validateScenarioContentJson> | null>(
     null,
   );
+  const [ownerId, setOwnerId] = useState("");
+  const [myScenarios, setMyScenarios] = useState<MineViewItem[]>([]);
+  const [mineStatus, setMineStatus] = useState("My scenarios not loaded.");
 
   const emptyState = useMemo(
     () => ({
@@ -93,6 +105,50 @@ export default function CreatorPage() {
       return null;
     }
   }, [contentJson]);
+
+  async function loadMyScenarios() {
+    const trimmedOwnerId = ownerId.trim();
+    if (!trimmedOwnerId) {
+      setMyScenarios([]);
+      setMineStatus("ownerId is required.");
+      return;
+    }
+
+    setMineStatus("Loading...");
+    try {
+      const [mineRes, publicRes] = await Promise.all([
+        fetch(`/api/scenario/mine?ownerId=${encodeURIComponent(trimmedOwnerId)}`),
+        fetch("/api/scenario/public"),
+      ]);
+
+      if (!mineRes.ok || !publicRes.ok) {
+        setMyScenarios([]);
+        setMineStatus("Failed to load scenarios.");
+        return;
+      }
+
+      const mineJson = (await mineRes.json()) as { scenarios?: ScenarioListItem[] };
+      const publicJson = (await publicRes.json()) as { scenarios?: ScenarioListItem[] };
+
+      const mine = Array.isArray(mineJson.scenarios) ? mineJson.scenarios : [];
+      const publicIds = new Set(
+        (Array.isArray(publicJson.scenarios) ? publicJson.scenarios : []).map((s) => s.id),
+      );
+
+      const view = mine
+        .map((s) => ({
+          ...s,
+          visibilityBadge: publicIds.has(s.id) ? "PUBLIC" : "DRAFT",
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+
+      setMyScenarios(view);
+      setMineStatus(view.length === 0 ? "No scenarios found." : "Loaded.");
+    } catch {
+      setMyScenarios([]);
+      setMineStatus("Failed to load scenarios.");
+    }
+  }
 
   return (
     <main className="mx-auto max-w-4xl p-6">
@@ -216,6 +272,36 @@ export default function CreatorPage() {
           </button>
           <span>{publishEnabled ? "Publish enabled: validation passed." : "Publish disabled: validation must pass."}</span>
         </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="My scenarios">
+        <h2 className="text-base font-semibold">My scenarios</h2>
+        <div className="mt-2 flex items-center gap-3">
+          <label htmlFor="owner-id" className="text-xs">
+            ownerId
+          </label>
+          <input
+            id="owner-id"
+            value={ownerId}
+            onChange={(e) => setOwnerId(e.target.value)}
+            className="rounded border px-2 py-1 text-xs"
+            placeholder="owner id"
+          />
+          <button type="button" onClick={loadMyScenarios} className="rounded border px-2 py-1 text-xs">
+            Load mine
+          </button>
+          <span>{mineStatus}</span>
+        </div>
+        <ol className="mt-3 list-decimal space-y-2 pl-6">
+          {myScenarios.map((s) => (
+            <li key={s.id}>
+              <div className="font-medium">{s.title || s.id}</div>
+              <div className="text-xs">id: {s.id}</div>
+              <div className="text-xs">summary: {s.summary || "(none)"}</div>
+              <div className="text-xs">badge: {s.visibilityBadge}</div>
+            </li>
+          ))}
+        </ol>
       </section>
     </main>
   );
