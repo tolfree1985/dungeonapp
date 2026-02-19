@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { SCENARIO_TEMPLATE_LIBRARY } from "../src/lib/creator/scenarioTemplates";
+import { validateScenarioDeterminism } from "../src/lib/scenario/validateScenarioDeterminism";
 
 function main() {
   const filePath = path.join(process.cwd(), "src", "app", "creator", "page.tsx");
@@ -19,8 +21,13 @@ function main() {
   assert(source.includes("Path:"), 'Expected deterministic validation path grouping label');
   assert(source.includes("Preview"), 'Expected "Preview" section');
   assert(source.includes("DETERMINISM VALIDATED"), 'Expected deterministic preview success banner');
+  assert(source.includes("DETERMINISM VIOLATIONS PRESENT"), 'Expected deterministic top-level failure badge');
   assert(source.includes("DETERMINISM VALIDATION FAILED"), 'Expected deterministic preview failure banner');
   assert(source.includes("Determinism errors"), 'Expected deterministic error list label');
+  assert(source.includes("Determinism lint markers"), 'Expected determinism lint marker panel');
+  assert(source.includes("Quick-fix hint:"), 'Expected deterministic quick-fix hints');
+  assert(source.includes("toDeterminismLintMarkers"), 'Expected lint marker mapping helper usage');
+  assert(source.includes("sort(compareText)"), 'Expected deterministic sorting of validation displays');
   assert(source.includes("Deterministic Preview Check"), 'Expected deterministic preview check control');
   assert(source.includes("Preview check not run."), 'Expected deterministic preview status baseline');
   assert(source.includes("Final state hash:"), 'Expected deterministic preview hash output label');
@@ -39,6 +46,12 @@ function main() {
   assert(source.includes("Memory preview:"), 'Expected deterministic memory preview label');
   assert(source.includes("Preflight checklist"), 'Expected "Preflight checklist" section');
   assert(source.includes("Validation pass"), 'Expected preflight validation pass checklist row');
+  assert(source.includes("PUBLISH READINESS"), 'Expected publish readiness checklist heading');
+  assert(source.includes("Determinism validated"), 'Expected readiness item label for determinism');
+  assert(source.includes("Preview replay passed"), 'Expected readiness item label for preview replay');
+  assert(source.includes("No style-lock violations"), 'Expected readiness item label for style lock');
+  assert(source.includes("No float stat mutations"), 'Expected readiness item label for float stats');
+  assert(source.includes("No namespace violations"), 'Expected readiness item label for namespace');
   assert(source.includes("Publish scenario"), 'Expected "Publish scenario" control');
   assert(
     source.includes("Publish disabled: validation must pass."),
@@ -64,7 +77,22 @@ function main() {
     source.includes("Copy scenario draft bundle"),
     'Expected "Copy scenario draft bundle" control',
   );
+  assert(source.includes("EXPORT READY — DETERMINISM VERIFIED"), "Expected export-ready deterministic banner");
+  assert(
+    source.includes("EXPORT BLOCKED — DETERMINISM VIOLATIONS PRESENT"),
+    "Expected export-blocked deterministic banner",
+  );
   assert(source.includes("determinismReport"), 'Expected draft export determinismReport embedding');
+  assert(source.includes("Scenario template library"), "Expected scenario template library panel");
+  assert(source.includes("Template diff preview"), "Expected template diff preview section");
+  assert(source.includes("Changed keys"), "Expected template diff changed keys header");
+  assert(source.includes("Apply template"), 'Expected "Apply template" control');
+  assert(
+    source.includes("Reset to Deterministic Baseline"),
+    'Expected "Reset to Deterministic Baseline" control',
+  );
+  assert(source.includes("Error code reference"), "Expected error code reference panel heading");
+  assert(source.includes("Marker constant:"), "Expected marker constant rows in error code reference panel");
   assert(source.includes("My scenarios"), 'Expected "My scenarios" section');
   assert(source.includes("Load mine"), 'Expected "Load mine" control');
   assert(
@@ -76,6 +104,17 @@ function main() {
   assert(source.includes("Unsaved changes:"), 'Expected unsaved changes indicator');
   assert(source.includes("Creator navigation"), 'Expected creator navigation region');
   assert(source.includes("href=\"/support\""), 'Expected dev-only Support navigation entry');
+  assert(!source.includes("Date.now"), "Expected no timestamp APIs in creator UI deterministic surface");
+  assert(!source.includes("Math.random"), "Expected no randomness APIs in creator UI deterministic surface");
+  assert(!source.includes("setTimeout("), "Expected no timer APIs in creator UI deterministic surface");
+
+  for (const template of SCENARIO_TEMPLATE_LIBRARY) {
+    const validation = validateScenarioDeterminism(template.scenario);
+    assert(
+      validation.valid,
+      `Expected template ${template.key} to pass determinism validation: ${validation.errors.join(",")}`,
+    );
+  }
 
   console.log("UI CREATOR PAGE OK");
 }

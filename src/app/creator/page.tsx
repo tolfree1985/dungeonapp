@@ -4,12 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { buildCreatorDebugBundleText } from "@/lib/buildCreatorDebugBundleText";
 import { buildPromptScaffoldBundleText } from "@/lib/buildPromptScaffoldBundleText";
 import { buildScenarioDraftBundleText } from "@/lib/buildScenarioDraftBundleText";
+import { DETERMINISTIC_BASELINE_SCENARIO, SCENARIO_TEMPLATE_LIBRARY } from "@/lib/creator/scenarioTemplates";
 import {
   formatCreatorCapDetail,
   formatCreatorRetryAfterText,
   mapCreatorErrorMessage,
 } from "@/lib/creator/mapCreatorErrorMessage";
-import { REPLAY_GUARD_ORDER, replayStateFromTurnJsonWithGuardSummary } from "@/lib/game/replay";
+import {
+  ALLOWED_STATE_NAMESPACES,
+  REPLAY_GUARD_ORDER,
+  replayStateFromTurnJsonWithGuardSummary,
+} from "@/lib/game/replay";
 import { buildPromptParts } from "@/lib/promptScaffold";
 import { validateScenarioDeterminism } from "@/lib/scenario/validateScenarioDeterminism";
 import { buildSupportManifestFromBundle } from "@/lib/support/supportManifest";
@@ -44,8 +49,55 @@ type PreviewReplayReport = {
   guardFailures: string[];
   replayError: string;
 };
+type DeterminismLintMarker = {
+  code: string;
+  explanation: string;
+  reference: string;
+  hint: string;
+};
 
 const STYLE_LOCK_KEYS: StyleLockKey[] = ["toneLock", "genreLock", "pacingLock"];
+const ALLOWED_NAMESPACE_TEXT = [...ALLOWED_STATE_NAMESPACES].sort(compareText).join(", ");
+const DETERMINISM_ERROR_METADATA: Record<
+  string,
+  { explanation: string; reference: string; hint: string }
+> = {
+  SCENARIO_DELTA_NAMESPACE_INVALID: {
+    explanation: "A state delta path targets a disallowed top-level namespace.",
+    reference: "Path: /turns/*/stateDeltas/*/path",
+    hint: `Use only: ${ALLOWED_NAMESPACE_TEXT}`,
+  },
+  SCENARIO_FLOAT_STAT_MUTATION: {
+    explanation: "A stats.* mutation contains a non-integer value.",
+    reference: "Path: /turns/*/stateDeltas/* where path starts with stats.",
+    hint: "Use integer values under stats.*",
+  },
+  SCENARIO_LEDGER_DELTA_MISMATCH: {
+    explanation: "Deltas and ledger entries are not paired for a turn.",
+    reference: "Turn: /turns/*",
+    hint: "Each turn with deltas should include ledger entries unless tagged system/no-ledger.",
+  },
+  SCENARIO_STYLE_LOCK_ENUM_INVALID: {
+    explanation: "A style-lock value is not in the allowed enum set.",
+    reference: "Path: /initialState/flags/*Lock or /turns/*/stateDeltas/*",
+    hint: "Use style-lock values from: locked, none, unlocked.",
+  },
+  SCENARIO_STYLE_LOCK_TRANSITION_INVALID: {
+    explanation: "A style-lock changes from one defined value to another or is removed.",
+    reference: "Turn: /turns/* where style-lock deltas apply",
+    hint: "Allowed transitions: undefined -> defined, or defined -> same value.",
+  },
+  SCENARIO_TURN_INDEX_INVALID: {
+    explanation: "Turn indexes contain duplicates or invalid sequence entries.",
+    reference: "Path: /turns/*/turnIndex",
+    hint: "Ensure each turnIndex is unique.",
+  },
+  SCENARIO_UNDEFINED_DELTA_VALUE: {
+    explanation: "A delta contains an undefined value.",
+    reference: "Path: /turns/*/stateDeltas/*",
+    hint: "Replace undefined with explicit JSON values.",
+  },
+};
 
 function compareText(a: string, b: string): number {
   if (a === b) return 0;
@@ -308,6 +360,37 @@ function buildStyleLockSummary(scenario: unknown): StyleLockSummary {
   return { tone, genre, pacing, status };
 }
 
+function toDeterminismLintMarkers(errorCodes: string[]): DeterminismLintMarker[] {
+  return [...errorCodes]
+    .sort(compareText)
+    .map((code) => {
+      const meta = DETERMINISM_ERROR_METADATA[code];
+      return {
+        code,
+        explanation: meta?.explanation ?? "Unknown determinism validation error.",
+        reference: meta?.reference ?? "Reference: scenario validation output",
+        hint: meta?.hint ?? "Review scenario determinism constraints.",
+      };
+    });
+}
+
+function topLevelTemplateDiffKeys(currentScenario: unknown, templateScenario: unknown): string[] {
+  if (!currentScenario || typeof currentScenario !== "object") {
+    return Object.keys(templateScenario as Record<string, unknown>).sort(compareText);
+  }
+  if (!templateScenario || typeof templateScenario !== "object") {
+    return ["(root)"];
+  }
+
+  const current = currentScenario as Record<string, unknown>;
+  const template = templateScenario as Record<string, unknown>;
+  const keys = new Set<string>([...Object.keys(current), ...Object.keys(template)]);
+  const changed = [...keys]
+    .sort(compareText)
+    .filter((key) => stableJsonDisplay(current[key]) !== stableJsonDisplay(template[key]));
+  return changed.length > 0 ? changed : ["(none)"];
+}
+
 function toPreviewReplayTurnJson(source: any): any {
   const direct = source?.turnJson;
   if (direct && typeof direct === "object") {
@@ -372,6 +455,8 @@ export default function CreatorPage() {
   const [lastMappedError, setLastMappedError] = useState("");
   const [previewReplayStatus, setPreviewReplayStatus] = useState("Preview check not run.");
   const [previewReplayReport, setPreviewReplayReport] = useState<PreviewReplayReport | null>(null);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState("");
+  const [templateStatus, setTemplateStatus] = useState("No template selected.");
   const [baselineSnapshot, setBaselineSnapshot] = useState<CreatorSnapshot>({
     title: "",
     summary: "",
@@ -506,6 +591,44 @@ export default function CreatorPage() {
     return stableJsonDisplay(memory);
   }, [preview]);
   const styleLockSummary = useMemo(() => buildStyleLockSummary(preview), [preview]);
+  const determinismLintMarkers = useMemo(
+    () => toDeterminismLintMarkers(determinismValidation.errors),
+    [determinismValidation.errors],
+  );
+  const selectedTemplate = useMemo(
+    () => SCENARIO_TEMPLATE_LIBRARY.find((template) => template.key === selectedTemplateKey) ?? null,
+    [selectedTemplateKey],
+  );
+  const templateDiffKeys = useMemo(
+    () => (selectedTemplate ? topLevelTemplateDiffKeys(preview, selectedTemplate.scenario) : []),
+    [preview, selectedTemplate],
+  );
+  const previewReplayPassed = useMemo(
+    () =>
+      !!previewReplayReport &&
+      previewReplayReport.replayError.length === 0 &&
+      previewReplayReport.guardFailures.length === 0,
+    [previewReplayReport],
+  );
+  const hasStyleLockViolation = determinismValidation.errors.includes("SCENARIO_STYLE_LOCK_TRANSITION_INVALID");
+  const hasFloatStatViolation = determinismValidation.errors.includes("SCENARIO_FLOAT_STAT_MUTATION");
+  const hasNamespaceViolation = determinismValidation.errors.includes("SCENARIO_DELTA_NAMESPACE_INVALID");
+  const readinessChecklist = useMemo(
+    () => [
+      { label: "Determinism validated", ok: determinismValidation.valid },
+      { label: "Preview replay passed", ok: previewReplayPassed },
+      { label: "No style-lock violations", ok: !hasStyleLockViolation },
+      { label: "No float stat mutations", ok: !hasFloatStatViolation },
+      { label: "No namespace violations", ok: !hasNamespaceViolation },
+    ],
+    [
+      determinismValidation.valid,
+      hasFloatStatViolation,
+      hasNamespaceViolation,
+      hasStyleLockViolation,
+      previewReplayPassed,
+    ],
+  );
   const hasUnsavedChanges = useMemo(
     () =>
       title !== baselineSnapshot.title ||
@@ -668,6 +791,10 @@ export default function CreatorPage() {
   }
 
   async function onCopyDraftBundle() {
+    if (!determinismValidation.valid) {
+      setDraftCopyStatus("EXPORT BLOCKED — DETERMINISM VIOLATIONS PRESENT");
+      return;
+    }
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
       setDraftCopyStatus("Copy not supported");
       return;
@@ -701,6 +828,52 @@ export default function CreatorPage() {
 
     await navigator.clipboard.writeText(text);
     setDraftCopyStatus("Copied");
+  }
+
+  function onApplyTemplate() {
+    if (!selectedTemplate) {
+      setTemplateStatus("No template selected.");
+      return;
+    }
+    const templateScenario = selectedTemplate.scenario;
+    const templateTitle = typeof templateScenario.title === "string" ? templateScenario.title : "";
+    const templateSummary = typeof templateScenario.summary === "string" ? templateScenario.summary : "";
+    const templateContentJson = JSON.stringify(templateScenario, null, 2);
+
+    setTitle(templateTitle);
+    setSummary(templateSummary);
+    setContentJson(templateContentJson);
+    setBaselineSnapshot({
+      title: templateTitle,
+      summary: templateSummary,
+      contentJson: templateContentJson,
+    });
+    setLastValidation(validateScenarioContentJson(templateContentJson));
+
+    const templateValidation = validateScenarioDeterminism(templateScenario);
+    setTemplateStatus(
+      templateValidation.valid
+        ? "Template applied: determinism valid."
+        : "Template applied with determinism violations.",
+    );
+  }
+
+  function onResetToDeterministicBaseline() {
+    const baselineScenario = DETERMINISTIC_BASELINE_SCENARIO;
+    const baselineTitle = typeof baselineScenario.title === "string" ? baselineScenario.title : "";
+    const baselineSummary = typeof baselineScenario.summary === "string" ? baselineScenario.summary : "";
+    const baselineContentJson = JSON.stringify(baselineScenario, null, 2);
+    setTitle(baselineTitle);
+    setSummary(baselineSummary);
+    setContentJson(baselineContentJson);
+    setBaselineSnapshot({
+      title: baselineTitle,
+      summary: baselineSummary,
+      contentJson: baselineContentJson,
+    });
+    setLastValidation(validateScenarioContentJson(baselineContentJson));
+    setTemplateStatus("Reset to deterministic baseline.");
+    setSelectedTemplateKey("");
   }
 
   async function onRunDeterministicPreviewCheck() {
@@ -865,6 +1038,13 @@ export default function CreatorPage() {
     <main className="mx-auto max-w-4xl p-6">
       <h1 className="text-2xl font-semibold">Scenario Creator</h1>
       <p className="mt-1 text-sm text-neutral-600">Create and validate scenario drafts.</p>
+      <section className="mt-3 rounded border p-3 text-sm" aria-label="Determinism status badge">
+        <div className={determinismValidation.valid ? "text-emerald-700" : "text-red-700"}>
+          {determinismValidation.valid
+            ? "DETERMINISM VALIDATED"
+            : "DETERMINISM VIOLATIONS PRESENT"}
+        </div>
+      </section>
       {supportNavEnabled ? (
         <nav className="mt-2 text-xs" aria-label="Creator navigation">
           <a href="/support" className="underline">
@@ -1004,6 +1184,24 @@ export default function CreatorPage() {
         )}
       </section>
 
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Determinism lint markers">
+        <h2 className="text-base font-semibold">Determinism lint markers</h2>
+        {determinismLintMarkers.length === 0 ? (
+          <div className="mt-2">No determinism lint markers.</div>
+        ) : (
+          <ol className="mt-2 list-decimal space-y-2 pl-6">
+            {determinismLintMarkers.map((marker) => (
+              <li key={marker.code}>
+                <div className="font-semibold">{marker.code}</div>
+                <div>{marker.explanation}</div>
+                <div>{marker.reference}</div>
+                <div>Quick-fix hint: {marker.hint}</div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Scenario preview">
         <h2 className="text-base font-semibold">Preview</h2>
         {!preview ? (
@@ -1128,6 +1326,66 @@ export default function CreatorPage() {
         </ol>
       </section>
 
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Publish readiness checklist">
+        <h2 className="text-base font-semibold">PUBLISH READINESS</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-6">
+          {readinessChecklist.map((item) => (
+            <li key={item.label}>
+              <input type="checkbox" readOnly checked={item.ok} className="mr-2 align-middle" />
+              <span>{item.label}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Scenario template library">
+        <h2 className="text-base font-semibold">Scenario template library</h2>
+        <div className="mt-2 flex items-center gap-3">
+          <label htmlFor="scenario-template" className="text-xs">
+            Template
+          </label>
+          <select
+            id="scenario-template"
+            value={selectedTemplateKey}
+            onChange={(e) => setSelectedTemplateKey(e.target.value)}
+            className="rounded border px-2 py-1 text-xs"
+          >
+            <option value="">Select template</option>
+            {SCENARIO_TEMPLATE_LIBRARY.map((template) => (
+              <option key={template.key} value={template.key}>
+                {template.label}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={onApplyTemplate} className="rounded border px-2 py-1 text-xs">
+            Apply template
+          </button>
+          <button
+            type="button"
+            onClick={onResetToDeterministicBaseline}
+            className="rounded border px-2 py-1 text-xs"
+          >
+            Reset to Deterministic Baseline
+          </button>
+        </div>
+        <div className="mt-2" role="status" aria-live="polite">
+          {templateStatus}
+        </div>
+        {selectedTemplate ? (
+          <div className="mt-2 rounded border p-2 text-xs" aria-label="Template diff preview">
+            <div className="font-semibold">Template diff preview</div>
+            <div>Current draft: {typeof preview?.id === "string" ? preview.id : "(none)"}</div>
+            <div>Selected template: {selectedTemplate.label}</div>
+            <div className="mt-1 font-semibold">Changed keys</div>
+            <ol className="list-decimal pl-6">
+              {templateDiffKeys.map((key) => (
+                <li key={key}>{key}</li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+      </section>
+
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Publish controls">
         <h2 className="text-base font-semibold">Publish</h2>
         {billingBanner ? (
@@ -1214,6 +1472,11 @@ export default function CreatorPage() {
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Draft export">
         <h2 className="text-base font-semibold">Draft export</h2>
+        <div className="mt-2 rounded border p-2 text-xs" aria-label="Export readiness banner">
+          {determinismValidation.valid
+            ? "EXPORT READY — DETERMINISM VERIFIED"
+            : "EXPORT BLOCKED — DETERMINISM VIOLATIONS PRESENT"}
+        </div>
         <div className="mt-2 flex items-center gap-3">
           <button type="button" onClick={onCopyDraftBundle} className="rounded border px-2 py-1 text-xs">
             Copy scenario draft bundle
@@ -1238,6 +1501,23 @@ export default function CreatorPage() {
             {shareLinkCopyStatus}
           </span>
         </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Error code reference panel">
+        <details>
+          <summary className="cursor-pointer text-base font-semibold">Error code reference</summary>
+          <ol className="mt-2 list-decimal space-y-2 pl-6">
+            {Object.keys(DETERMINISM_ERROR_METADATA)
+              .sort(compareText)
+              .map((code) => (
+                <li key={code}>
+                  <div className="font-semibold">{code}</div>
+                  <div>{DETERMINISM_ERROR_METADATA[code].explanation}</div>
+                  <div>Marker constant: {code}</div>
+                </li>
+              ))}
+          </ol>
+        </details>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="My scenarios">
