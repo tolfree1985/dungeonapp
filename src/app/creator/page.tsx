@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { buildCreatorDebugBundleText } from "@/lib/buildCreatorDebugBundleText";
 import { buildPromptScaffoldBundleText } from "@/lib/buildPromptScaffoldBundleText";
 import { buildScenarioDraftBundleText } from "@/lib/buildScenarioDraftBundleText";
 import {
@@ -144,10 +145,12 @@ export default function CreatorPage() {
   const [myScenarios, setMyScenarios] = useState<MineViewItem[]>([]);
   const [mineStatus, setMineStatus] = useState("My scenarios not loaded.");
   const [draftCopyStatus, setDraftCopyStatus] = useState("");
+  const [debugBundleCopyStatus, setDebugBundleCopyStatus] = useState("");
   const [promptBundleCopyStatus, setPromptBundleCopyStatus] = useState("");
   const [createDraftStatus, setCreateDraftStatus] = useState("");
   const [forkStatus, setForkStatus] = useState("");
   const [billingBanner, setBillingBanner] = useState("");
+  const [lastMappedError, setLastMappedError] = useState("");
   const [baselineSnapshot, setBaselineSnapshot] = useState<CreatorSnapshot>({
     title: "",
     summary: "",
@@ -231,6 +234,7 @@ export default function CreatorPage() {
   }, [preview]);
   useEffect(() => {
     setBillingBanner("");
+    setLastMappedError("");
   }, [contentJson, creatorTier, forkNewScenarioId, forkSourceScenarioId, ownerId, summary, title]);
   const preflightChecklist = useMemo(
     () => [
@@ -373,6 +377,7 @@ export default function CreatorPage() {
         const parts = [message, detail, retryAfter].filter(Boolean);
         const statusText = parts.join(" ");
         setCreateDraftStatus(statusText);
+        setLastMappedError(message);
         setBillingBanner(statusText);
         return;
       }
@@ -418,6 +423,7 @@ export default function CreatorPage() {
         const parts = [message, detail, retryAfter].filter(Boolean);
         const statusText = parts.join(" ");
         setForkStatus(statusText);
+        setLastMappedError(message);
         setBillingBanner(statusText);
         return;
       }
@@ -464,6 +470,38 @@ export default function CreatorPage() {
     });
     await navigator.clipboard.writeText(text);
     setPromptBundleCopyStatus("Copied");
+  }
+
+  async function onCopyCreatorDebugBundle() {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      setDebugBundleCopyStatus("Copy not supported");
+      return;
+    }
+    const text = buildCreatorDebugBundleText({
+      title: title.trim(),
+      summary: summary.trim(),
+      ownerId: ownerId.trim(),
+      tier: creatorTier,
+      contentJson,
+      validationOk: validationView.ok,
+      parseError: validationView.parseError,
+      issues: validationView.issues,
+      checklist: preflightChecklist,
+      lastMappedError,
+      createDraftStatus,
+      forkStatus,
+      billingBanner,
+      promptScaffold: promptParts
+        ? {
+            preview: promptParts.preview,
+            system: promptParts.system,
+            developer: promptParts.developer,
+            user: promptParts.user,
+          }
+        : null,
+    });
+    await navigator.clipboard.writeText(text);
+    setDebugBundleCopyStatus("Copied");
   }
 
   function onImportJson() {
@@ -740,6 +778,12 @@ export default function CreatorPage() {
             Copy scenario draft bundle
           </button>
           <span>{draftCopyStatus}</span>
+        </div>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" onClick={onCopyCreatorDebugBundle} className="rounded border px-2 py-1 text-xs">
+            Copy creator debug bundle
+          </button>
+          <span>{debugBundleCopyStatus}</span>
         </div>
       </section>
 
