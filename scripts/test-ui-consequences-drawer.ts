@@ -335,7 +335,9 @@ function main() {
     "components",
     "ConsequencesDrawer.tsx",
   );
+  const playPagePath = path.join(process.cwd(), "src", "app", "page.tsx");
   const drawerSource = fs.readFileSync(drawerPath, "utf8");
+  const playSource = fs.readFileSync(playPagePath, "utf8");
   const mustInclude = [
     "hashchange",
     "ledger-highlight",
@@ -350,6 +352,42 @@ function main() {
         `Expected ConsequencesDrawer.tsx to include "${signal}" (hash-reactive highlight signal)`,
       );
     }
+  }
+
+  const playMarkers = [
+    "Suggested options (PRE-ACTION RISK)",
+    "STAKES RESULT",
+    "COMPLICATION TRIGGERED",
+    "MAJOR CONSEQUENCE",
+    "Escalation Ladder:",
+    "STAKE_SYNC_ERROR",
+    "Why?",
+    "risk-high-option",
+    'HEALTH: "❤️"',
+    'RELATIONSHIP: "🤝"',
+    'RESOURCE: "🧰"',
+    'TIME: "⏳"',
+    'REPUTATION: "🏛️"',
+    'FLAG: "⚑"',
+  ];
+  for (const marker of playMarkers) {
+    assert(
+      playSource.includes(marker),
+      `Expected player stakes surface marker in page.tsx: ${marker}`,
+    );
+  }
+
+  const forbiddenPlayTokens = [
+    "STATE_DELTA_PATH_INVALID",
+    "LEDGER_WITHOUT_DELTA_MUTATION",
+    "REPLAY_GUARD_SUMMARY",
+    "raw:",
+  ];
+  for (const token of forbiddenPlayTokens) {
+    assert(
+      !playSource.includes(token),
+      `Expected no spoiler/internal token in player page source: ${token}`,
+    );
   }
 
   console.log("UI CONSEQUENCES DRAWER OK");
