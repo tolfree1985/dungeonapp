@@ -13,6 +13,7 @@ import {
   serializeSupportManifest,
   type SupportManifestV1,
 } from "@/lib/support/supportManifest";
+import { SUPPORT_PACKAGE_VERSION } from "@/lib/support/supportPackage";
 
 type RunbookLink = {
   label: string;
@@ -1531,6 +1532,7 @@ export function SupportDashboard({
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Export Support Package">
         <h2 className="text-base font-semibold">Export Support Package</h2>
+        <div className="mt-2 text-xs">Support package version: {SUPPORT_PACKAGE_VERSION}</div>
         <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">
           {[
             "node --import tsx scripts/build-support-package.ts \\",

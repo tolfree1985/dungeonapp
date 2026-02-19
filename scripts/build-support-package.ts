@@ -4,10 +4,16 @@ import {
   TELEMETRY_VERSION,
   buildSupportManifestFromBundle,
   hashSupportManifest,
-  serializeSupportManifest,
   sha256HexFromText,
   type SupportManifestV1,
 } from "../src/lib/support/supportManifest";
+import {
+  SUPPORT_PACKAGE_VERSION,
+  assertSupportPackageIntegrity,
+  serializeSupportPackage,
+  type DriftSeverity,
+  type SupportPackageV1,
+} from "../src/lib/support/supportPackage";
 
 type PerTurnRefRow = {
   turnIndex: number;
@@ -16,65 +22,8 @@ type PerTurnRefRow = {
   hasResolution: boolean;
 };
 
-type DriftSeverity = "NONE" | "HASH_DRIFT" | "STRUCTURAL_DRIFT" | "PER_TURN_DRIFT";
-
-type SupportPackageV1 = {
-  packageVersion: 1;
-  manifest: SupportManifestV1;
-  manifestHash: string;
-  telemetryVersion: number;
-  replay: {
-    finalStateHash: string;
-    telemetry: {
-      totalLedgerEntries: number;
-      totalStateDeltas: number;
-      maxDeltaPerTurn: number;
-      avgDeltaPerTurn: number;
-      maxLedgerPerTurn: number;
-    };
-    perTurn: Array<{
-      turnIndex: number;
-      deltaCount: number;
-      ledgerCount: number;
-      hasResolution: boolean;
-    }>;
-  };
-  drift: {
-    severity: DriftSeverity;
-    firstDriftTurnIndex?: number;
-    firstDriftMetric?: string;
-  };
-  runbook: {
-    build: string;
-    migrate: string;
-    rollback: string;
-    smoke: string;
-  };
-  originalBundle: unknown;
-};
-
-function compareText(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function stableNormalize(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((entry) => stableNormalize(entry));
-  }
-  if (isRecord(value)) {
-    const out: Record<string, unknown> = {};
-    const keys = Object.keys(value).sort(compareText);
-    for (const key of keys) {
-      out[key] = stableNormalize(value[key]);
-    }
-    return out;
-  }
-  return value;
 }
 
 function parseArgs(argv: string[]): Record<string, string> {
@@ -221,9 +170,13 @@ function buildDrift(bundle: unknown, manifest: SupportManifestV1): SupportPackag
   };
 }
 
-function buildSupportPackage(bundle: unknown, manifest: SupportManifestV1, manifestHash: string): SupportPackageV1 {
+function buildSupportPackage(
+  bundle: unknown,
+  manifest: SupportManifestV1,
+  manifestHash: string,
+): Omit<SupportPackageV1, "integrity"> {
   return {
-    packageVersion: 1,
+    packageVersion: SUPPORT_PACKAGE_VERSION,
     manifest,
     manifestHash,
     telemetryVersion: TELEMETRY_VERSION,
@@ -250,12 +203,8 @@ function buildSupportPackage(bundle: unknown, manifest: SupportManifestV1, manif
       rollback: "docs/deploy-runbook#rollback",
       smoke: "docs/deploy-runbook#smoke",
     },
-    originalBundle: stableNormalize(bundle),
+    originalBundle: bundle,
   };
-}
-
-function serializeSupportPackage(pkg: SupportPackageV1): string {
-  return JSON.stringify(pkg);
 }
 
 async function main() {
@@ -269,7 +218,12 @@ async function main() {
 
   const manifest = await buildSupportManifestFromBundle(bundle);
   const manifestHash = await hashSupportManifest(manifest);
-  const pkg = buildSupportPackage(bundle, manifest, manifestHash);
+  const pkgWithoutIntegrity = buildSupportPackage(bundle, manifest, manifestHash);
+  const integrity = await assertSupportPackageIntegrity(pkgWithoutIntegrity);
+  const pkg: SupportPackageV1 = {
+    ...pkgWithoutIntegrity,
+    integrity,
+  };
   const packageJson = serializeSupportPackage(pkg);
   const packageHash = await sha256HexFromText(packageJson);
 

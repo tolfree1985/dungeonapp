@@ -5,6 +5,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { hashSupportManifest } from "../src/lib/support/supportManifest";
+import {
+  SUPPORT_PACKAGE_VERSION,
+  assertSupportPackageIntegrity,
+  type SupportPackageV1,
+} from "../src/lib/support/supportPackage";
 
 function runPackager(scriptPath: string, bundlePath: string, outDir: string): { outPath: string; packageHash: string } {
   const result = spawnSync(
@@ -63,12 +68,54 @@ async function main() {
   const bytesA = fs.readFileSync(runA.outPath);
   const textA = bytesA.toString("utf8");
   const jsonA = JSON.parse(textA);
-  assert.equal(jsonA.packageVersion, 1, "expected packageVersion=1");
+  assert.equal(jsonA.packageVersion, SUPPORT_PACKAGE_VERSION, "expected packageVersion constant");
   assert(typeof jsonA.manifestHash === "string" && jsonA.manifestHash.length > 0, "expected manifestHash");
   assert(path.basename(runA.outPath).includes(jsonA.manifestHash), "filename should include manifest hash");
 
+  const keyOrderTokens = [
+    "\"packageVersion\":",
+    "\"manifestHash\":",
+    "\"manifest\":",
+    "\"telemetryVersion\":",
+    "\"replay\":",
+    "\"drift\":",
+    "\"integrity\":",
+    "\"runbook\":",
+    "\"originalBundle\":",
+  ];
+  let cursor = 0;
+  for (const token of keyOrderTokens) {
+    const idx = textA.indexOf(token, cursor);
+    assert(idx >= 0, `expected key token in package JSON: ${token}`);
+    cursor = idx + token.length;
+  }
+
   const expectedManifestHashA = await hashSupportManifest(jsonA.manifest);
   assert.equal(jsonA.manifestHash, expectedManifestHashA, "manifestHash should match manifest");
+
+  const { integrity: _discardedIntegrity, ...pkgWithoutIntegrityA } = jsonA as SupportPackageV1;
+  const recomputedIntegrity = await assertSupportPackageIntegrity(pkgWithoutIntegrityA);
+  assert.deepEqual(
+    jsonA.integrity,
+    recomputedIntegrity,
+    "integrity block should match computed integrity from package payload",
+  );
+
+  const corruptedPackage: Omit<SupportPackageV1, "integrity"> = {
+    ...pkgWithoutIntegrityA,
+    replay: {
+      ...pkgWithoutIntegrityA.replay,
+      finalStateHash: `${pkgWithoutIntegrityA.replay.finalStateHash}-corrupt`,
+    },
+  };
+  let integrityFailed = false;
+  try {
+    await assertSupportPackageIntegrity(corruptedPackage);
+  } catch (err) {
+    integrityFailed = true;
+    assert.match(String(err), /SUPPORT_PACKAGE_INTEGRITY_ERROR:/, "expected deterministic integrity failure error");
+  }
+  assert(integrityFailed, "expected synthetic corrupted package to fail integrity check");
 
   const expectedPackageHashA = crypto.createHash("sha256").update(bytesA).digest("hex");
   assert.equal(runA.packageHash, expectedPackageHashA, "PACKAGE_HASH should match file sha256");
@@ -79,7 +126,25 @@ async function main() {
   assert.equal(runA.packageHash, runB.packageHash, "package hash should be deterministic");
 
   const bytesB = fs.readFileSync(runB.outPath);
+  const textB = bytesB.toString("utf8");
+  const expectedPackageHashB = crypto.createHash("sha256").update(bytesB).digest("hex");
+  assert.equal(runB.packageHash, expectedPackageHashB, "run B PACKAGE_HASH should match file sha256");
   assert.equal(bytesA.compare(bytesB), 0, "package bytes should match across runs");
+  assert.equal(textA, textB, "package text should match across runs");
+
+  const entropyTokens = [
+    "timestamp",
+    "duration",
+    "random",
+    "seed",
+    "Date.now",
+    "performance.now",
+    "new Date",
+    "process.hrtime",
+  ];
+  for (const token of entropyTokens) {
+    assert(!textA.includes(token), `package JSON should not include entropy token: ${token}`);
+  }
 
   console.log("BUILD SUPPORT PACKAGE OK");
 }
