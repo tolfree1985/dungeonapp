@@ -7,9 +7,16 @@ function main() {
   const source = fs.readFileSync(filePath, "utf8");
 
   assert(source.includes("Scenario Creator"), 'Expected "Scenario Creator" heading');
+  assert(source.includes("Paste scenario JSON"), 'Expected JSON import input label');
+  assert(source.includes("Import JSON"), 'Expected "Import JSON" control');
+  assert(source.includes("JSON import error"), 'Expected deterministic JSON import error block label');
   assert(source.includes("Validate scenario"), 'Expected "Validate scenario" control');
   assert(source.includes("Validation"), 'Expected "Validation" section');
+  assert(source.includes("Path:"), 'Expected deterministic validation path grouping label');
   assert(source.includes("Preview"), 'Expected "Preview" section');
+  assert(source.includes("Memory preview:"), 'Expected deterministic memory preview label');
+  assert(source.includes("Preflight checklist"), 'Expected "Preflight checklist" section');
+  assert(source.includes("Validation pass"), 'Expected preflight validation pass checklist row');
   assert(source.includes("Publish scenario"), 'Expected "Publish scenario" control');
   assert(
     source.includes("Publish disabled: validation must pass."),
@@ -27,6 +34,7 @@ function main() {
   assert(source.includes("Tier"), 'Expected "Tier" control label');
   assert(source.includes("setCreateDraftStatus"), 'Expected isolated create draft status region state');
   assert(source.includes("setForkStatus"), 'Expected isolated fork status region state');
+  assert(source.includes("Creator billing banner"), 'Expected deterministic creator billing banner region');
   assert(source.includes("Retry-After"), 'Expected retry-after support in creator status text path');
   assert(source.includes("formatCreatorCapDetail"), 'Expected deterministic cap detail formatting usage');
   assert(
@@ -39,6 +47,9 @@ function main() {
     source.includes("Prompt scaffold preview"),
     'Expected "Prompt scaffold preview" section',
   );
+  assert(source.includes("Copy prompt scaffold bundle"), 'Expected prompt scaffold bundle copy control');
+  assert(source.includes("togglePromptSection"), 'Expected deterministic prompt scaffold section toggles');
+  assert(source.includes("Unsaved changes:"), 'Expected unsaved changes indicator');
 
   console.log("UI CREATOR PAGE OK");
 }
