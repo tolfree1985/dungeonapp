@@ -136,6 +136,13 @@ type SupportPackageDiffRow = {
   same: boolean;
 };
 
+type IntakeConsistencyState = {
+  status: "idle" | "pass" | "fail";
+  message: string;
+  rebuiltManifestHash: string;
+  rebuiltFinalStateHash: string;
+};
+
 const LARGE_DELTA_THRESHOLD = 8;
 
 const METADATA_FIELD_SPECS: MetadataFieldSpec[] = [
@@ -831,9 +838,18 @@ export function SupportDashboard({
   const [supportPackageDerivedManifestHash, setSupportPackageDerivedManifestHash] = useState("");
   const [manifestCopyStatus, setManifestCopyStatus] = useState("");
   const [supportPackageManifestHashCopyStatus, setSupportPackageManifestHashCopyStatus] = useState("");
+  const [supportPackagePackageHashCopyStatus, setSupportPackagePackageHashCopyStatus] = useState("");
+  const [supportPackageManifestWarningCopyStatus, setSupportPackageManifestWarningCopyStatus] = useState("");
   const [supportPackageChecklistCopyStatus, setSupportPackageChecklistCopyStatus] = useState("");
   const [supportPackageIssueCopyStatus, setSupportPackageIssueCopyStatus] = useState("");
   const [supportPackageCliCopyStatus, setSupportPackageCliCopyStatus] = useState("");
+  const [supportPackageImmutableHashCopyStatus, setSupportPackageImmutableHashCopyStatus] = useState("");
+  const [intakeConsistencyState, setIntakeConsistencyState] = useState<IntakeConsistencyState>({
+    status: "idle",
+    message: "No support package loaded.",
+    rebuiltManifestHash: "",
+    rebuiltFinalStateHash: "",
+  });
   const [driftReportCopyStatus, setDriftReportCopyStatus] = useState("");
   const [runbookCopyStatus, setRunbookCopyStatus] = useState<Record<string, string>>({});
   const [leftCompareJson, setLeftCompareJson] = useState("");
@@ -1007,6 +1023,56 @@ export function SupportDashboard({
     };
   }, [supportPackageData]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function runIntakeConsistencySelfTest() {
+      if (!supportPackageData) {
+        if (!cancelled) {
+          setIntakeConsistencyState({
+            status: "idle",
+            message: "No support package loaded.",
+            rebuiltManifestHash: "",
+            rebuiltFinalStateHash: "",
+          });
+        }
+        return;
+      }
+
+      try {
+        const rebuiltManifest = await buildSupportManifestFromBundle(supportPackageData.originalBundle);
+        const rebuiltManifestHash = await hashSupportManifest(rebuiltManifest);
+        const rebuiltFinalStateHash = rebuiltManifest.replay.finalStateHash;
+        const isManifestHashMatch = rebuiltManifestHash === supportPackageData.manifestHash;
+        const isFinalStateHashMatch = rebuiltFinalStateHash === supportPackageData.manifest.replay.finalStateHash;
+        const pass = isManifestHashMatch && isFinalStateHashMatch;
+
+        if (!cancelled) {
+          setIntakeConsistencyState({
+            status: pass ? "pass" : "fail",
+            message: pass ? "INTAKE CONSISTENCY PASS" : "INTAKE CONSISTENCY FAILURE",
+            rebuiltManifestHash,
+            rebuiltFinalStateHash,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setIntakeConsistencyState({
+            status: "fail",
+            message: "INTAKE CONSISTENCY FAILURE",
+            rebuiltManifestHash: "",
+            rebuiltFinalStateHash: "",
+          });
+        }
+      }
+    }
+
+    void runIntakeConsistencySelfTest();
+    return () => {
+      cancelled = true;
+    };
+  }, [supportPackageData]);
+
   const supportPackageManifestIntegrity = useMemo(() => {
     if (!supportPackageData) {
       return {
@@ -1036,6 +1102,28 @@ export function SupportDashboard({
     };
   }, [supportPackageData, supportPackageDerivedManifestHash]);
 
+  const supportPackageVersionSupported = useMemo(
+    () => !supportPackageData || supportPackageData.packageVersion === SUPPORT_PACKAGE_VERSION,
+    [supportPackageData],
+  );
+  const supportPackageIntakeBlocked = useMemo(
+    () => !!supportPackageData && !supportPackageVersionSupported,
+    [supportPackageData, supportPackageVersionSupported],
+  );
+  const supportManifestVersionSupported = useMemo(
+    () => !supportPackageData || supportPackageData.manifest.manifestVersion === SUPPORT_MANIFEST_VERSION,
+    [supportPackageData],
+  );
+  const supportPackageManifestWarningText = useMemo(() => {
+    if (!supportPackageData || supportManifestVersionSupported) return "";
+    return [
+      "Manifest version mismatch",
+      `Expected: ${SUPPORT_MANIFEST_VERSION}`,
+      `Actual: ${supportPackageData.manifest.manifestVersion}`,
+      "Proceed with caution: forward-compatibility not guaranteed.",
+    ].join("\n");
+  }, [supportManifestVersionSupported, supportPackageData]);
+
   const supportPackageHashBadge = useMemo(() => {
     if (!supportPackageData || !supportPackageComputedHash) {
       return { label: "PACKAGE_HASH unavailable", cls: "text-amber-700" };
@@ -1052,29 +1140,53 @@ export function SupportDashboard({
   }, [supportPackageComputedHash, supportPackageData, supportPackageHashReference]);
 
   const supportPackageChecklistRows = useMemo(
-    () => [
-      { label: "Manifest integrity verified", ok: supportPackageManifestIntegrity.allTrue },
-      { label: "Replay telemetry consistent", ok: supportPackageManifestIntegrity.telemetryConsistent },
-      { label: "Drift severity reviewed", ok: !!supportPackageData },
-      {
-        label: "First drift turn inspected",
-        ok:
-          !!supportPackageData &&
-          (supportPackageData.drift.severity === "NONE" ||
-            typeof supportPackageData.drift.firstDriftTurnIndex === "number"),
-      },
-      { label: "Repro CLI validated", ok: !!supportPackageData },
-      { label: "Package hash verified", ok: supportPackageHashBadge.label === "PACKAGE_HASH verified" },
+    () => {
+      if (supportPackageIntakeBlocked) {
+        return [
+          { label: "Manifest integrity verified", ok: false },
+          { label: "Replay telemetry consistent", ok: false },
+          { label: "Drift severity reviewed", ok: false },
+          { label: "First drift turn inspected", ok: false },
+          { label: "Repro CLI validated", ok: false },
+          { label: "Package hash verified", ok: false },
+        ];
+      }
+      return [
+        { label: "Manifest integrity verified", ok: supportPackageManifestIntegrity.allTrue },
+        { label: "Replay telemetry consistent", ok: supportPackageManifestIntegrity.telemetryConsistent },
+        { label: "Drift severity reviewed", ok: !!supportPackageData },
+        {
+          label: "First drift turn inspected",
+          ok:
+            !!supportPackageData &&
+            (supportPackageData.drift.severity === "NONE" ||
+              typeof supportPackageData.drift.firstDriftTurnIndex === "number"),
+        },
+        { label: "Repro CLI validated", ok: !!supportPackageData },
+        { label: "Package hash verified", ok: supportPackageHashBadge.label === "PACKAGE_HASH verified" },
+      ];
+    },
+    [
+      supportPackageIntakeBlocked,
+      supportPackageData,
+      supportPackageHashBadge.label,
+      supportPackageManifestIntegrity.allTrue,
+      supportPackageManifestIntegrity.telemetryConsistent,
     ],
-    [supportPackageData, supportPackageHashBadge.label, supportPackageManifestIntegrity.allTrue, supportPackageManifestIntegrity.telemetryConsistent],
   );
 
   const supportPackageChecklistText = useMemo(
-    () => buildSupportPackageChecklistText(supportPackageChecklistRows),
-    [supportPackageChecklistRows],
+    () =>
+      supportPackageIntakeBlocked
+        ? "Unsupported Support Package Version"
+        : buildSupportPackageChecklistText(supportPackageChecklistRows),
+    [supportPackageChecklistRows, supportPackageIntakeBlocked],
   );
 
   const supportPackageIssueDraftText = useMemo(() => {
+    if (supportPackageIntakeBlocked) {
+      return "Unsupported Support Package Version";
+    }
     if (!supportPackageData) {
       return buildSupportPackageIssueDraftText({
         manifestHash: "(none)",
@@ -1100,7 +1212,7 @@ export function SupportDashboard({
       firstDriftMetric: supportPackageData.drift.firstDriftMetric ?? "(none)",
       replayInvariant: supportPackageManifestIntegrity.allTrue ? "PASS" : "FAIL",
     });
-  }, [supportPackageComputedHash, supportPackageData, supportPackageManifestIntegrity.allTrue]);
+  }, [supportPackageComputedHash, supportPackageData, supportPackageIntakeBlocked, supportPackageManifestIntegrity.allTrue]);
 
   const supportPackageCliHelperText = useMemo(
     () =>
@@ -1629,6 +1741,35 @@ export function SupportDashboard({
     await copyText(hash, setSupportPackageManifestHashCopyStatus);
   }
 
+  async function onCopySupportPackagePackageHash() {
+    const hash = supportPackageComputedHash;
+    if (!hash) {
+      setSupportPackagePackageHashCopyStatus("Copy not supported");
+      return;
+    }
+    await copyText(hash, setSupportPackagePackageHashCopyStatus);
+  }
+
+  async function onCopySupportPackageManifestWarning() {
+    if (!supportPackageManifestWarningText) {
+      setSupportPackageManifestWarningCopyStatus("Copy not supported");
+      return;
+    }
+    await copyText(supportPackageManifestWarningText, setSupportPackageManifestWarningCopyStatus);
+  }
+
+  async function onCopySupportPackageImmutableHashes() {
+    if (!supportPackageData) {
+      setSupportPackageImmutableHashCopyStatus("Copy not supported");
+      return;
+    }
+    const text = [
+      `MANIFEST_HASH: ${supportPackageData.manifestHash}`,
+      `PACKAGE_HASH: ${supportPackageComputedHash || "(none)"}`,
+    ].join("\n");
+    await copyText(text, setSupportPackageImmutableHashCopyStatus);
+  }
+
   async function onCopySupportPackageChecklist() {
     await copyText(supportPackageChecklistText, setSupportPackageChecklistCopyStatus);
   }
@@ -1777,6 +1918,34 @@ export function SupportDashboard({
         </div>
       </section>
 
+      {supportPackageIntakeBlocked ? (
+        <section className="mt-4 rounded border border-red-600 p-4 text-sm" aria-label="Unsupported Support Package Version">
+          <h2 className="text-base font-semibold text-red-700">Unsupported Support Package Version</h2>
+          <div className="mt-2 text-xs">Expected packageVersion: {SUPPORT_PACKAGE_VERSION}</div>
+          <div className="text-xs">Actual packageVersion: {supportPackageData?.packageVersion ?? "(none)"}</div>
+          <div className="mt-1 text-xs">Checklist and draft generation are blocked for unsupported package versions.</div>
+        </section>
+      ) : null}
+
+      {supportPackageData && !supportManifestVersionSupported ? (
+        <section className="mt-4 rounded border border-amber-600 p-4 text-sm" aria-label="Manifest Version Gate Warning">
+          <h2 className="text-base font-semibold text-amber-700">Manifest Version Gate Warning</h2>
+          <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">{supportPackageManifestWarningText}</pre>
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              className="rounded border px-2 py-1 text-xs"
+              onClick={onCopySupportPackageManifestWarning}
+            >
+              Copy manifest version warning
+            </button>
+            <span role="status" aria-live="polite">
+              {supportPackageManifestWarningCopyStatus}
+            </span>
+          </div>
+        </section>
+      ) : null}
+
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Package Header Summary">
         <h2 className="text-base font-semibold">Package Header Summary</h2>
         <div className="mt-2 text-xs">PACKAGE_VERSION: {supportPackageData?.packageVersion ?? "(none)"}</div>
@@ -1826,37 +1995,128 @@ export function SupportDashboard({
         <div className={`mt-1 font-medium ${supportPackageHashBadge.cls}`}>{supportPackageHashBadge.label}</div>
       </section>
 
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Immutable Hash Anchor Display">
+        <h2 className="text-base font-semibold">Immutable Hash Anchor Display</h2>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs">Show full immutable hash anchors</summary>
+          <div className="mt-2 rounded border p-2">
+            <div className="text-xs">MANIFEST_HASH_FULL: {supportPackageData?.manifestHash || "(none)"}</div>
+            <div className="text-xs">PACKAGE_HASH_FULL: {supportPackageComputedHash || "(none)"}</div>
+          </div>
+        </details>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
+            onClick={onCopySupportPackageManifestHash}
+            disabled={!supportPackageData?.manifestHash}
+          >
+            Copy full manifest hash
+          </button>
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
+            onClick={onCopySupportPackagePackageHash}
+            disabled={!supportPackageComputedHash}
+          >
+            Copy full package hash
+          </button>
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
+            onClick={onCopySupportPackageImmutableHashes}
+            disabled={!supportPackageData}
+          >
+            Copy immutable hash anchors
+          </button>
+        </div>
+        <div className="mt-1 text-xs">
+          {supportPackageManifestHashCopyStatus || supportPackagePackageHashCopyStatus || supportPackageImmutableHashCopyStatus}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Intake Consistency Self-Test">
+        <h2 className="text-base font-semibold">Intake Consistency Self-Test</h2>
+        <div
+          className={`mt-2 font-medium ${
+            intakeConsistencyState.status === "fail"
+              ? "text-red-700"
+              : intakeConsistencyState.status === "pass"
+                ? "text-green-700"
+                : "text-amber-700"
+          }`}
+        >
+          {intakeConsistencyState.message}
+        </div>
+        <div className="mt-1 text-xs">
+          rebuiltManifestHash === package.manifestHash:{" "}
+          {String(
+            !!supportPackageData &&
+              intakeConsistencyState.rebuiltManifestHash.length > 0 &&
+              intakeConsistencyState.rebuiltManifestHash === supportPackageData.manifestHash,
+          )}
+        </div>
+        <div className="text-xs">
+          rebuiltFinalStateHash === manifest.replay.finalStateHash:{" "}
+          {String(
+            !!supportPackageData &&
+              intakeConsistencyState.rebuiltFinalStateHash.length > 0 &&
+              intakeConsistencyState.rebuiltFinalStateHash === supportPackageData.manifest.replay.finalStateHash,
+          )}
+        </div>
+      </section>
+
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Structured Incident Checklist">
         <h2 className="text-base font-semibold">Structured Incident Checklist</h2>
-        <ol className="mt-2 list-decimal space-y-1 pl-6">
-          {supportPackageChecklistRows.map((row) => (
-            <li key={row.label}>
-              {row.label}: {row.ok ? "PASS" : "FAIL"}
-            </li>
-          ))}
-        </ol>
+        {supportPackageIntakeBlocked ? (
+          <div className="mt-2 text-xs text-red-700">Unsupported Support Package Version</div>
+        ) : (
+          <ol className="mt-2 list-decimal space-y-1 pl-6">
+            {supportPackageChecklistRows.map((row) => (
+              <li key={row.label}>
+                {row.label}: {row.ok ? "PASS" : "FAIL"}
+              </li>
+            ))}
+          </ol>
+        )}
         <div className="mt-2 flex items-center gap-3">
-          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={onCopySupportPackageChecklist}>
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
+            onClick={onCopySupportPackageChecklist}
+            disabled={supportPackageIntakeBlocked}
+          >
             Copy Checklist
           </button>
           <span role="status" aria-live="polite">
             {supportPackageChecklistCopyStatus}
           </span>
         </div>
-        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">{supportPackageChecklistText}</pre>
+        {!supportPackageIntakeBlocked ? (
+          <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">{supportPackageChecklistText}</pre>
+        ) : null}
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Deterministic Issue Draft Generator (Package-aware)">
         <h2 className="text-base font-semibold">Deterministic Issue Draft Generator (Package-aware)</h2>
         <div className="mt-2 flex items-center gap-3">
-          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={onCopySupportPackageIssueDraft}>
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
+            onClick={onCopySupportPackageIssueDraft}
+            disabled={supportPackageIntakeBlocked}
+          >
             Copy package issue draft
           </button>
           <span role="status" aria-live="polite">
             {supportPackageIssueCopyStatus}
           </span>
         </div>
-        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">{supportPackageIssueDraftText}</pre>
+        {supportPackageIntakeBlocked ? (
+          <div className="mt-2 text-xs text-red-700">Unsupported Support Package Version</div>
+        ) : (
+          <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">{supportPackageIssueDraftText}</pre>
+        )}
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Package Diff Mode">

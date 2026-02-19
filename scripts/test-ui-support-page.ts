@@ -154,6 +154,25 @@ function main() {
   assert(dashboardSource.includes("### Replay Invariants:"), "Expected issue draft header: Replay Invariants");
   assert(dashboardSource.includes("PACKAGE_VERSION:"), "Expected package summary package version line");
   assert(dashboardSource.includes("MANIFEST_HASH:"), "Expected package summary manifest hash line");
+  assert(
+    dashboardSource.includes("Unsupported Support Package Version"),
+    "Expected strict support package version gate warning",
+  );
+  assert(dashboardSource.includes("Manifest Version Gate Warning"), "Expected manifest version gate warning panel");
+  assert(dashboardSource.includes("Copy manifest version warning"), "Expected copy control for manifest warning block");
+  assert(dashboardSource.includes("Immutable Hash Anchor Display"), "Expected immutable hash anchor panel");
+  assert(dashboardSource.includes("MANIFEST_HASH_FULL:"), "Expected full manifest hash anchor line");
+  assert(dashboardSource.includes("PACKAGE_HASH_FULL:"), "Expected full package hash anchor line");
+  assert(dashboardSource.includes("Copy full manifest hash"), "Expected full manifest hash copy control");
+  assert(dashboardSource.includes("Copy full package hash"), "Expected full package hash copy control");
+  assert(dashboardSource.includes("Intake Consistency Self-Test"), "Expected intake consistency self-test panel");
+  assert(dashboardSource.includes("INTAKE CONSISTENCY FAILURE"), "Expected intake consistency failure signal");
+
+  const lowerDashboard = dashboardSource.toLowerCase();
+  const entropyTokens = ["timestamp", "duration:", "durationms", "seconds", "date.now", "performance.now", "random", "seed"];
+  for (const token of entropyTokens) {
+    assert(!lowerDashboard.includes(token), `Expected intake UI to avoid entropy token: ${token}`);
+  }
 
   console.log("UI SUPPORT PAGE OK");
 }
