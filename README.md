@@ -80,3 +80,9 @@ Those come after real usage data.
 - Cap/rate-limit banner is deterministic and clears on editor input changes.
 - Prompt scaffold + memory preview rendering/export use stable ordering.
 - Unsaved indicator is pure snapshot-derived (no autosave/timers/debounce).
+- Sprint 11 complete — creator launch hardening and route envelope parity:
+- Creator UI now has deterministic debug bundle + shareable debug link exports.
+- Lint warnings are non-blocking and deterministic; empty states/status copy is consistent.
+- Scenario create/publish routes share additive safe error envelope shape (`error`, `code`) without behavior changes.
+- Smoke surface includes deterministic route envelope parity coverage.
+- Deploy runbook now includes a Sprint 11 launch hardening checklist stub.
