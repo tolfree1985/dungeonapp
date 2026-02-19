@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { buildScenarioDraftBundleText } from "@/lib/buildScenarioDraftBundleText";
+import { mapCreatorErrorMessage } from "@/lib/creator/mapCreatorErrorMessage";
 import { buildPromptParts } from "@/lib/promptScaffold";
 
 type ValidationIssue = { path: string; code: string; message: string };
@@ -14,17 +15,6 @@ type ScenarioListItem = {
   updatedAt: string;
 };
 type MineViewItem = ScenarioListItem & { visibilityBadge: "DRAFT" | "PUBLIC" };
-
-function mapCreatorRequestError(status: number, payload: any): string {
-  const code = typeof payload?.error === "string" ? payload.error : "";
-  if (status === 429 && code === "RATE_LIMITED") {
-    return "Rate limited. Try again later.";
-  }
-  if (status === 429 && code === "SCENARIO_CAP_EXCEEDED") {
-    return "Scenario cap reached for this owner.";
-  }
-  return "Request failed.";
-}
 
 function validateScenarioContentJson(raw: string): {
   ok: boolean;
@@ -247,7 +237,7 @@ export default function CreatorPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        setCreatorRequestStatus(mapCreatorRequestError(res.status, json));
+        setCreatorRequestStatus(mapCreatorErrorMessage({ status: res.status, payload: json }));
         return;
       }
       setCreatorRequestStatus("Draft created.");
