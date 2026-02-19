@@ -9,8 +9,10 @@ import {
   formatCreatorRetryAfterText,
   mapCreatorErrorMessage,
 } from "@/lib/creator/mapCreatorErrorMessage";
+import { REPLAY_GUARD_ORDER, replayStateFromTurnJsonWithGuardSummary } from "@/lib/game/replay";
 import { buildPromptParts } from "@/lib/promptScaffold";
 import { validateScenarioDeterminism } from "@/lib/scenario/validateScenarioDeterminism";
+import { buildSupportManifestFromBundle } from "@/lib/support/supportManifest";
 
 type ValidationIssue = { path: string; code: string; message: string };
 type ScenarioListItem = {
@@ -31,6 +33,16 @@ type StyleLockSummary = {
   genre: string;
   pacing: string;
   status: "LOCKED" | "UNLOCKED";
+};
+type PreviewReplayEvent = { seq: number; turnJson: any };
+type PreviewReplayReport = {
+  finalStateHash: string;
+  turnCount: number;
+  totalStateDeltas: number;
+  totalLedgerEntries: number;
+  guardSummary: string;
+  guardFailures: string[];
+  replayError: string;
 };
 
 const STYLE_LOCK_KEYS: StyleLockKey[] = ["toneLock", "genreLock", "pacingLock"];
@@ -296,8 +308,46 @@ function buildStyleLockSummary(scenario: unknown): StyleLockSummary {
   return { tone, genre, pacing, status };
 }
 
+function toPreviewReplayTurnJson(source: any): any {
+  const direct = source?.turnJson;
+  if (direct && typeof direct === "object") {
+    const deltas = Array.isArray(direct.deltas)
+      ? direct.deltas
+      : Array.isArray(source?.deltas)
+        ? source.deltas
+        : Array.isArray(source?.stateDeltas)
+          ? source.stateDeltas
+          : [];
+    return { ...direct, deltas, resolution: direct?.resolution ?? source?.resolution };
+  }
+
+  const deltas = Array.isArray(source?.deltas)
+    ? source.deltas
+    : Array.isArray(source?.stateDeltas)
+      ? source.stateDeltas
+      : [];
+  return {
+    deltas,
+    ledgerAdds: Array.isArray(source?.ledgerAdds) ? source.ledgerAdds : [],
+    resolution: source?.resolution,
+  };
+}
+
+function extractPreviewReplayEvents(scenario: unknown): PreviewReplayEvent[] {
+  if (!scenario || typeof scenario !== "object") return [];
+  const s = scenario as any;
+  const rawEvents = Array.isArray(s.events) ? s.events : Array.isArray(s.turns) ? s.turns : [];
+  return rawEvents
+    .map((raw: any, index: number) => ({
+      seq: toTurnIndex(raw?.seq ?? raw?.turnIndex, index),
+      turnJson: toPreviewReplayTurnJson(raw),
+    }))
+    .sort((a, b) => a.seq - b.seq);
+}
+
 export default function CreatorPage() {
   const supportNavEnabled = process.env.NODE_ENV !== "production";
+  const previewCheckEnabled = process.env.NODE_ENV !== "production";
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [contentJson, setContentJson] = useState("");
@@ -320,6 +370,8 @@ export default function CreatorPage() {
   const [forkStatus, setForkStatus] = useState("");
   const [billingBanner, setBillingBanner] = useState("");
   const [lastMappedError, setLastMappedError] = useState("");
+  const [previewReplayStatus, setPreviewReplayStatus] = useState("Preview check not run.");
+  const [previewReplayReport, setPreviewReplayReport] = useState<PreviewReplayReport | null>(null);
   const [baselineSnapshot, setBaselineSnapshot] = useState<CreatorSnapshot>({
     title: "",
     summary: "",
@@ -409,6 +461,8 @@ export default function CreatorPage() {
   useEffect(() => {
     setBillingBanner("");
     setLastMappedError("");
+    setPreviewReplayStatus("Preview check not run.");
+    setPreviewReplayReport(null);
   }, [contentJson, creatorTier, forkNewScenarioId, forkSourceScenarioId, ownerId, summary, title]);
   const preflightChecklist = useMemo(
     () => [
@@ -626,10 +680,69 @@ export default function CreatorPage() {
       validationOk: validationView.ok,
       parseError: validationView.parseError,
       issues: validationView.issues,
+      determinismReport: {
+        staticValidation: {
+          status: determinismValidation.valid ? "PASS" : "FAIL",
+          errors: determinismValidation.errors,
+        },
+        previewReplay: previewReplayReport
+          ? {
+              finalStateHash: previewReplayReport.finalStateHash,
+              turnCount: previewReplayReport.turnCount,
+              totalStateDeltas: previewReplayReport.totalStateDeltas,
+              totalLedgerEntries: previewReplayReport.totalLedgerEntries,
+              guardSummary: previewReplayReport.guardSummary,
+              guardFailures: previewReplayReport.guardFailures,
+              replayError: previewReplayReport.replayError,
+            }
+          : null,
+      },
     });
 
     await navigator.clipboard.writeText(text);
     setDraftCopyStatus("Copied");
+  }
+
+  async function onRunDeterministicPreviewCheck() {
+    if (!preview) {
+      setPreviewReplayReport(null);
+      setPreviewReplayStatus("Deterministic preview check unavailable until content JSON parses.");
+      return;
+    }
+
+    try {
+      const events = extractPreviewReplayEvents(preview);
+      const replayWithSummary = replayStateFromTurnJsonWithGuardSummary(events);
+      const guardSummary = replayWithSummary.guardSummary.join(",");
+      const guardFailures = REPLAY_GUARD_ORDER.filter((name) => !replayWithSummary.guardSummary.includes(name));
+      const manifest = await buildSupportManifestFromBundle({ turns: events });
+
+      setPreviewReplayReport({
+        finalStateHash: manifest.replay.finalStateHash,
+        turnCount: manifest.replay.turnCount,
+        totalStateDeltas: manifest.telemetry.totalStateDeltas,
+        totalLedgerEntries: manifest.telemetry.totalLedgerEntries,
+        guardSummary,
+        guardFailures,
+        replayError: "",
+      });
+      setPreviewReplayStatus(
+        guardFailures.length === 0
+          ? "Deterministic preview check passed."
+          : "Deterministic preview check found guard failures.",
+      );
+    } catch {
+      setPreviewReplayReport({
+        finalStateHash: "",
+        turnCount: 0,
+        totalStateDeltas: 0,
+        totalLedgerEntries: 0,
+        guardSummary: "",
+        guardFailures: [...REPLAY_GUARD_ORDER],
+        replayError: "PREVIEW_REPLAY_FAILED",
+      });
+      setPreviewReplayStatus("Deterministic preview check failed.");
+    }
   }
 
   async function onCopyPromptScaffoldBundle() {
@@ -932,6 +1045,54 @@ export default function CreatorPage() {
             </pre>
             <div>Memory preview:</div>
             <pre className="rounded border p-2 whitespace-pre-wrap">{memoryPreview}</pre>
+            {previewCheckEnabled ? (
+              <div className="mt-2 space-y-2 rounded border p-2 text-xs" aria-label="Deterministic preview check">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={onRunDeterministicPreviewCheck}
+                    className="rounded border px-2 py-1 text-xs"
+                  >
+                    Deterministic Preview Check
+                  </button>
+                  <span role="status" aria-live="polite">
+                    {previewReplayStatus}
+                  </span>
+                </div>
+                {previewReplayReport ? (
+                  <div className="space-y-1">
+                    <div>Final state hash: {previewReplayReport.finalStateHash || "(none)"}</div>
+                    <div>
+                      Telemetry summary: turns={previewReplayReport.turnCount} deltas=
+                      {previewReplayReport.totalStateDeltas} ledger={previewReplayReport.totalLedgerEntries}
+                    </div>
+                    <div>
+                      REPLAY_GUARD_SUMMARY{" "}
+                      {previewReplayReport.guardSummary.length > 0
+                        ? previewReplayReport.guardSummary
+                        : "(none)"}
+                    </div>
+                    {previewReplayReport.replayError || previewReplayReport.guardFailures.length > 0 ? (
+                      <div className="rounded border border-red-500 p-2 text-red-700">
+                        Guard failures:
+                        <ol className="mt-1 list-decimal space-y-1 pl-6">
+                          {previewReplayReport.replayError ? (
+                            <li>{previewReplayReport.replayError}</li>
+                          ) : null}
+                          {previewReplayReport.guardFailures.map((name) => (
+                            <li key={`preview-guard-failure:${name}`}>{name}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    ) : (
+                      <div className="rounded border border-emerald-500 p-2 text-emerald-700">
+                        Guard failures: none
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         )}
       </section>

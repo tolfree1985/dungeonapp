@@ -62,6 +62,10 @@ Only variables currently read by app/runtime code are listed.
 - JSON import must fail with canonical inline error text only; no stack traces.
 - Preflight + publish gating are UI-derived only; no extra backend preflight calls.
 - Prompt/memory previews and copy exports must use stable section ordering and stable key ordering.
+- Before publishing, run `Deterministic Preview Check` (dev-only) in Creator and confirm:
+  - `Final state hash` is present
+  - `Telemetry summary` is present
+  - `REPLAY_GUARD_SUMMARY` is present with no guard failures
 - Verify creator deterministic surface:
   - `npm run ci:creator`
   - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-creator-error-mapping.ts`

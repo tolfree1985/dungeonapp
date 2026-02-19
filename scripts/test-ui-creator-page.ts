@@ -21,6 +21,13 @@ function main() {
   assert(source.includes("DETERMINISM VALIDATED"), 'Expected deterministic preview success banner');
   assert(source.includes("DETERMINISM VALIDATION FAILED"), 'Expected deterministic preview failure banner');
   assert(source.includes("Determinism errors"), 'Expected deterministic error list label');
+  assert(source.includes("Deterministic Preview Check"), 'Expected deterministic preview check control');
+  assert(source.includes("Preview check not run."), 'Expected deterministic preview status baseline');
+  assert(source.includes("Final state hash:"), 'Expected deterministic preview hash output label');
+  assert(source.includes("Telemetry summary:"), 'Expected deterministic preview telemetry output label');
+  assert(source.includes("REPLAY_GUARD_SUMMARY"), 'Expected deterministic replay guard summary output label');
+  assert(source.includes("Guard failures:"), 'Expected deterministic replay guard failures label');
+  assert(source.includes("PREVIEW_REPLAY_FAILED"), 'Expected deterministic preview replay failure marker');
   assert(source.includes("STYLE LOCK SUMMARY"), 'Expected style lock summary panel heading');
   assert(source.includes("Tone:"), 'Expected style lock summary tone row');
   assert(source.includes("Genre:"), 'Expected style lock summary genre row');
@@ -57,6 +64,7 @@ function main() {
     source.includes("Copy scenario draft bundle"),
     'Expected "Copy scenario draft bundle" control',
   );
+  assert(source.includes("determinismReport"), 'Expected draft export determinismReport embedding');
   assert(source.includes("My scenarios"), 'Expected "My scenarios" section');
   assert(source.includes("Load mine"), 'Expected "Load mine" control');
   assert(

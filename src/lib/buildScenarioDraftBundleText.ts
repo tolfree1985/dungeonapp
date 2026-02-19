@@ -11,6 +11,7 @@ export function buildScenarioDraftBundleText(args: {
   validationOk: boolean;
   parseError: string | null;
   issues: ValidationIssue[];
+  determinismReport?: unknown;
 }): string {
   const lines: string[] = [];
   lines.push("Scenario draft bundle");
@@ -31,7 +32,31 @@ export function buildScenarioDraftBundleText(args: {
   }
 
   lines.push("");
+  lines.push("Determinism report:");
+  if (args.determinismReport === undefined) {
+    lines.push("(none)");
+  } else {
+    lines.push(JSON.stringify(args.determinismReport, null, 2));
+  }
+
+  let exportContentJson = args.contentJson;
+  if (args.determinismReport !== undefined) {
+    try {
+      const parsed = JSON.parse(args.contentJson) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const withReport = {
+          ...(parsed as Record<string, unknown>),
+          determinismReport: args.determinismReport,
+        };
+        exportContentJson = JSON.stringify(withReport, null, 2);
+      }
+    } catch {
+      exportContentJson = args.contentJson;
+    }
+  }
+
+  lines.push("");
   lines.push("Content JSON:");
-  lines.push(args.contentJson);
+  lines.push(exportContentJson);
   return lines.join("\n");
 }
