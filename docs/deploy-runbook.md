@@ -46,6 +46,17 @@ Only variables currently read by app/runtime code are listed.
 - `npm run ci:creator`
 - Run deterministic smoke command (below).
 
+## Creator billing/cap support (Sprint 10B)
+- Creator inline errors must use deterministic static copy only.
+- No retry countdowns, autosave, or timed UI resets in creator billing/cap flows.
+- `/api/turn` errors must remain normalized and non-leaky:
+  - preserve stable `error`/`code` fields
+  - never include stack traces or internal Prisma messages
+- Keep deterministic checks green:
+  - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-route-turn-error-normalization.ts`
+  - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-creator-error-mapping.ts`
+  - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-ui-creator-page.ts`
+
 ## Deterministic smoke command
 Run in CI/staging with valid `DATABASE_URL`:
 
