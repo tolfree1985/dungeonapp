@@ -45,10 +45,19 @@ export default function SupportPage() {
     },
   ];
 
+  const runbookText = hasFile(deployRunbookPath) ? fs.readFileSync(deployRunbookPath, "utf8") : "";
+  const runbookSectionChecks = [
+    { label: "Build", exists: runbookText.includes("Build") },
+    { label: "Migrate", exists: runbookText.includes("migrate") || runbookText.includes("Migrate") },
+    { label: "Rollback", exists: runbookText.includes("Rollback") || runbookText.includes("rollback") },
+    { label: "Smoke", exists: runbookText.includes("Smoke") || runbookText.includes("smoke") },
+  ];
+
   return (
     <SupportDashboard
       debugEndpointAvailable={hasFile(debugBundleRoutePath)}
       runbookLinks={runbookLinks}
+      runbookSectionChecks={runbookSectionChecks}
     />
   );
 }

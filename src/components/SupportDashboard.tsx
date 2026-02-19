@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministicReproCliText";
+import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
 
 type RunbookLink = {
   label: string;
@@ -8,9 +10,15 @@ type RunbookLink = {
   exists: boolean;
 };
 
+type RunbookSectionCheck = {
+  label: string;
+  exists: boolean;
+};
+
 type SupportDashboardProps = {
   debugEndpointAvailable: boolean;
   runbookLinks: RunbookLink[];
+  runbookSectionChecks: RunbookSectionCheck[];
 };
 
 type DiffRow = {
@@ -18,6 +26,23 @@ type DiffRow = {
   kind: "added" | "removed" | "changed";
   left: string;
   right: string;
+};
+
+type BundleMetadata = {
+  engineVersion: string;
+  scenarioContentHash: string;
+  adventureId: string;
+  latestTurnIndex: string;
+  buildVersion: string;
+};
+
+type TurnRow = {
+  turnIndex: string;
+  playerInput: string;
+  resolution: string;
+  narrative: string;
+  stateDeltas: unknown[];
+  ledgerAdds: unknown[];
 };
 
 function compareText(a: string, b: string): number {
@@ -128,17 +153,138 @@ function buildDiffRows(left: unknown, right: unknown): DiffRow[] {
   return rows;
 }
 
-function readStringField(bundle: unknown, key: string): string {
-  if (!isRecord(bundle)) return "";
-  const value = bundle[key];
-  if (typeof value === "string") return value;
-  if (typeof value === "number") return String(value);
+function readPath(bundle: unknown, path: string[]): unknown {
+  let current: unknown = bundle;
+  for (const key of path) {
+    if (!isRecord(current)) return undefined;
+    current = current[key];
+  }
+  return current;
+}
+
+function readPathString(bundle: unknown, candidates: string[][]): string {
+  for (const candidate of candidates) {
+    const value = readPath(bundle, candidate);
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+    if (typeof value === "number") return String(value);
+  }
   return "";
 }
 
-function readChecklistField(bundle: unknown, key: string): string {
-  const value = readStringField(bundle, key).trim();
-  return value;
+function readPathArray(bundle: unknown, candidates: string[][]): unknown[] {
+  for (const candidate of candidates) {
+    const value = readPath(bundle, candidate);
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+function extractMetadata(bundle: unknown): BundleMetadata {
+  return {
+    engineVersion: readPathString(bundle, [["engineVersion"], ["engine", "version"], ["debug", "engineVersion"]]),
+    scenarioContentHash: readPathString(bundle, [
+      ["scenarioContentHash"],
+      ["scenario", "contentHash"],
+      ["debug", "scenarioContentHash"],
+    ]),
+    adventureId: readPathString(bundle, [["adventureId"], ["adventure", "id"], ["debug", "adventureId"]]),
+    latestTurnIndex: readPathString(bundle, [
+      ["latestTurnIndex"],
+      ["adventure", "latestTurnIndex"],
+      ["debug", "latestTurnIndex"],
+    ]),
+    buildVersion: readPathString(bundle, [["buildVersion"], ["build", "version"], ["debug", "buildVersion"]]),
+  };
+}
+
+function extractTurnRows(bundle: unknown): TurnRow[] {
+  const turns = readPathArray(bundle, [["turns"]]);
+  const rows: TurnRow[] = [];
+
+  turns.forEach((turn, index) => {
+    if (!isRecord(turn)) return;
+
+    const turnIndexRaw = turn.turnIndex;
+    const turnIndex =
+      typeof turnIndexRaw === "number"
+        ? String(turnIndexRaw)
+        : typeof turnIndexRaw === "string" && turnIndexRaw.trim().length > 0
+          ? turnIndexRaw
+          : String(index);
+
+    const playerInput =
+      (typeof turn.playerInput === "string" && turn.playerInput) ||
+      (typeof turn.input === "string" && turn.input) ||
+      (typeof turn.playerText === "string" && turn.playerText) ||
+      "(none)";
+
+    const resolution =
+      typeof turn.resolution === "string"
+        ? turn.resolution
+        : turn.resolution !== undefined
+          ? stableStringify(turn.resolution)
+          : "(none)";
+
+    const narrative =
+      (typeof turn.assistantText === "string" && turn.assistantText) ||
+      (typeof turn.scene === "string" && turn.scene) ||
+      "(none)";
+
+    const stateDeltas = Array.isArray(turn.stateDeltas) ? turn.stateDeltas : [];
+    const ledgerAdds = Array.isArray(turn.ledgerAdds) ? turn.ledgerAdds : [];
+
+    rows.push({
+      turnIndex,
+      playerInput,
+      resolution,
+      narrative,
+      stateDeltas,
+      ledgerAdds,
+    });
+  });
+
+  return rows;
+}
+
+function extractDeltaPath(delta: unknown): string {
+  if (!isRecord(delta)) return "";
+  const path = delta.path;
+  if (typeof path === "string") return path;
+  if (Array.isArray(path)) return path.map((part) => String(part)).join(".");
+  return "";
+}
+
+function hasDeltaKeyword(deltas: unknown[], keywords: string[]): boolean {
+  const lowered = keywords.map((k) => k.toLowerCase());
+  return deltas.some((delta) => {
+    const path = extractDeltaPath(delta).toLowerCase();
+    if (!path) return false;
+    return lowered.some((k) => path.includes(k));
+  });
+}
+
+function summarizeDeltaKinds(deltas: unknown[]): string[] {
+  const tags: string[] = [];
+  if (hasDeltaKeyword(deltas, ["inventory", "item", "bag", "loot"])) tags.push("inventory");
+  if (hasDeltaKeyword(deltas, ["stat", "hp", "health", "xp", "level"])) tags.push("stat");
+  if (hasDeltaKeyword(deltas, ["relationship", "relation", "trust", "affinity"])) tags.push("relationship");
+  return tags;
+}
+
+function truncateText(value: string, maxLen: number): string {
+  if (value.length <= maxLen) return value;
+  return `${value.slice(0, maxLen)}...(truncated)`;
+}
+
+function computeLedgerEntryCount(bundle: unknown, turnRows: TurnRow[]): number {
+  const fromTurns = turnRows.reduce((sum, row) => sum + row.ledgerAdds.length, 0);
+  if (fromTurns > 0) return fromTurns;
+  return readPathArray(bundle, [["ledgerAdds"]]).length;
+}
+
+function computeMemoryCardCount(bundle: unknown): number {
+  const cards = readPathArray(bundle, [["memoryCards"], ["memory", "cards"], ["initialState", "memory", "cards"]]);
+  return cards.length;
 }
 
 function buildIssueBlock(args: {
@@ -204,37 +350,78 @@ function JsonTreeNode({ label, value }: { label: string; value: unknown }) {
   );
 }
 
-export function SupportDashboard({ debugEndpointAvailable, runbookLinks }: SupportDashboardProps) {
+export function SupportDashboard({ debugEndpointAvailable, runbookLinks, runbookSectionChecks }: SupportDashboardProps) {
   const [bundleId, setBundleId] = useState("");
   const [bundleStatus, setBundleStatus] = useState("No bundle loaded.");
-  const [bundleData, setBundleData] = useState<unknown | null>(null);
+  const [bundleJsonText, setBundleJsonText] = useState("");
+  const [bundleJsonStatus, setBundleJsonStatus] = useState("No bundle JSON pasted.");
+  const [loadedBundleData, setLoadedBundleData] = useState<unknown | null>(null);
+  const [pastedBundleData, setPastedBundleData] = useState<unknown | null>(null);
   const [redactionPreview, setRedactionPreview] = useState(false);
+  const [minimalReproMode, setMinimalReproMode] = useState(false);
   const [issueCopyStatus, setIssueCopyStatus] = useState("");
+  const [reproCliCopyStatus, setReproCliCopyStatus] = useState("");
+  const [shareBlockCopyStatus, setShareBlockCopyStatus] = useState("");
   const [leftCompareJson, setLeftCompareJson] = useState("");
   const [rightCompareJson, setRightCompareJson] = useState("");
 
+  const bundleData = pastedBundleData ?? loadedBundleData;
+  const metadata = useMemo(() => extractMetadata(bundleData), [bundleData]);
+  const turnRows = useMemo(() => extractTurnRows(bundleData), [bundleData]);
+
   const checklistRows = useMemo(
     () => [
-      { key: "engineVersion", label: "engineVersion" },
-      { key: "scenarioContentHash", label: "scenarioContentHash" },
-      { key: "adventureId", label: "adventureId" },
-      { key: "latestTurnIndex", label: "latestTurnIndex" },
-      { key: "buildVersion", label: "buildVersion" },
+      { key: "engineVersion", label: "engineVersion", value: metadata.engineVersion },
+      { key: "scenarioContentHash", label: "scenarioContentHash", value: metadata.scenarioContentHash },
+      { key: "adventureId", label: "adventureId", value: metadata.adventureId },
+      { key: "latestTurnIndex", label: "latestTurnIndex", value: metadata.latestTurnIndex },
+      { key: "buildVersion", label: "buildVersion", value: metadata.buildVersion },
     ],
-    [],
+    [metadata],
   );
 
-  const bundleEngineVersion = readStringField(bundleData, "engineVersion");
-  const bundleScenarioHash = readStringField(bundleData, "scenarioContentHash");
+  const integrityBadge = useMemo(() => {
+    const criticalMissing = !metadata.engineVersion || !metadata.scenarioContentHash;
+    const nonCriticalMissing = !metadata.adventureId || !metadata.latestTurnIndex || !metadata.buildVersion;
+
+    if (criticalMissing) {
+      return { label: "RED: Missing engineVersion or scenarioContentHash", cls: "text-red-700" };
+    }
+    if (nonCriticalMissing) {
+      return { label: "YELLOW: Missing non-critical fields", cls: "text-amber-700" };
+    }
+    return { label: "GREEN: Required deterministic invariants present", cls: "text-green-700" };
+  }, [metadata.adventureId, metadata.buildVersion, metadata.engineVersion, metadata.latestTurnIndex, metadata.scenarioContentHash]);
 
   const issueBlockText = useMemo(
     () =>
       buildIssueBlock({
         bundleId,
-        engineVersion: bundleEngineVersion,
-        scenarioContentHash: bundleScenarioHash,
+        engineVersion: metadata.engineVersion,
+        scenarioContentHash: metadata.scenarioContentHash,
       }),
-    [bundleEngineVersion, bundleId, bundleScenarioHash],
+    [bundleId, metadata.engineVersion, metadata.scenarioContentHash],
+  );
+
+  const reproCliText = useMemo(
+    () =>
+      buildDeterministicReproCliText({
+        bundleId,
+        engineVersion: metadata.engineVersion,
+        scenarioContentHash: metadata.scenarioContentHash,
+      }),
+    [bundleId, metadata.engineVersion, metadata.scenarioContentHash],
+  );
+
+  const shareBlockText = useMemo(
+    () =>
+      buildSupportShareBlockText({
+        bundleId,
+        engineVersion: metadata.engineVersion,
+        scenarioContentHash: metadata.scenarioContentHash,
+        turn: metadata.latestTurnIndex,
+      }),
+    [bundleId, metadata.engineVersion, metadata.latestTurnIndex, metadata.scenarioContentHash],
   );
 
   const prettyBundleText = useMemo(() => {
@@ -269,16 +456,55 @@ export function SupportDashboard({ debugEndpointAvailable, runbookLinks }: Suppo
     }
   }, [leftCompareJson, rightCompareJson]);
 
+  const bundleInspector = useMemo(() => {
+    if (bundleData == null) {
+      return { bytes: 0, turns: 0, ledgerEntries: 0, memoryCards: 0 };
+    }
+
+    const bytes = new TextEncoder().encode(stableStringify(bundleData)).length;
+    return {
+      bytes,
+      turns: turnRows.length,
+      ledgerEntries: computeLedgerEntryCount(bundleData, turnRows),
+      memoryCards: computeMemoryCardCount(bundleData),
+    };
+  }, [bundleData, turnRows]);
+
+  const missingRunbookSections = useMemo(
+    () => runbookSectionChecks.filter((section) => !section.exists).map((section) => section.label),
+    [runbookSectionChecks],
+  );
+
+  function onBundleJsonChange(value: string) {
+    setBundleJsonText(value);
+
+    const raw = value.trim();
+    if (!raw) {
+      setPastedBundleData(null);
+      setBundleJsonStatus("No bundle JSON pasted.");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      setPastedBundleData(parsed);
+      setBundleJsonStatus("Bundle JSON parsed.");
+    } catch {
+      setPastedBundleData(null);
+      setBundleJsonStatus("Bundle JSON invalid.");
+    }
+  }
+
   async function onLoadBundle() {
     const id = bundleId.trim();
     if (!id) {
-      setBundleData(null);
+      setLoadedBundleData(null);
       setBundleStatus("bundleId is required.");
       return;
     }
 
     if (!debugEndpointAvailable) {
-      setBundleData(null);
+      setLoadedBundleData(null);
       setBundleStatus("Debug bundle endpoint not found.");
       return;
     }
@@ -286,22 +512,22 @@ export function SupportDashboard({ debugEndpointAvailable, runbookLinks }: Suppo
     try {
       const res = await fetch(`/api/debug/bundle/${encodeURIComponent(id)}`);
       if (!res.ok) {
-        setBundleData(null);
+        setLoadedBundleData(null);
         setBundleStatus("Bundle not found.");
         return;
       }
 
       const json = await res.json().catch(() => null);
       if (json == null) {
-        setBundleData(null);
+        setLoadedBundleData(null);
         setBundleStatus("Bundle payload invalid.");
         return;
       }
 
-      setBundleData(json);
+      setLoadedBundleData(json);
       setBundleStatus("Bundle loaded.");
     } catch {
-      setBundleData(null);
+      setLoadedBundleData(null);
       setBundleStatus("Bundle request failed.");
     }
   }
@@ -314,6 +540,26 @@ export function SupportDashboard({ debugEndpointAvailable, runbookLinks }: Suppo
 
     await navigator.clipboard.writeText(issueBlockText);
     setIssueCopyStatus("Copied");
+  }
+
+  async function onCopyReproCliBlock() {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      setReproCliCopyStatus("Copy not supported");
+      return;
+    }
+
+    await navigator.clipboard.writeText(reproCliText);
+    setReproCliCopyStatus("Copied");
+  }
+
+  async function onCopyShareBlock() {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      setShareBlockCopyStatus("Copy not supported");
+      return;
+    }
+
+    await navigator.clipboard.writeText(shareBlockText);
+    setShareBlockCopyStatus("Copied");
   }
 
   return (
@@ -351,20 +597,40 @@ export function SupportDashboard({ debugEndpointAvailable, runbookLinks }: Suppo
             {bundleStatus}
           </span>
         </div>
+        <div className="mt-2">
+          <label htmlFor="support-bundle-json" className="mb-1 block text-xs">
+            Paste bundle JSON
+          </label>
+          <textarea
+            id="support-bundle-json"
+            value={bundleJsonText}
+            onChange={(e) => onBundleJsonChange(e.target.value)}
+            className="w-full rounded border p-2 font-mono text-xs"
+            rows={6}
+            placeholder='{"engineVersion":"...","scenarioContentHash":"..."}'
+          />
+          <div className="mt-1 text-xs" role="status" aria-live="polite">
+            {bundleJsonStatus}
+          </div>
+        </div>
         <div className="mt-1 text-xs">
           Endpoint availability: {debugEndpointAvailable ? "available" : "not found"}
         </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Determinism integrity badge">
+        <h2 className="text-base font-semibold">Determinism Integrity</h2>
+        <div className={`mt-2 font-medium ${integrityBadge.cls}`}>{integrityBadge.label}</div>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Reproduction Checklist">
         <h2 className="text-base font-semibold">Reproduction Checklist</h2>
         <ol className="mt-2 list-decimal space-y-1 pl-6">
           {checklistRows.map((row) => {
-            const value = readChecklistField(bundleData, row.key);
-            const hasValue = value.length > 0;
+            const hasValue = row.value.length > 0;
             return (
               <li key={row.key} className={hasValue ? "text-green-700" : "text-red-700"}>
-                {row.label}: {hasValue ? value : "missing"}
+                {row.label}: {hasValue ? row.value : "missing"}
               </li>
             );
           })}
@@ -373,15 +639,80 @@ export function SupportDashboard({ debugEndpointAvailable, runbookLinks }: Suppo
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Issue Draft Generator">
         <h2 className="text-base font-semibold">Issue Draft Generator</h2>
-        <div className="mt-2 flex items-center gap-3">
+        <div className="mt-2 flex flex-wrap items-center gap-3">
           <button type="button" onClick={onCopyIssueBlock} className="rounded border px-2 py-1 text-xs">
             Copy issue block
           </button>
+          <button type="button" onClick={onCopyReproCliBlock} className="rounded border px-2 py-1 text-xs">
+            Copy deterministic repro CLI block
+          </button>
+          <button type="button" onClick={onCopyShareBlock} className="rounded border px-2 py-1 text-xs">
+            Copy stable share block v2
+          </button>
           <span role="status" aria-live="polite">
-            {issueCopyStatus}
+            {issueCopyStatus || reproCliCopyStatus || shareBlockCopyStatus}
           </span>
         </div>
         <pre className="mt-2 rounded border p-2 whitespace-pre-wrap">{issueBlockText}</pre>
+        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap">{reproCliText}</pre>
+        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap">{shareBlockText}</pre>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Structured Timeline Viewer">
+        <h2 className="text-base font-semibold">Structured Timeline Viewer</h2>
+        <label className="mt-2 inline-flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={minimalReproMode}
+            onChange={(e) => setMinimalReproMode(e.target.checked)}
+          />
+          Minimal Repro Mode
+        </label>
+        <div className="mt-1 text-xs">Show only inputs, resolution, state deltas, and ledger entries.</div>
+
+        {turnRows.length === 0 ? (
+          <div className="mt-2">No replay events</div>
+        ) : (
+          <div className="mt-2 overflow-auto">
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr>
+                  <th className="border p-2 text-left">turnIndex</th>
+                  <th className="border p-2 text-left">playerInput</th>
+                  <th className="border p-2 text-left">resolution</th>
+                  <th className="border p-2 text-left">stateDelta count</th>
+                  <th className="border p-2 text-left">ledger entries count</th>
+                  <th className="border p-2 text-left">delta highlights</th>
+                  {!minimalReproMode ? <th className="border p-2 text-left">narrative</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {turnRows.map((row) => {
+                  const tags = summarizeDeltaKinds(row.stateDeltas);
+                  return (
+                    <tr key={row.turnIndex}>
+                      <td className="border p-2">{row.turnIndex}</td>
+                      <td className="border p-2">{truncateText(row.playerInput, 80)}</td>
+                      <td className="border p-2">{truncateText(row.resolution, 80)}</td>
+                      <td className="border p-2">{row.stateDeltas.length}</td>
+                      <td className="border p-2">{row.ledgerAdds.length}</td>
+                      <td className="border p-2">
+                        {tags.length === 0
+                          ? "(none)"
+                          : tags.map((tag) => (
+                              <span key={`${row.turnIndex}-${tag}`} className="mr-1 rounded border px-1 py-0.5">
+                                {tag}
+                              </span>
+                            ))}
+                      </td>
+                      {!minimalReproMode ? <td className="border p-2">{truncateText(row.narrative, 80)}</td> : null}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Redaction Preview">
@@ -395,6 +726,14 @@ export function SupportDashboard({ debugEndpointAvailable, runbookLinks }: Suppo
           Enable redaction preview
         </label>
         <div className="mt-1 text-xs">Masks emails, long tokens, and JWT-like strings in display only.</div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Bundle Size Inspector">
+        <h2 className="text-base font-semibold">Bundle Size + Field Count Inspector</h2>
+        <div className="mt-2">JSON size (bytes): {bundleInspector.bytes}</div>
+        <div>turn count: {bundleInspector.turns}</div>
+        <div>ledger entry count: {bundleInspector.ledgerEntries}</div>
+        <div>memory card count: {bundleInspector.memoryCards}</div>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Bundle JSON Pretty Viewer">
@@ -475,6 +814,22 @@ export function SupportDashboard({ debugEndpointAvailable, runbookLinks }: Suppo
             </li>
           ))}
         </ul>
+
+        <div className="mt-3 rounded border p-2" aria-label="Runbook Cross-Check">
+          <div className="text-xs font-semibold">Runbook Cross-Check Widget</div>
+          <ul className="mt-1 space-y-1 text-xs">
+            {runbookSectionChecks.map((section) => (
+              <li key={section.label}>
+                {section.label}: {section.exists ? "FOUND" : "MISSING"}
+              </li>
+            ))}
+          </ul>
+          {missingRunbookSections.length > 0 ? (
+            <div className="mt-1 text-xs">Missing sections warning: {missingRunbookSections.join(", ")}</div>
+          ) : (
+            <div className="mt-1 text-xs">Missing sections warning: none</div>
+          )}
+        </div>
       </section>
     </main>
   );
