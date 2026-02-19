@@ -48,6 +48,26 @@ function groupValidationIssues(issues: ValidationIssue[]): Array<{ path: string;
   return groups;
 }
 
+function normalizeJsonForDisplay(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeJsonForDisplay(entry));
+  }
+  if (value && typeof value === "object") {
+    const input = value as Record<string, unknown>;
+    const output: Record<string, unknown> = {};
+    const keys = Object.keys(input).sort(compareText);
+    for (const key of keys) {
+      output[key] = normalizeJsonForDisplay(input[key]);
+    }
+    return output;
+  }
+  return value;
+}
+
+function stableJsonDisplay(value: unknown): string {
+  return JSON.stringify(normalizeJsonForDisplay(value), null, 2);
+}
+
 function validateScenarioContentJson(raw: string): {
   ok: boolean;
   parseError: string | null;
@@ -235,6 +255,16 @@ export default function CreatorPage() {
     ],
     [contentJson, preview, summary, title, validation.ok],
   );
+  const memoryPreview = useMemo(() => {
+    if (!preview || typeof preview !== "object") {
+      return "(none)";
+    }
+    const memory = (preview as any)?.initialState?.memory;
+    if (memory == null) {
+      return "(none)";
+    }
+    return stableJsonDisplay(memory);
+  }, [preview]);
 
   async function loadMyScenarios() {
     const trimmedOwnerId = ownerId.trim();
@@ -578,6 +608,8 @@ export default function CreatorPage() {
                 ? preview.start.prompt
                 : "(missing)"}
             </pre>
+            <div>Memory preview:</div>
+            <pre className="rounded border p-2 whitespace-pre-wrap">{memoryPreview}</pre>
           </div>
         )}
       </section>
