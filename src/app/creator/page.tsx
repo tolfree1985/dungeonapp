@@ -568,7 +568,9 @@ export default function CreatorPage() {
             <button type="button" onClick={onImportJson} className="rounded border px-2 py-1 text-xs">
               Import JSON
             </button>
-            <span>{jsonImportStatus}</span>
+            <span role="status" aria-live="polite">
+              {jsonImportStatus}
+            </span>
           </div>
           {jsonImportStatus.startsWith("Import error:") ? (
             <div className="mt-2 rounded border p-2 text-xs" aria-label="JSON import error">
@@ -620,9 +622,10 @@ export default function CreatorPage() {
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Editor empty state">
-        <div>Title: {emptyState.title ? "empty" : "ready"}</div>
-        <div>Summary: {emptyState.summary ? "empty" : "ready"}</div>
-        <div>Content JSON: {emptyState.contentJson ? "empty" : "ready"}</div>
+        <h2 className="text-base font-semibold">Editor readiness</h2>
+        <div className="mt-2">Title field: {emptyState.title ? "empty" : "ready"}</div>
+        <div>Summary field: {emptyState.summary ? "empty" : "ready"}</div>
+        <div>Content JSON field: {emptyState.contentJson ? "empty" : "ready"}</div>
         <div>Unsaved changes: {hasUnsavedChanges ? "yes" : "no"}</div>
       </section>
 
@@ -741,7 +744,9 @@ export default function CreatorPage() {
           <button type="button" onClick={onCreateDraft} className="rounded border px-2 py-1 text-xs">
             Create draft
           </button>
-          <span>{createDraftStatus}</span>
+          <span role="status" aria-live="polite">
+            {createDraftStatus}
+          </span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <label htmlFor="fork-source-id" className="text-xs">
@@ -767,7 +772,9 @@ export default function CreatorPage() {
           <button type="button" onClick={onForkScenario} className="rounded border px-2 py-1 text-xs">
             Fork scenario
           </button>
-          <span>{forkStatus}</span>
+          <span role="status" aria-live="polite">
+            {forkStatus}
+          </span>
         </div>
       </section>
 
@@ -777,13 +784,17 @@ export default function CreatorPage() {
           <button type="button" onClick={onCopyDraftBundle} className="rounded border px-2 py-1 text-xs">
             Copy scenario draft bundle
           </button>
-          <span>{draftCopyStatus}</span>
+          <span role="status" aria-live="polite">
+            {draftCopyStatus}
+          </span>
         </div>
         <div className="mt-2 flex items-center gap-3">
           <button type="button" onClick={onCopyCreatorDebugBundle} className="rounded border px-2 py-1 text-xs">
             Copy creator debug bundle
           </button>
-          <span>{debugBundleCopyStatus}</span>
+          <span role="status" aria-live="polite">
+            {debugBundleCopyStatus}
+          </span>
         </div>
       </section>
 
@@ -803,7 +814,9 @@ export default function CreatorPage() {
           <button type="button" onClick={loadMyScenarios} className="rounded border px-2 py-1 text-xs">
             Load mine
           </button>
-          <span>{mineStatus}</span>
+          <span role="status" aria-live="polite">
+            {mineStatus}
+          </span>
         </div>
         <ol className="mt-3 list-decimal space-y-2 pl-6">
           {myScenarios.map((s) => (
@@ -827,7 +840,9 @@ export default function CreatorPage() {
           >
             Copy prompt scaffold bundle
           </button>
-          <span>{promptBundleCopyStatus}</span>
+          <span role="status" aria-live="polite">
+            {promptBundleCopyStatus}
+          </span>
         </div>
         {!promptParts ? (
           <div className="mt-2">Prompt scaffold preview unavailable.</div>
