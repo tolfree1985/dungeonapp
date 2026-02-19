@@ -5,6 +5,7 @@ import { categorizeDeltaPath } from "@/lib/support/deltaPathMeaningMap";
 import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministicReproCliText";
 import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
 import { buildSupportTurnReproBlockText } from "@/lib/support/buildSupportTurnReproBlockText";
+import { buildSupportCriticalAnchorsText } from "@/lib/support/buildSupportCriticalAnchorsText";
 import {
   SUPPORT_MANIFEST_VERSION,
   TELEMETRY_VERSION,
@@ -766,6 +767,14 @@ function buildRunbookSectionCopyText(section: RunbookSection): string {
   return [`### Runbook Section: ${section.label}`, section.exists ? section.text : "NOT FOUND"].join("\n\n");
 }
 
+function normalizeCopyBlock(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/g, ""))
+    .join("\n")
+    .replace(/\n+$/g, "");
+}
+
 function JsonTreeNode({ label, value }: { label: string; value: unknown }) {
   if (Array.isArray(value)) {
     return (
@@ -844,6 +853,7 @@ export function SupportDashboard({
   const [supportPackageIssueCopyStatus, setSupportPackageIssueCopyStatus] = useState("");
   const [supportPackageCliCopyStatus, setSupportPackageCliCopyStatus] = useState("");
   const [supportPackageImmutableHashCopyStatus, setSupportPackageImmutableHashCopyStatus] = useState("");
+  const [criticalAnchorsCopyStatus, setCriticalAnchorsCopyStatus] = useState("");
   const [intakeConsistencyState, setIntakeConsistencyState] = useState<IntakeConsistencyState>({
     status: "idle",
     message: "No support package loaded.",
@@ -1247,6 +1257,10 @@ export function SupportDashboard({
     return first ? first.label : "(none)";
   }, [supportPackageDiffRows]);
 
+  const noBundleLoaded = bundleData == null;
+  const noSupportPackageLoaded = supportPackageData == null;
+  const noDiffComparisonLoaded = !leftPackageDiffState.pkg || !rightPackageDiffState.pkg;
+
   const replayTelemetry = useMemo<ReplayTelemetryDerived>(() => {
     if (supportManifest) {
       return {
@@ -1426,6 +1440,66 @@ export function SupportDashboard({
     telemetryDrift.isDrift,
     telemetryDrift.severity,
   ]);
+
+  const driftParityMismatch = useMemo(
+    () => !!supportPackageData && supportPackageData.drift.severity !== telemetryDrift.severity,
+    [supportPackageData, telemetryDrift.severity],
+  );
+
+  const packageTamperDetected = supportPackageHashBadge.label === "PACKAGE TAMPER DETECTED";
+  const integrityFailure = !!supportPackageData && !supportPackageManifestIntegrity.allTrue;
+  const validationComplete =
+    !!supportPackageData &&
+    !supportPackageIntakeBlocked &&
+    !integrityFailure &&
+    !packageTamperDetected &&
+    intakeConsistencyState.status === "pass" &&
+    !driftParityMismatch;
+
+  const nextActionText = useMemo(() => {
+    if (integrityFailure || supportPackageIntakeBlocked || packageTamperDetected || intakeConsistencyState.status === "fail") {
+      return "Resolve integrity before proceeding.";
+    }
+    if (telemetryDrift.isDrift || driftParityMismatch) {
+      return "Inspect first drift turn.";
+    }
+    if (validationComplete) {
+      return "Safe to generate issue draft.";
+    }
+    return "Resolve integrity before proceeding.";
+  }, [
+    driftParityMismatch,
+    intakeConsistencyState.status,
+    integrityFailure,
+    packageTamperDetected,
+    supportPackageIntakeBlocked,
+    telemetryDrift.isDrift,
+    validationComplete,
+  ]);
+
+  const criticalAnchorsText = useMemo(
+    () =>
+      buildSupportCriticalAnchorsText({
+        manifestHash: supportPackageData?.manifestHash ?? "",
+        packageHash: supportPackageComputedHash,
+        finalStateHash: replayTelemetry.finalStateHash,
+        driftSeverity: supportPackageData?.drift.severity ?? telemetryDrift.severity,
+      }),
+    [replayTelemetry.finalStateHash, supportPackageComputedHash, supportPackageData, telemetryDrift.severity],
+  );
+
+  const advancedDiagnosticsPerTurnText = useMemo(
+    () =>
+      perTurnTelemetry.length === 0
+        ? "(none)"
+        : perTurnTelemetry
+            .map(
+              (row) =>
+                `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution}`,
+            )
+            .join("\n"),
+    [perTurnTelemetry],
+  );
 
   const shareBlockText = useMemo(
     () =>
@@ -1654,12 +1728,13 @@ export function SupportDashboard({
   }
 
   async function copyText(text: string, onStatus: (status: string) => void) {
+    const normalized = normalizeCopyBlock(text);
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
       onStatus("Copy not supported");
       return;
     }
 
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(normalized);
     onStatus("Copied");
   }
 
@@ -1778,9 +1853,33 @@ export function SupportDashboard({
     await copyText(supportPackageIssueDraftText, setSupportPackageIssueCopyStatus);
   }
 
+  async function onCopyCriticalAnchors() {
+    await copyText(criticalAnchorsText, setCriticalAnchorsCopyStatus);
+  }
+
   async function onCopySupportPackageCliHelper() {
     await copyText(supportPackageCliHelperText, setSupportPackageCliCopyStatus);
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.shiftKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        event.preventDefault();
+        void copyText(issueBlockText, setIssueCopyStatus);
+      }
+      if (key === "h") {
+        event.preventDefault();
+        void onCopyCriticalAnchors();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [criticalAnchorsText, issueBlockText]);
 
   return (
     <main className="mx-auto max-w-6xl p-6">
@@ -1795,6 +1894,48 @@ export function SupportDashboard({
           <li>Runbook</li>
           <li>Issue Draft Generator</li>
         </ol>
+      </section>
+
+      {noBundleLoaded || noSupportPackageLoaded || noDiffComparisonLoaded ? (
+        <section className="mt-4 rounded border p-4 text-sm" aria-label="Deterministic Empty States">
+          <h2 className="text-base font-semibold">Deterministic Empty States</h2>
+          {noBundleLoaded ? (
+            <div className="mt-2 rounded border p-2 text-xs">
+              <div className="font-semibold">NO BUNDLE LOADED</div>
+              <div>→ Paste JSON</div>
+              <div>→ Or load .support.json file</div>
+              <div>→ Then verify integrity</div>
+            </div>
+          ) : null}
+          {noSupportPackageLoaded ? (
+            <div className="mt-2 rounded border p-2 text-xs">
+              <div className="font-semibold">NO SUPPORT PACKAGE LOADED</div>
+              <div>→ Paste JSON</div>
+              <div>→ Or load .support.json file</div>
+              <div>→ Then verify integrity</div>
+            </div>
+          ) : null}
+          {noDiffComparisonLoaded ? (
+            <div className="mt-2 rounded border p-2 text-xs">
+              <div className="font-semibold">NO DIFF COMPARISON LOADED</div>
+              <div>→ Paste JSON</div>
+              <div>→ Or load .support.json file</div>
+              <div>→ Then verify integrity</div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="What To Do Next">
+        <h2 className="text-base font-semibold">What To Do Next</h2>
+        <div className="mt-2 text-xs">{nextActionText}</div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Deterministic Badge Legend">
+        <h2 className="text-base font-semibold">Deterministic Badge Legend</h2>
+        <div className="mt-2 text-xs">GREEN = verified</div>
+        <div className="text-xs">YELLOW = warning</div>
+        <div className="text-xs">RED = blocking failure</div>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Debug Bundles">
@@ -1966,8 +2107,11 @@ export function SupportDashboard({
           >
             Copy manifest hash
           </button>
+          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={onCopyCriticalAnchors}>
+            Copy all critical anchors
+          </button>
           <span role="status" aria-live="polite">
-            {supportPackageManifestHashCopyStatus}
+            {supportPackageManifestHashCopyStatus || criticalAnchorsCopyStatus}
           </span>
         </div>
       </section>
@@ -1993,6 +2137,22 @@ export function SupportDashboard({
         <div className="mt-2 text-xs">PACKAGE_HASH_COMPUTED: {supportPackageComputedHash || "(none)"}</div>
         <div className="text-xs">PACKAGE_HASH_REFERENCE: {supportPackageHashReference || "(none)"}</div>
         <div className={`mt-1 font-medium ${supportPackageHashBadge.cls}`}>{supportPackageHashBadge.label}</div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Deterministic Error Surface">
+        <h2 className="text-base font-semibold">Deterministic Error Surface</h2>
+        <div className={`mt-2 text-xs ${integrityFailure ? "text-red-700" : ""}`}>
+          INTEGRITY FAILURE: {integrityFailure ? "YES" : "NO"}
+        </div>
+        <div className={`text-xs ${packageTamperDetected ? "text-red-700" : ""}`}>
+          PACKAGE TAMPER DETECTED: {packageTamperDetected ? "YES" : "NO"}
+        </div>
+        <div className={`text-xs ${intakeConsistencyState.status === "fail" ? "text-red-700" : ""}`}>
+          INTAKE CONSISTENCY FAILURE: {intakeConsistencyState.status === "fail" ? "YES" : "NO"}
+        </div>
+        <div className={`text-xs ${driftParityMismatch ? "text-red-700" : ""}`}>
+          DRIFT PARITY MISMATCH: {driftParityMismatch ? "YES" : "NO"}
+        </div>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Immutable Hash Anchor Display">
@@ -2121,6 +2281,15 @@ export function SupportDashboard({
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Package Diff Mode">
         <h2 className="text-base font-semibold">Package Diff Mode</h2>
+        <div className="mt-2">
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
+            onClick={() => setRightPackageJson("")}
+          >
+            Clear Diff Comparison
+          </button>
+        </div>
         <div className="mt-2 grid gap-3 md:grid-cols-2">
           <div>
             <label htmlFor="support-package-left" className="mb-1 block text-xs">
@@ -2150,7 +2319,7 @@ export function SupportDashboard({
           </div>
         </div>
         {supportPackageDiffRows.length === 0 ? (
-          <div className="mt-2 text-xs">Provide two valid support packages to compare.</div>
+          <div className="mt-2 text-xs">NO DIFF COMPARISON LOADED</div>
         ) : (
           <div className="mt-2">
             <div className="text-xs">First divergence: {supportPackageFirstDivergence}</div>
@@ -2353,6 +2522,35 @@ export function SupportDashboard({
         </div>
       </section>
 
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Advanced Diagnostics">
+        <h2 className="text-base font-semibold">Advanced Diagnostics</h2>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs">Show advanced diagnostics</summary>
+          <div className="mt-2 space-y-3 text-xs">
+            <div>
+              <div className="font-semibold">Per-turn telemetry</div>
+              <pre className="mt-1 rounded border p-2 whitespace-pre-wrap">{advancedDiagnosticsPerTurnText}</pre>
+            </div>
+            <div>
+              <div className="font-semibold">Drift details</div>
+              <pre className="mt-1 rounded border p-2 whitespace-pre-wrap">
+                {telemetryDrift.details.length > 0 ? telemetryDrift.details.join("\n") : "(none)"}
+              </pre>
+            </div>
+            <div>
+              <div className="font-semibold">Raw manifest</div>
+              <pre className="mt-1 rounded border p-2 whitespace-pre-wrap">{supportManifestJson || "(none)"}</pre>
+            </div>
+            <div>
+              <div className="font-semibold">Raw package JSON</div>
+              <pre className="mt-1 rounded border p-2 whitespace-pre-wrap">
+                {supportPackageJsonText.trim() || "(none)"}
+              </pre>
+            </div>
+          </div>
+        </details>
+      </section>
+
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Canonical Manifest (V1)">
         <h2 className="text-base font-semibold">Canonical Manifest (V1)</h2>
         <div className="mt-2 text-xs">
@@ -2440,6 +2638,9 @@ export function SupportDashboard({
           <span role="status" aria-live="polite">
             {issueCopyStatus || reproCliCopyStatus || shareBlockCopyStatus}
           </span>
+        </div>
+        <div className="mt-1 text-xs">
+          Keyboard shortcuts: Ctrl + Shift + C (Copy Issue Draft), Ctrl + Shift + H (Copy Hash Anchors)
         </div>
         <pre className="mt-2 rounded border p-2 whitespace-pre-wrap">{issueBlockText}</pre>
         <pre className="mt-2 rounded border p-2 whitespace-pre-wrap">{reproCliText}</pre>
@@ -2700,6 +2901,12 @@ export function SupportDashboard({
           </div>
         </div>
       </section>
+
+      <footer className="mt-4 rounded border p-4 text-sm" aria-label="Operator Confirmation Footer">
+        <div className={`font-semibold ${validationComplete ? "text-green-700" : "text-red-700"}`}>
+          {validationComplete ? "DETERMINISTIC VALIDATION COMPLETE" : "VALIDATION INCOMPLETE"}
+        </div>
+      </footer>
     </main>
   );
 }

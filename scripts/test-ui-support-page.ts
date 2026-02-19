@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { buildDeterministicReproCliText } from "../src/lib/support/buildDeterministicReproCliText";
+import { buildSupportShareBlockText } from "../src/lib/support/buildSupportShareBlockText";
+import { buildSupportTurnReproBlockText } from "../src/lib/support/buildSupportTurnReproBlockText";
+import { buildSupportCriticalAnchorsText } from "../src/lib/support/buildSupportCriticalAnchorsText";
 
 function main() {
   const pagePath = path.join(process.cwd(), "src", "app", "support", "page.tsx");
@@ -134,6 +138,43 @@ function main() {
   );
   assert(dashboardSource.includes("Import Support Package"), "Expected import support package panel");
   assert(dashboardSource.includes("Load .support.json file"), "Expected support package file load control");
+  assert(dashboardSource.includes("Deterministic Empty States"), "Expected deterministic empty states section");
+  assert(dashboardSource.includes("NO SUPPORT PACKAGE LOADED"), "Expected deterministic no-package empty state");
+  assert(dashboardSource.includes("NO BUNDLE LOADED"), "Expected deterministic no-bundle empty state");
+  assert(dashboardSource.includes("NO DIFF COMPARISON LOADED"), "Expected deterministic no-diff empty state");
+  assert(dashboardSource.includes("What To Do Next"), 'Expected "What To Do Next" context strip');
+  assert(dashboardSource.includes("Resolve integrity before proceeding."), "Expected integrity guidance text");
+  assert(dashboardSource.includes("Inspect first drift turn."), "Expected drift guidance text");
+  assert(dashboardSource.includes("Safe to generate issue draft."), "Expected green guidance text");
+  assert(dashboardSource.includes("Copy all critical anchors"), "Expected copy critical anchors control");
+  assert(dashboardSource.includes("MANIFEST_HASH:"), "Expected critical anchor manifest hash line");
+  assert(dashboardSource.includes("PACKAGE_HASH:"), "Expected critical anchor package hash line");
+  assert(dashboardSource.includes("FINAL_STATE_HASH:"), "Expected critical anchor final state hash line");
+  assert(dashboardSource.includes("DRIFT_SEVERITY:"), "Expected critical anchor drift severity line");
+  assert(dashboardSource.includes("Deterministic Error Surface"), "Expected deterministic error surface panel");
+  assert(dashboardSource.includes("INTEGRITY FAILURE"), "Expected integrity failure label");
+  assert(dashboardSource.includes("PACKAGE TAMPER DETECTED"), "Expected package tamper label");
+  assert(dashboardSource.includes("INTAKE CONSISTENCY FAILURE"), "Expected intake consistency label");
+  assert(dashboardSource.includes("DRIFT PARITY MISMATCH"), "Expected drift parity mismatch label");
+  assert(
+    dashboardSource.includes("Keyboard shortcuts: Ctrl + Shift + C (Copy Issue Draft), Ctrl + Shift + H (Copy Hash Anchors)"),
+    "Expected deterministic keyboard shortcut hint text",
+  );
+  assert(dashboardSource.includes("Advanced Diagnostics"), "Expected advanced diagnostics panel");
+  assert(dashboardSource.includes("Show advanced diagnostics"), "Expected advanced diagnostics toggle summary");
+  assert(dashboardSource.includes("Per-turn telemetry"), "Expected per-turn telemetry diagnostics block");
+  assert(dashboardSource.includes("Drift details"), "Expected drift details diagnostics block");
+  assert(dashboardSource.includes("Raw manifest"), "Expected raw manifest diagnostics block");
+  assert(dashboardSource.includes("Raw package JSON"), "Expected raw package diagnostics block");
+  assert(dashboardSource.includes("Deterministic Badge Legend"), "Expected deterministic badge legend");
+  assert(dashboardSource.includes("GREEN = verified"), "Expected badge legend green label");
+  assert(dashboardSource.includes("YELLOW = warning"), "Expected badge legend yellow label");
+  assert(dashboardSource.includes("RED = blocking failure"), "Expected badge legend red label");
+  assert(dashboardSource.includes("Clear Diff Comparison"), "Expected clear diff comparison control");
+  assert(dashboardSource.includes("Operator Confirmation Footer"), "Expected operator confirmation footer");
+  assert(dashboardSource.includes("DETERMINISTIC VALIDATION COMPLETE"), "Expected deterministic validation complete footer text");
+  assert(dashboardSource.includes("VALIDATION INCOMPLETE"), "Expected validation incomplete footer text");
+  assert(dashboardSource.includes("normalizeCopyBlock"), "Expected copy block formatting guard helper");
   assert(dashboardSource.includes("Manifest Integrity Badge"), "Expected manifest integrity badge section");
   assert(dashboardSource.includes("GREEN: All true"), "Expected manifest integrity green text");
   assert(dashboardSource.includes("RED: Any false"), "Expected manifest integrity red text");
@@ -172,6 +213,40 @@ function main() {
   const entropyTokens = ["timestamp", "duration:", "durationms", "seconds", "date.now", "performance.now", "random", "seed"];
   for (const token of entropyTokens) {
     assert(!lowerDashboard.includes(token), `Expected intake UI to avoid entropy token: ${token}`);
+  }
+
+  const copyBlocks = [
+    buildDeterministicReproCliText({
+      bundleId: "bundle-1",
+      engineVersion: "engine-1",
+      scenarioContentHash: "hash-1",
+    }),
+    buildSupportShareBlockText({
+      bundleId: "bundle-1",
+      engineVersion: "engine-1",
+      scenarioContentHash: "hash-1",
+      turn: "3",
+    }),
+    buildSupportTurnReproBlockText({
+      bundleId: "bundle-1",
+      turnIndex: "3",
+      engineVersion: "engine-1",
+      scenarioContentHash: "hash-1",
+      adventureId: "adv-1",
+      latestTurnIndex: "3",
+      stateDeltas: [{ path: "stats.hp", before: 3, after: 4 }],
+      ledgerAdds: [{ kind: "test", message: "ok" }],
+    }),
+    buildSupportCriticalAnchorsText({
+      manifestHash: "mhash",
+      packageHash: "phash",
+      finalStateHash: "fhash",
+      driftSeverity: "NONE",
+    }),
+  ];
+
+  for (const block of copyBlocks) {
+    assert(block.endsWith("\n") === false, "Expected deterministic copy block with no trailing newline");
   }
 
   console.log("UI SUPPORT PAGE OK");
