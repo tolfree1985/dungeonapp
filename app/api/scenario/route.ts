@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { errorResponse } from "@/lib/api/errorResponse";
+import { creatorRouteError } from "@/lib/api/creatorRouteError";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
 import {
@@ -16,10 +16,10 @@ async function postHandler(req: Request) {
     body = await readJsonWithLimitOrNull(req);
   } catch (error) {
     if (isRequestBodyTooLargeError(error)) {
-      return errorResponse(413, "Payload too large");
+      return creatorRouteError(413, "Payload too large", "PAYLOAD_TOO_LARGE");
     }
     console.error(error);
-    return errorResponse(500, "Internal error");
+    return creatorRouteError(500, "Internal error", "INTERNAL_ERROR");
   }
 
   const id = body?.id;
@@ -30,7 +30,7 @@ async function postHandler(req: Request) {
   const ownerId = body?.ownerId ?? null;
 
   if (typeof id !== "string" || typeof title !== "string" || contentJson == null) {
-    return errorResponse(400, "id, title, contentJson required");
+    return creatorRouteError(400, "id, title, contentJson required", "BAD_REQUEST");
   }
 
   const rateLimit = checkSoftRateLimit({
@@ -40,7 +40,7 @@ async function postHandler(req: Request) {
   });
   if (!rateLimit.allowed) {
     return NextResponse.json(
-      { error: "RATE_LIMITED" },
+      { error: "RATE_LIMITED", code: "RATE_LIMITED" },
       {
         status: 429,
         headers: {
@@ -58,13 +58,13 @@ async function postHandler(req: Request) {
     return NextResponse.json({ scenario: created });
   } catch (e: any) {
     if (e?.code === "SCENARIO_CAP_EXCEEDED") {
-      return NextResponse.json(
-        { error: "SCENARIO_CAP_EXCEEDED", code: "SCENARIO_CAP_EXCEEDED", cap: e?.details?.cap ?? null, used: e?.details?.used ?? null },
-        { status: 429 },
-      );
+      return creatorRouteError(429, "SCENARIO_CAP_EXCEEDED", "SCENARIO_CAP_EXCEEDED", {
+        cap: e?.details?.cap ?? null,
+        used: e?.details?.used ?? null,
+      });
     }
     console.error(e);
-    return errorResponse(500, "Internal error");
+    return creatorRouteError(500, "Internal error", "INTERNAL_ERROR");
   }
 }
 
