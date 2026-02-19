@@ -57,6 +57,16 @@ Only variables currently read by app/runtime code are listed.
   - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-creator-error-mapping.ts`
   - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-ui-creator-page.ts`
 
+## Creator deterministic controls (Sprint 10C)
+- Operator expectation: creator editor controls are deterministic (no autosave, no retry timers, no random output).
+- JSON import must fail with canonical inline error text only; no stack traces.
+- Preflight + publish gating are UI-derived only; no extra backend preflight calls.
+- Prompt/memory previews and copy exports must use stable section ordering and stable key ordering.
+- Verify creator deterministic surface:
+  - `npm run ci:creator`
+  - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-creator-error-mapping.ts`
+  - `bash scripts/with-sqlite-env.sh node --import tsx scripts/test-ui-creator-page.ts`
+
 ## Deterministic smoke command
 Run in CI/staging with valid `DATABASE_URL`:
 
