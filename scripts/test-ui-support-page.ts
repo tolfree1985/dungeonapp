@@ -126,6 +126,11 @@ function main() {
   assert(dashboardSource.includes("Manifest hash:"), "Expected manifest hash field");
   assert(dashboardSource.includes("Per-turn rows:"), "Expected manifest per-turn row count field");
   assert(dashboardSource.includes("Copy Manifest JSON"), "Expected copy manifest json control");
+  assert(dashboardSource.includes("Export Support Package"), "Expected export support package helper block");
+  assert(
+    dashboardSource.includes("scripts/build-support-package.ts"),
+    "Expected build-support-package CLI guidance",
+  );
 
   console.log("UI SUPPORT PAGE OK");
 }

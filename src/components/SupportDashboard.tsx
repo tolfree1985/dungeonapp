@@ -1529,6 +1529,17 @@ export function SupportDashboard({
         </div>
       </section>
 
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Export Support Package">
+        <h2 className="text-base font-semibold">Export Support Package</h2>
+        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">
+          {[
+            "node --import tsx scripts/build-support-package.ts \\",
+            "  --bundle-path=./path/to/bundle.json \\",
+            "  --out-dir=./support-output",
+          ].join("\n")}
+        </pre>
+      </section>
+
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Reproduction Checklist">
         <h2 className="text-base font-semibold">Reproduction Checklist</h2>
         <ol className="mt-2 list-decimal space-y-1 pl-6">
