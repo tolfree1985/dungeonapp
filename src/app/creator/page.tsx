@@ -81,6 +81,7 @@ export default function CreatorPage() {
 
   const validation = useMemo(() => validateScenarioContentJson(contentJson), [contentJson]);
   const validationView = lastValidation ?? validation;
+  const publishEnabled = validation.ok;
   const preview = useMemo(() => {
     try {
       const parsed = JSON.parse(contentJson) as any;
@@ -205,6 +206,16 @@ export default function CreatorPage() {
             </pre>
           </div>
         )}
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Publish controls">
+        <h2 className="text-base font-semibold">Publish</h2>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" disabled={!publishEnabled} className="rounded border px-2 py-1 text-xs disabled:opacity-50">
+            Publish scenario
+          </button>
+          <span>{publishEnabled ? "Publish enabled: validation passed." : "Publish disabled: validation must pass."}</span>
+        </div>
       </section>
     </main>
   );
