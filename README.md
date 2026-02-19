@@ -74,3 +74,9 @@ Those come after real usage data.
 - 9.58 — Replay/focused export controls + deterministic status signal assertions
 - Sprint 9 complete — Deterministic Inspector + Replay + Accessibility + Export Hardening
 - Sprint 10A complete — Creator tools MVP with deterministic editor validation, preview, publish gating, and creator UX safety checks
+- Sprint 10C complete — deterministic creator editing hardening and operator closure:
+- Strict JSON import with canonical inline error block (no stack leakage).
+- Validation grouping is stable by `path` then `code`; preflight is pure UI-derived.
+- Cap/rate-limit banner is deterministic and clears on editor input changes.
+- Prompt scaffold + memory preview rendering/export use stable ordering.
+- Unsaved indicator is pure snapshot-derived (no autosave/timers/debounce).
