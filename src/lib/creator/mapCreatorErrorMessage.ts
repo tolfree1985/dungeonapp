@@ -4,6 +4,26 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function asFiniteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function formatCreatorCapDetail(payload: AnyPayload): string {
+  const cap = asFiniteNumber(payload?.cap);
+  const used = asFiniteNumber(payload?.used);
+  const reserved = asFiniteNumber(payload?.reserved);
+
+  if (cap == null && used == null && reserved == null) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  if (cap != null) parts.push(`cap=${cap}`);
+  if (used != null) parts.push(`used=${used}`);
+  if (reserved != null) parts.push(`reserved=${reserved}`);
+  return parts.join(" ");
+}
+
 export function mapCreatorErrorMessage(args: {
   status: number;
   payload: AnyPayload;

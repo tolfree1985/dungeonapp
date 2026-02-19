@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { buildScenarioDraftBundleText } from "@/lib/buildScenarioDraftBundleText";
-import { mapCreatorErrorMessage } from "@/lib/creator/mapCreatorErrorMessage";
+import { formatCreatorCapDetail, mapCreatorErrorMessage } from "@/lib/creator/mapCreatorErrorMessage";
 import { buildPromptParts } from "@/lib/promptScaffold";
 
 type ValidationIssue = { path: string; code: string; message: string };
@@ -237,7 +237,9 @@ export default function CreatorPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        setCreatorRequestStatus(mapCreatorErrorMessage({ status: res.status, payload: json }));
+        const message = mapCreatorErrorMessage({ status: res.status, payload: json });
+        const detail = formatCreatorCapDetail(json);
+        setCreatorRequestStatus(detail ? `${message} ${detail}` : message);
         return;
       }
       setCreatorRequestStatus("Draft created.");
