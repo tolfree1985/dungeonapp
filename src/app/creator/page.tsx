@@ -323,6 +323,7 @@ export default function CreatorPage() {
       contentJson !== baselineSnapshot.contentJson,
     [baselineSnapshot.contentJson, baselineSnapshot.summary, baselineSnapshot.title, contentJson, summary, title],
   );
+  const styleLockActive = promptParts !== null;
 
   async function loadMyScenarios() {
     const trimmedOwnerId = ownerId.trim();
@@ -922,6 +923,9 @@ export default function CreatorPage() {
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Prompt scaffold preview">
         <h2 className="text-base font-semibold">Prompt scaffold preview</h2>
+        <div className="mt-1 text-xs" aria-label="Style lock indicator">
+          Style lock: {styleLockActive ? "active" : "inactive"} (scaffold-driven)
+        </div>
         <div className="mt-2 flex items-center gap-3">
           <button
             type="button"
