@@ -36,6 +36,25 @@ function main() {
   const indexPath = path.join(root, "fixtures", "golden", "index.json");
   const index = parseGoldenIndex(indexPath);
 
+  const checkIndex = spawnSync(process.execPath, ["--import", "tsx", testScript, "--check-index"], {
+    encoding: "utf8",
+  });
+  assert.equal(checkIndex.status, 0, `--check-index failed: ${checkIndex.stderr || checkIndex.stdout}`);
+  assert(checkIndex.stdout.includes(`GOLDEN_INDEX_OK count=${index.fixtures.length}`), "expected GOLDEN_INDEX_OK output");
+
+  const listA = spawnSync(process.execPath, ["--import", "tsx", testScript, "--list"], {
+    encoding: "utf8",
+  });
+  assert.equal(listA.status, 0, `--list failed on first run: ${listA.stderr || listA.stdout}`);
+  const listB = spawnSync(process.execPath, ["--import", "tsx", testScript, "--list"], {
+    encoding: "utf8",
+  });
+  assert.equal(listB.status, 0, `--list failed on second run: ${listB.stderr || listB.stdout}`);
+  assert.equal(listA.stdout, listB.stdout, "expected stable fixture list output");
+  for (const fixtureName of index.fixtures) {
+    assert(listA.stdout.includes(`GOLDEN_FIXTURE ${fixtureName}`), `expected fixture in --list output: ${fixtureName}`);
+  }
+
   const runA = runGoldenHarness(testScript);
   assert.equal(runA.status, 0, `run-golden-replays failed on first run: ${runA.stderr || runA.stdout}`);
 
@@ -52,6 +71,12 @@ function main() {
     assert(pos > lastPos, `expected deterministic fixture output order for ${fixtureName}`);
     lastPos = pos;
   }
+  assert(
+    runA.stdout.includes(`GOLDEN_SUMMARY TOTAL=${index.fixtures.length} PASS=${index.fixtures.length} FAIL=0`),
+    "expected deterministic GOLDEN_SUMMARY line",
+  );
+  assert(!runA.stdout.includes("/Users/"), "expected no absolute unix path in output");
+  assert(!runA.stdout.includes("C:\\"), "expected no absolute windows path in output");
 
   console.log("GOLDEN REPLAYS OK");
 }

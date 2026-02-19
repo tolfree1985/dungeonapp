@@ -7,6 +7,35 @@ type GoldenIndex = {
   fixtures: string[];
 };
 
+type CliArgs = {
+  list: boolean;
+  checkIndex: boolean;
+};
+
+type FixtureRunResult =
+  | {
+      ok: true;
+      fixtureName: string;
+      manifestHash: string;
+      finalStateHash: string;
+    }
+  | {
+      ok: false;
+      fixtureName: string;
+      markers: string[];
+    };
+
+function parseArgs(argv: string[]): CliArgs {
+  return {
+    list: argv.includes("--list"),
+    checkIndex: argv.includes("--check-index"),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 function parseGoldenIndex(indexPath: string): GoldenIndex {
   const parsed = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Partial<GoldenIndex>;
   if (parsed.version !== 1) {
@@ -19,6 +48,23 @@ function parseGoldenIndex(indexPath: string): GoldenIndex {
     version: parsed.version,
     fixtures: parsed.fixtures,
   };
+}
+
+function assertGoldenIndex(index: GoldenIndex, goldenDir: string): void {
+  const seen = new Set<string>();
+  for (const fixtureName of index.fixtures) {
+    if (seen.has(fixtureName)) {
+      throw new Error(`GOLDEN_INDEX_INVALID duplicate=${fixtureName}`);
+    }
+    seen.add(fixtureName);
+    if (fixtureName.includes("/") || fixtureName.includes("\\")) {
+      throw new Error(`GOLDEN_INDEX_INVALID path_segment=${fixtureName}`);
+    }
+    const fixturePath = path.join(goldenDir, fixtureName);
+    if (!fs.existsSync(fixturePath)) {
+      throw new Error(`GOLDEN_INDEX_INVALID missing=${fixtureName}`);
+    }
+  }
 }
 
 function parseSummary(output: string): { manifestHash: string; finalStateHash: string } {
@@ -39,9 +85,40 @@ function parseSummary(output: string): { manifestHash: string; finalStateHash: s
   };
 }
 
+function validateFixtureSchema(fixtureName: string, fixturePath: string): string[] {
+  const markers: string[] = [];
+  if (!fixtureName.endsWith(".support.json")) {
+    markers.push(`GOLDEN_FIXTURE_INVALID file_extension=${fixtureName}`);
+    return markers;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+    if (!isRecord(parsed)) {
+      markers.push("GOLDEN_FIXTURE_INVALID payload=not_object");
+      return markers;
+    }
+    if (typeof parsed.packageVersion !== "number") {
+      markers.push("GOLDEN_FIXTURE_INVALID field=packageVersion");
+    }
+    if (typeof parsed.manifestHash !== "string" || parsed.manifestHash.trim().length === 0) {
+      markers.push("GOLDEN_FIXTURE_INVALID field=manifestHash");
+    }
+    if (!isRecord(parsed.manifest)) {
+      markers.push("GOLDEN_FIXTURE_INVALID field=manifest");
+    }
+    if (!("originalBundle" in parsed)) {
+      markers.push("GOLDEN_FIXTURE_INVALID field=originalBundle");
+    }
+  } catch {
+    markers.push("GOLDEN_FIXTURE_INVALID parse_error");
+  }
+  return markers;
+}
+
 function collectFailureMarkers(text: string): string[] {
   const markerPattern =
-    /(REPRO_PACK_|DRIFT_|DELTA_|LEDGER_|STYLE_LOCK_|INVARIANT_|MISMATCH|VIOLATION|FAILED|ERROR|INVALID|MISSING)/;
+    /(REPRO_PACK_|DRIFT_|DELTA_|LEDGER_|STYLE_LOCK_|INVARIANT_|GOLDEN_|MISMATCH|VIOLATION|FAILED|ERROR|INVALID|MISSING)/;
   const out: string[] = [];
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -56,7 +133,12 @@ function collectFailureMarkers(text: string): string[] {
   return out;
 }
 
-function runFixture(replayScriptPath: string, fixturePath: string): { stdout: string; stderr: string } {
+function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: string): FixtureRunResult {
+  const schemaMarkers = validateFixtureSchema(fixtureName, fixturePath);
+  if (schemaMarkers.length > 0) {
+    return { ok: false, fixtureName, markers: schemaMarkers };
+  }
+
   const child = spawnSync(
     process.execPath,
     ["--import", "tsx", replayScriptPath, `--support-package-path=${fixturePath}`],
@@ -64,54 +146,103 @@ function runFixture(replayScriptPath: string, fixturePath: string): { stdout: st
   );
   const stdout = child.stdout ?? "";
   const stderr = child.stderr ?? "";
+
+  const regressionMarkers: string[] = [];
   if (child.status !== 0) {
-    const markers = collectFailureMarkers(`${stdout}\n${stderr}`);
-    throw new Error(`EXIT_${String(child.status)} ${markers.join(" | ")}`);
+    regressionMarkers.push(`GOLDEN_REGRESSION exit_code=${String(child.status)}`);
   }
   if (!stdout.includes("REPRO_PACK_VALIDATION")) {
-    throw new Error("REPRO_PACK_VALIDATION_MISSING");
+    regressionMarkers.push("GOLDEN_REGRESSION missing=REPRO_PACK_VALIDATION");
   }
   if (!stdout.includes("REPRO_PACK_SUMMARY")) {
-    throw new Error("REPRO_PACK_SUMMARY_MISSING");
+    regressionMarkers.push("GOLDEN_REGRESSION missing=REPRO_PACK_SUMMARY");
   }
-  return { stdout, stderr };
+  if (!stdout.includes("MANIFEST_HASH_MATCH: true")) {
+    regressionMarkers.push("GOLDEN_REGRESSION missing=MANIFEST_HASH_MATCH_TRUE");
+  }
+  if (!stdout.includes("FINAL_STATE_HASH_MATCH: true")) {
+    regressionMarkers.push("GOLDEN_REGRESSION missing=FINAL_STATE_HASH_MATCH_TRUE");
+  }
+  if (!stdout.includes("TELEMETRY_MATCH: true")) {
+    regressionMarkers.push("GOLDEN_REGRESSION missing=TELEMETRY_MATCH_TRUE");
+  }
+  if (!stdout.includes("DRIFT_SEVERITY: NONE")) {
+    regressionMarkers.push("GOLDEN_REGRESSION missing=DRIFT_SEVERITY_NONE");
+  }
+  if (stdout.includes("DRIFT_BLOCK_MISSING")) {
+    regressionMarkers.push("GOLDEN_REGRESSION unexpected=DRIFT_BLOCK_MISSING");
+  }
+
+  if (regressionMarkers.length > 0) {
+    return {
+      ok: false,
+      fixtureName,
+      markers: [...regressionMarkers, ...collectFailureMarkers(`${stdout}\n${stderr}`)],
+    };
+  }
+
+  try {
+    const summary = parseSummary(stdout);
+    return {
+      ok: true,
+      fixtureName,
+      manifestHash: summary.manifestHash,
+      finalStateHash: summary.finalStateHash,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      fixtureName,
+      markers: ["GOLDEN_REGRESSION summary_parse", ...collectFailureMarkers(message)],
+    };
+  }
 }
 
-function main() {
+function main(): void {
+  const args = parseArgs(process.argv.slice(2));
   const root = process.cwd();
   const goldenDir = path.join(root, "fixtures", "golden");
   const indexPath = path.join(goldenDir, "index.json");
   const replayScriptPath = path.join(root, "scripts", "replay-from-bundle.ts");
-
   const index = parseGoldenIndex(indexPath);
+  assertGoldenIndex(index, goldenDir);
+
+  if (args.list) {
+    for (const fixtureName of index.fixtures) {
+      console.log(`GOLDEN_FIXTURE ${fixtureName}`);
+    }
+    return;
+  }
+
+  if (args.checkIndex) {
+    console.log(`GOLDEN_INDEX_OK count=${index.fixtures.length}`);
+    return;
+  }
+
   let passCount = 0;
+  let failCount = 0;
 
   for (const fixtureName of index.fixtures) {
-    if (fixtureName.includes("/") || fixtureName.includes("\\")) {
-      throw new Error(`GOLDEN_FIXTURE_NAME_INVALID ${fixtureName}`);
-    }
     const fixturePath = path.join(goldenDir, fixtureName);
-    if (!fs.existsSync(fixturePath)) {
-      throw new Error(`GOLDEN_FIXTURE_MISSING ${fixtureName}`);
-    }
-
-    try {
-      const result = runFixture(replayScriptPath, fixturePath);
-      const summary = parseSummary(result.stdout);
-      console.log(
-        `GOLDEN_OK ${fixtureName} MANIFEST_HASH=${summary.manifestHash} FINAL_STATE_HASH=${summary.finalStateHash}`,
-      );
+    const result = runFixture(replayScriptPath, fixtureName, fixturePath);
+    if (result.ok) {
+      console.log(`GOLDEN_OK ${result.fixtureName} MANIFEST_HASH=${result.manifestHash} FINAL_STATE_HASH=${result.finalStateHash}`);
       passCount += 1;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`GOLDEN_FAIL ${fixtureName}`);
-      for (const marker of collectFailureMarkers(message)) {
+    } else {
+      console.error(`GOLDEN_FAIL ${result.fixtureName}`);
+      for (const marker of result.markers) {
         console.error(`MARKER ${marker}`);
       }
-      process.exit(1);
+      failCount += 1;
     }
   }
 
+  const total = index.fixtures.length;
+  console.log(`GOLDEN_SUMMARY TOTAL=${total} PASS=${passCount} FAIL=${failCount}`);
+  if (failCount > 0) {
+    process.exit(1);
+  }
   console.log(`GOLDEN_REPLAYS_OK count=${passCount}`);
 }
 
