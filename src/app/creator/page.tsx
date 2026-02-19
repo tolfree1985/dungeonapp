@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { buildScenarioDraftBundleText } from "@/lib/buildScenarioDraftBundleText";
-import { formatCreatorCapDetail, mapCreatorErrorMessage } from "@/lib/creator/mapCreatorErrorMessage";
+import {
+  formatCreatorCapDetail,
+  formatCreatorRetryAfterText,
+  mapCreatorErrorMessage,
+} from "@/lib/creator/mapCreatorErrorMessage";
 import { buildPromptParts } from "@/lib/promptScaffold";
 
 type ValidationIssue = { path: string; code: string; message: string };
@@ -239,7 +243,13 @@ export default function CreatorPage() {
       if (!res.ok) {
         const message = mapCreatorErrorMessage({ status: res.status, payload: json });
         const detail = formatCreatorCapDetail(json);
-        setCreatorRequestStatus(detail ? `${message} ${detail}` : message);
+        const retryAfter = formatCreatorRetryAfterText({
+          status: res.status,
+          payload: json,
+          retryAfterHeader: res.headers.get("Retry-After"),
+        });
+        const parts = [message, detail, retryAfter].filter(Boolean);
+        setCreatorRequestStatus(parts.join(" "));
         return;
       }
       setCreatorRequestStatus("Draft created.");

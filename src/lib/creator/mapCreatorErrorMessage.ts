@@ -56,3 +56,23 @@ export function mapCreatorErrorMessage(args: {
 
   return "Request failed.";
 }
+
+export function formatCreatorRetryAfterText(args: {
+  status: number;
+  payload: AnyPayload;
+  retryAfterHeader: string | null;
+}): string {
+  const topLevel = asString(args.payload?.error);
+  const nested = asString(args.payload?.code);
+  const code = nested || topLevel;
+
+  if (args.status !== 429 || code !== "RATE_LIMITED") {
+    return "";
+  }
+
+  if (args.retryAfterHeader && args.retryAfterHeader.trim()) {
+    return `Retry-After: ${args.retryAfterHeader.trim()}`;
+  }
+
+  return "Retry-After: unavailable";
+}
