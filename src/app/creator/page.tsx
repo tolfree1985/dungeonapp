@@ -25,6 +25,15 @@ type MineViewItem = ScenarioListItem & { visibilityBadge: "DRAFT" | "PUBLIC" };
 type CreatorTier = "NOMAD" | "TRAILBLAZOR" | "CHRONICLER" | "LOREMASTER";
 type CreatorSnapshot = { title: string; summary: string; contentJson: string };
 type LintWarning = { code: string; message: string };
+type StyleLockKey = "toneLock" | "genreLock" | "pacingLock";
+type StyleLockSummary = {
+  tone: string;
+  genre: string;
+  pacing: string;
+  status: "LOCKED" | "UNLOCKED";
+};
+
+const STYLE_LOCK_KEYS: StyleLockKey[] = ["toneLock", "genreLock", "pacingLock"];
 
 function compareText(a: string, b: string): number {
   if (a === b) return 0;
@@ -165,6 +174,126 @@ function validateScenarioContentJson(raw: string): {
   }
 
   return { ok: issues.length === 0, parseError: null, issues };
+}
+
+function toTurnIndex(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return Number(value.trim());
+  return fallback;
+}
+
+function normalizeDeltaPath(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (Array.isArray(value)) {
+    const parts = value.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0);
+    return parts.length > 0 ? parts.join(".") : null;
+  }
+  return null;
+}
+
+function styleLockKeyFromDelta(delta: unknown): StyleLockKey | null {
+  if (!delta || typeof delta !== "object") return null;
+  const d = delta as any;
+  const normalizedPath = normalizeDeltaPath(d.path);
+  if (normalizedPath) {
+    const path = normalizedPath.startsWith("/") ? normalizedPath.slice(1) : normalizedPath;
+    if (path.startsWith("flags.")) {
+      const key = path.slice("flags.".length) as StyleLockKey;
+      return STYLE_LOCK_KEYS.includes(key) ? key : null;
+    }
+    if (path.startsWith("world.flags.")) {
+      const key = path.slice("world.flags.".length) as StyleLockKey;
+      return STYLE_LOCK_KEYS.includes(key) ? key : null;
+    }
+  }
+  if (typeof d.op === "string" && d.op.trim() === "flag.set" && typeof d.key === "string") {
+    const key = d.key as StyleLockKey;
+    return STYLE_LOCK_KEYS.includes(key) ? key : null;
+  }
+  return null;
+}
+
+function styleLockNextValueFromDelta(delta: unknown): unknown {
+  if (!delta || typeof delta !== "object") return undefined;
+  const d = delta as any;
+  if (typeof d.op === "string") {
+    const op = d.op.trim().toLowerCase();
+    if (op.includes("unset") || op.includes("delete") || op.includes("remove")) {
+      return undefined;
+    }
+  }
+  if ("value" in d) return d.value;
+  return undefined;
+}
+
+function readInitialStyleLock(scenario: unknown, key: StyleLockKey): unknown {
+  if (!scenario || typeof scenario !== "object") return undefined;
+  const s = scenario as any;
+  if (s.initialState?.flags && typeof s.initialState.flags === "object" && key in s.initialState.flags) {
+    return s.initialState.flags[key];
+  }
+  if (
+    s.initialState?.world?.flags &&
+    typeof s.initialState.world.flags === "object" &&
+    key in s.initialState.world.flags
+  ) {
+    return s.initialState.world.flags[key];
+  }
+  return undefined;
+}
+
+function formatStyleLockValue(value: unknown): string {
+  if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  return "(unset)";
+}
+
+function buildStyleLockSummary(scenario: unknown): StyleLockSummary {
+  const state = new Map<StyleLockKey, unknown>();
+  for (const key of STYLE_LOCK_KEYS) {
+    const initial = readInitialStyleLock(scenario, key);
+    if (initial !== undefined) {
+      state.set(key, initial);
+    }
+  }
+
+  if (scenario && typeof scenario === "object") {
+    const s = scenario as any;
+    const rawTurns = Array.isArray(s.turns) ? s.turns : Array.isArray(s.events) ? s.events : [];
+    const turns = rawTurns
+      .map((raw: any, index: number) => ({
+        turnIndex: toTurnIndex(raw?.turnIndex ?? raw?.seq, index),
+        deltas: Array.isArray(raw?.stateDeltas)
+          ? raw.stateDeltas
+          : Array.isArray(raw?.deltas)
+            ? raw.deltas
+            : Array.isArray(raw?.turnJson?.deltas)
+              ? raw.turnJson.deltas
+              : [],
+      }))
+      .sort((a, b) => a.turnIndex - b.turnIndex);
+
+    for (const turn of turns) {
+      for (const delta of turn.deltas) {
+        const key = styleLockKeyFromDelta(delta);
+        if (!key) continue;
+        const next = styleLockNextValueFromDelta(delta);
+        if (next === undefined) {
+          state.delete(key);
+        } else {
+          state.set(key, next);
+        }
+      }
+    }
+  }
+
+  const tone = formatStyleLockValue(state.get("toneLock"));
+  const genre = formatStyleLockValue(state.get("genreLock"));
+  const pacing = formatStyleLockValue(state.get("pacingLock"));
+  const status = [tone, genre, pacing].some((value) => value === "locked") ? "LOCKED" : "UNLOCKED";
+  return { tone, genre, pacing, status };
 }
 
 export default function CreatorPage() {
@@ -322,6 +451,7 @@ export default function CreatorPage() {
     }
     return stableJsonDisplay(memory);
   }, [preview]);
+  const styleLockSummary = useMemo(() => buildStyleLockSummary(preview), [preview]);
   const hasUnsavedChanges = useMemo(
     () =>
       title !== baselineSnapshot.title ||
@@ -804,6 +934,26 @@ export default function CreatorPage() {
             <pre className="rounded border p-2 whitespace-pre-wrap">{memoryPreview}</pre>
           </div>
         )}
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Style lock summary">
+        <h2 className="text-base font-semibold">STYLE LOCK SUMMARY</h2>
+        <div className="mt-2 space-y-1">
+          <div>Tone: {styleLockSummary.tone}</div>
+          <div>Genre: {styleLockSummary.genre}</div>
+          <div>Pacing: {styleLockSummary.pacing}</div>
+          <div>Status: {styleLockSummary.status}</div>
+        </div>
+        {!determinismValidation.valid ? (
+          <div className="mt-2 rounded border border-red-500 p-2 text-xs">
+            Determinism failures:
+            <ol className="mt-1 list-decimal space-y-1 pl-6">
+              {determinismValidation.errors.map((errorCode) => (
+                <li key={`style-lock:${errorCode}`}>{errorCode}</li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Preflight checklist">

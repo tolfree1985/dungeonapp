@@ -51,7 +51,25 @@ function main() {
       },
     ],
   });
-  assert.deepEqual(styleLockFlip.errors, ["SCENARIO_STYLE_LOCK_VIOLATION"]);
+  assert.deepEqual(styleLockFlip.errors, ["SCENARIO_STYLE_LOCK_TRANSITION_INVALID"]);
+
+  const styleLockEnumInvalid = validateScenarioDeterminism({
+    initialState: {
+      world: {
+        flags: {
+          toneLock: "cinematic",
+        },
+      },
+    },
+    turns: [
+      {
+        turnIndex: 0,
+        stateDeltas: [{ op: "flag.set", path: "flags.opened", value: true }],
+        ledgerAdds: [{ id: "l0", turnIndex: 0 }],
+      },
+    ],
+  });
+  assert.deepEqual(styleLockEnumInvalid.errors, ["SCENARIO_STYLE_LOCK_ENUM_INVALID"]);
 
   const duplicateTurn = validateScenarioDeterminism({
     turns: [
@@ -72,14 +90,7 @@ function main() {
   });
   assert.deepEqual(undefinedValue.errors, ["SCENARIO_UNDEFINED_DELTA_VALUE"]);
 
-  const validScenario = validateScenarioDeterminism({
-    initialState: {
-      world: {
-        flags: {
-          toneLock: "unlocked",
-        },
-      },
-    },
+  const validLockedScenario = validateScenarioDeterminism({
     turns: [
       {
         turnIndex: 0,
@@ -88,13 +99,56 @@ function main() {
       },
       {
         turnIndex: 1,
-        stateDeltas: [{ op: "inv.add", path: "inventory.rope", value: 1 }],
+        stateDeltas: [{ op: "flag.set", path: "flags.toneLock", value: "locked" }],
         ledgerAdds: [{ id: "l1", turnIndex: 1 }],
       },
     ],
   });
-  assert.equal(validScenario.valid, true);
-  assert.deepEqual(validScenario.errors, []);
+  assert.equal(validLockedScenario.valid, true);
+  assert.deepEqual(validLockedScenario.errors, []);
+
+  const validUnlockedScenario = validateScenarioDeterminism({
+    turns: [
+      {
+        turnIndex: 0,
+        stateDeltas: [{ op: "flag.set", path: "flags.genreLock", value: "unlocked" }],
+        ledgerAdds: [{ id: "l0", turnIndex: 0 }],
+      },
+      {
+        turnIndex: 1,
+        stateDeltas: [{ op: "flag.set", path: "flags.genreLock", value: "unlocked" }],
+        ledgerAdds: [{ id: "l1", turnIndex: 1 }],
+      },
+    ],
+  });
+  assert.equal(validUnlockedScenario.valid, true);
+  assert.deepEqual(validUnlockedScenario.errors, []);
+
+  const orderingScenario = validateScenarioDeterminism({
+    initialState: {
+      world: {
+        flags: {
+          toneLock: "locked",
+        },
+      },
+    },
+    turns: [
+      {
+        turnIndex: 0,
+        stateDeltas: [{ op: "flag.set", path: "engine.meta.bad", value: true }],
+        ledgerAdds: [{ id: "l0", turnIndex: 0 }],
+      },
+      {
+        turnIndex: 1,
+        stateDeltas: [{ op: "flag.set", path: "flags.toneLock", value: "unlocked" }],
+        ledgerAdds: [{ id: "l1", turnIndex: 1 }],
+      },
+    ],
+  });
+  assert.deepEqual(orderingScenario.errors, [
+    "SCENARIO_DELTA_NAMESPACE_INVALID",
+    "SCENARIO_STYLE_LOCK_TRANSITION_INVALID",
+  ]);
 
   console.log("SCENARIO DETERMINISM OK");
 }

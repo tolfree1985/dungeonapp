@@ -139,6 +139,75 @@ function readScenarioMetadataFromFixture(fixturePath: string): unknown | null {
   }
 }
 
+function normalizePath(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (Array.isArray(value)) {
+    const parts = value.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0);
+    return parts.length > 0 ? parts.join(".") : null;
+  }
+  return null;
+}
+
+function hasStyleLockFieldsInScenario(scenarioMetadata: unknown): boolean {
+  if (!isRecord(scenarioMetadata)) return false;
+  const s = scenarioMetadata as any;
+
+  const initialFlags = [
+    isRecord(s.initialState) && isRecord(s.initialState.flags) ? s.initialState.flags : null,
+    isRecord(s.initialState) && isRecord(s.initialState.world) && isRecord(s.initialState.world.flags)
+      ? s.initialState.world.flags
+      : null,
+  ];
+  for (const flags of initialFlags) {
+    if (!flags) continue;
+    if ("toneLock" in flags || "genreLock" in flags || "pacingLock" in flags) {
+      return true;
+    }
+  }
+
+  const rawTurns = Array.isArray(s.turns)
+    ? s.turns
+    : Array.isArray(s.events)
+      ? s.events
+      : Array.isArray(s.scriptedTurns)
+        ? s.scriptedTurns
+        : [];
+  for (const turn of rawTurns) {
+    const source = isRecord(turn) ? turn : {};
+    const turnJson = isRecord(source.turnJson) ? source.turnJson : {};
+    const deltas = Array.isArray(source.stateDeltas)
+      ? source.stateDeltas
+      : Array.isArray(source.deltas)
+        ? source.deltas
+        : Array.isArray(turnJson.deltas)
+          ? turnJson.deltas
+          : [];
+    for (const delta of deltas) {
+      if (!isRecord(delta)) continue;
+      if (typeof delta.key === "string" && (delta.key === "toneLock" || delta.key === "genreLock" || delta.key === "pacingLock")) {
+        return true;
+      }
+      const path = normalizePath(delta.path);
+      if (!path) continue;
+      const normalized = path.startsWith("/") ? path.slice(1) : path;
+      if (
+        normalized === "flags.toneLock" ||
+        normalized === "flags.genreLock" ||
+        normalized === "flags.pacingLock" ||
+        normalized === "world.flags.toneLock" ||
+        normalized === "world.flags.genreLock" ||
+        normalized === "world.flags.pacingLock"
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function collectFailureMarkers(text: string): string[] {
   const markerPattern =
     /(REPRO_PACK_|DRIFT_|DELTA_|LEDGER_|STYLE_LOCK_|INVARIANT_|GOLDEN_|MISMATCH|VIOLATION|FAILED|ERROR|INVALID|MISSING)/;
@@ -223,6 +292,7 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
     };
   }
   const scenarioMetadata = readScenarioMetadataFromFixture(fixturePath);
+  const hasStyleLockFields = hasStyleLockFieldsInScenario(scenarioMetadata);
   if (scenarioMetadata) {
     const scenarioValidation = validateScenarioDeterminism(scenarioMetadata);
     if (!scenarioValidation.valid) {
@@ -243,6 +313,7 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   );
   const stdout = child.stdout ?? "";
   const stderr = child.stderr ?? "";
+  const combinedOutput = `${stdout}\n${stderr}`;
 
   const regressionMarkers: string[] = [];
   if (child.status !== 0) {
@@ -268,6 +339,9 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   }
   if (stdout.includes("DRIFT_BLOCK_MISSING")) {
     regressionMarkers.push("GOLDEN_REGRESSION unexpected=DRIFT_BLOCK_MISSING");
+  }
+  if (hasStyleLockFields && combinedOutput.includes("STYLE_LOCK_VIOLATION")) {
+    regressionMarkers.push("GOLDEN_STYLE_LOCK_REGRESSION");
   }
   const guardSummary = parseGuardSummary(stdout);
   if (!guardSummary || !isGuardOrderValid(guardSummary)) {

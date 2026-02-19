@@ -21,6 +21,14 @@ function main() {
   assert(source.includes("DETERMINISM VALIDATED"), 'Expected deterministic preview success banner');
   assert(source.includes("DETERMINISM VALIDATION FAILED"), 'Expected deterministic preview failure banner');
   assert(source.includes("Determinism errors"), 'Expected deterministic error list label');
+  assert(source.includes("STYLE LOCK SUMMARY"), 'Expected style lock summary panel heading');
+  assert(source.includes("Tone:"), 'Expected style lock summary tone row');
+  assert(source.includes("Genre:"), 'Expected style lock summary genre row');
+  assert(source.includes("Pacing:"), 'Expected style lock summary pacing row');
+  assert(source.includes("Status:"), 'Expected style lock summary status row');
+  assert(source.includes("LOCKED"), 'Expected locked status text');
+  assert(source.includes("UNLOCKED"), 'Expected unlocked status text');
+  assert(source.includes("Determinism failures:"), 'Expected style lock deterministic failure block');
   assert(source.includes("Memory preview:"), 'Expected deterministic memory preview label');
   assert(source.includes("Preflight checklist"), 'Expected "Preflight checklist" section');
   assert(source.includes("Validation pass"), 'Expected preflight validation pass checklist row');

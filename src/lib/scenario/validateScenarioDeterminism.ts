@@ -1,7 +1,8 @@
 import { ALLOWED_STATE_NAMESPACES } from "../game/replay";
 
 const STYLE_LOCK_KEYS = new Set(["toneLock", "genreLock", "pacingLock"]);
-const STYLE_LOCK_ALLOWED_VALUES = new Set(["none", "unlocked", "locked"]);
+const STYLE_LOCK_ALLOWED_VALUE_LIST = ["none", "unlocked", "locked"].sort(compareText);
+const STYLE_LOCK_ALLOWED_VALUES = new Set(STYLE_LOCK_ALLOWED_VALUE_LIST);
 
 function compareText(a: string, b: string): number {
   if (a === b) return 0;
@@ -143,6 +144,19 @@ function readStyleLockValueFromInitialState(
   return undefined;
 }
 
+function hasStyleLockInInitialState(scenarioJson: unknown, key: string): boolean {
+  if (!isRecord(scenarioJson)) return false;
+  const initialState = isRecord(scenarioJson.initialState) ? scenarioJson.initialState : null;
+  if (!initialState) return false;
+  if (isRecord(initialState.flags) && key in initialState.flags) {
+    return true;
+  }
+  if (isRecord(initialState.world) && isRecord(initialState.world.flags) && key in initialState.world.flags) {
+    return true;
+  }
+  return false;
+}
+
 function styleLockKeyFromDelta(delta: unknown): string | null {
   if (!isRecord(delta)) return null;
   const path = normalizePath(delta.path);
@@ -191,9 +205,13 @@ export function validateScenarioDeterminism(scenarioJson: unknown): {
   const seenTurnIndexes = new Set<number>();
 
   const styleLockState = new Map<string, unknown>();
-  for (const key of STYLE_LOCK_KEYS) {
+  const orderedStyleKeys = [...STYLE_LOCK_KEYS].sort(compareText);
+  for (const key of orderedStyleKeys) {
     const value = readStyleLockValueFromInitialState(scenarioJson, key);
     if (value !== undefined) {
+      if (typeof value !== "string" || !STYLE_LOCK_ALLOWED_VALUES.has(value)) {
+        errors.add("SCENARIO_STYLE_LOCK_ENUM_INVALID");
+      }
       styleLockState.set(key, value);
     }
   }
@@ -234,15 +252,17 @@ export function validateScenarioDeterminism(scenarioJson: unknown): {
         if (styleKey) {
           const current = styleLockState.get(styleKey);
           const next = styleLockNextValueFromDelta(delta);
-          if (current !== undefined && next === undefined) {
-            errors.add("SCENARIO_STYLE_LOCK_VIOLATION");
+          const lockFieldPresent = hasStyleLockInInitialState(scenarioJson, styleKey) || current !== undefined;
+
+          if (lockFieldPresent && next === undefined) {
+            errors.add("SCENARIO_STYLE_LOCK_TRANSITION_INVALID");
           }
           if (next !== undefined) {
             if (typeof next !== "string" || !STYLE_LOCK_ALLOWED_VALUES.has(next)) {
-              errors.add("SCENARIO_STYLE_LOCK_VIOLATION");
+              errors.add("SCENARIO_STYLE_LOCK_ENUM_INVALID");
             } else {
-              if (current === "locked" && next !== "locked") {
-                errors.add("SCENARIO_STYLE_LOCK_VIOLATION");
+              if (current !== undefined && current !== next) {
+                errors.add("SCENARIO_STYLE_LOCK_TRANSITION_INVALID");
               }
               styleLockState.set(styleKey, next);
             }
