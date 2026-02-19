@@ -237,6 +237,31 @@ function parseGuardSummary(stdout: string): string[] | null {
     .filter((name) => name.length > 0);
 }
 
+function parseCausalCoverage(stdout: string): {
+  totalDeltas: number;
+  explainedDeltas: number;
+  unexplainedDeltas: number;
+} | null {
+  const lines = stdout.split(/\r?\n/);
+  const markerIndex = lines.findIndex((line) => line.trim() === "CAUSAL_COVERAGE:");
+  if (markerIndex < 0) return null;
+  const window = lines.slice(markerIndex, markerIndex + 6);
+  const readValue = (prefix: string): number | null => {
+    const line = window.find((entry) => entry.trim().startsWith(prefix));
+    if (!line) return null;
+    const raw = line.trim().slice(prefix.length).trim();
+    if (!/^-?\d+$/.test(raw)) return null;
+    return Number(raw);
+  };
+  const totalDeltas = readValue("totalDeltas:");
+  const explainedDeltas = readValue("explainedDeltas:");
+  const unexplainedDeltas = readValue("unexplainedDeltas:");
+  if (totalDeltas == null || explainedDeltas == null || unexplainedDeltas == null) {
+    return null;
+  }
+  return { totalDeltas, explainedDeltas, unexplainedDeltas };
+}
+
 function parsePerTurnTelemetryRows(stdout: string): Array<{
   turnIndex: number;
   deltaCount: number;
@@ -329,6 +354,7 @@ function isGuardOrderValid(guards: string[]): boolean {
     "DELTA_NAMESPACE",
     "DELTA_ORDER",
     "DELTA_APPLY_IDEMPOTENCY",
+    "CAUSAL_COVERAGE",
     "REPLAY_STATE_INVARIANT",
   ];
   let last = -1;
@@ -427,6 +453,20 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   }
   if (hasStyleLockFields && combinedOutput.includes("STYLE_LOCK_VIOLATION")) {
     regressionMarkers.push("GOLDEN_STYLE_LOCK_REGRESSION");
+  }
+  if (combinedOutput.includes("DELTA_WITHOUT_LEDGER_EXPLANATION")) {
+    regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION marker=DELTA_WITHOUT_LEDGER_EXPLANATION");
+  }
+  if (combinedOutput.includes("LEDGER_WITHOUT_DELTA_MUTATION")) {
+    regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION marker=LEDGER_WITHOUT_DELTA_MUTATION");
+  }
+  const causalCoverage = parseCausalCoverage(stdout);
+  if (!causalCoverage) {
+    regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION missing=CAUSAL_COVERAGE");
+  } else if (causalCoverage.unexplainedDeltas > 0) {
+    regressionMarkers.push(
+      `GOLDEN_CAUSAL_REGRESSION unexplainedDeltas=${String(causalCoverage.unexplainedDeltas)}`,
+    );
   }
   if (failureTurnIndexes.length > 0) {
     if (!stdout.includes("FAIL_FORWARD_CHECK: PASS")) {

@@ -14,6 +14,7 @@ import {
 import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
 import {
   REPLAY_GUARD_ORDER,
+  assertCausalCoverage,
   assertDeltaApplyIdempotency,
   assertFailForwardInvariant,
   assertLedgerConsistency,
@@ -281,6 +282,53 @@ async function main() {
       ]),
     /LEDGER_DUPLICATE_ID/,
     "expected duplicate ledger ids to fail",
+  );
+  assert.doesNotThrow(
+    () =>
+      assertCausalCoverage([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "stats.set", path: "stats.health", value: 10 }],
+            ledgerAdds: [{ id: "ledger_causal_ok_0", turnIndex: 0, message: "stats.health changed" }],
+          },
+        },
+      ]),
+    "expected causal coverage to pass with deterministic path explanation",
+  );
+  assert.throws(
+    () =>
+      assertCausalCoverage([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [
+              { op: "stats.set", path: "stats.health", value: 10 },
+              { op: "inventory.add", path: "inventory.rope", value: 1 },
+            ],
+            ledgerAdds: [{ id: "ledger_causal_bad_0", turnIndex: 0, message: "inventory changed" }],
+          },
+        },
+      ]),
+    /DELTA_WITHOUT_LEDGER_EXPLANATION/,
+    "expected causal coverage to fail when a delta has no ledger explanation",
+  );
+  assert.throws(
+    () =>
+      assertCausalCoverage([
+        {
+          seq: 0,
+          turnJson: {
+            deltas: [{ op: "stats.set", path: "stats.health", value: 10 }],
+            ledgerAdds: [
+              { id: "ledger_causal_match_0", turnIndex: 0, path: "stats.health", message: "stats.health changed" },
+              { id: "ledger_causal_orphan_0", turnIndex: 0, path: "stats.mana", message: "stats.mana changed" },
+            ],
+          },
+        },
+      ]),
+    /LEDGER_WITHOUT_DELTA_MUTATION/,
+    "expected causal coverage to fail on orphan ledger path references",
   );
 
   assert.doesNotThrow(
@@ -627,6 +675,11 @@ async function main() {
   assert(out.includes("REPLAY COMPLETE"), "expected REPLAY COMPLETE marker");
   assert(out.includes("FAIL_FORWARD_SIGNAL: NONE"), "expected FAIL_FORWARD_SIGNAL NONE marker");
   assert(out.includes("FAIL_FORWARD_CHECK: PASS"), "expected FAIL_FORWARD_CHECK PASS marker");
+  assert(out.includes("CAUSAL_COVERAGE:"), "expected causal coverage marker");
+  assert(out.includes("totalDeltas:"), "expected causal coverage total deltas field");
+  assert(out.includes("explainedDeltas:"), "expected causal coverage explained deltas field");
+  assert(out.includes("unexplainedDeltas:"), "expected causal coverage unexplained deltas field");
+  assert(/unexplainedDeltas:\s*0/.test(out), "expected unexplainedDeltas to be zero for deterministic fixtures");
   assert(out.includes("FINAL_STATE_HASH"), "expected FINAL_STATE_HASH marker");
   assert(out.includes("TURNS"), "expected TURNS marker");
   assert(out.includes("INVARIANT_SEQ_CONTIGUOUS"), "expected sequence invariant marker");

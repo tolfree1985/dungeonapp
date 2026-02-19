@@ -57,6 +57,10 @@ function main() {
   assert(dashboardSource.includes("Search within bundle"), "Expected deterministic bundle search control");
   assert(deltaMapSource.includes("inventory"), 'Expected consequence delta highlighter signal');
   assert(dashboardSource.includes("Turn Deep View Drawer"), "Expected turn deep view drawer");
+  assert(dashboardSource.includes("Why This Changed"), "Expected why-this-changed causal panel");
+  assert(dashboardSource.includes("Delta Path"), "Expected causal table delta path header");
+  assert(dashboardSource.includes("Ledger Explanation(s)"), "Expected causal table ledger explanation header");
+  assert(dashboardSource.includes("UNEXPLAINED DELTA"), "Expected unexplained delta marker");
   assert(dashboardSource.includes("Copy Turn Repro Block"), "Expected copy turn repro block control");
   assert(dashboardSource.includes("Error/Anomaly Spotlight"), "Expected anomaly spotlight panel");
   assert(dashboardSource.includes("Known Good Example Bundle Fixture Viewer"), "Expected fixture viewer section");

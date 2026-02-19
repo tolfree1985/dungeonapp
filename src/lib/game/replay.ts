@@ -53,10 +53,23 @@ export type FailForwardSignal =
   | "RELATIONSHIP_SHIFT"
   | "SYSTEM_NO_LEDGER";
 
+export type CausalCoverageSummary = {
+  totalDeltas: number;
+  explainedDeltas: number;
+  unexplainedDeltas: number;
+};
+
+export type DeltaLedgerExplanationRow = {
+  deltaPath: string;
+  ledgerExplanations: string[];
+  explained: boolean;
+};
+
 export type ReplayGuardName =
   | "TURN_MONOTONICITY"
   | "LEDGER_CONSISTENCY"
   | "FAIL_FORWARD_INVARIANT"
+  | "CAUSAL_COVERAGE"
   | "DELTA_SHAPE"
   | "DELTA_NAMESPACE"
   | "DELTA_ORDER"
@@ -73,6 +86,7 @@ export const REPLAY_GUARD_ORDER: readonly ReplayGuardName[] = [
   "DELTA_ORDER",
   "DELTA_APPLY_IDEMPOTENCY",
   "STYLE_LOCK_INVARIANT",
+  "CAUSAL_COVERAGE",
   "REPLAY_STATE_INVARIANT",
 ] as const;
 
@@ -406,6 +420,242 @@ function hasSystemNoLedgerTag(turnJson: unknown): boolean {
   return typeof turnJson.tag === "string" && turnJson.tag.trim() === "system/no-ledger";
 }
 
+function normalizeReferenceToken(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) return "";
+  const stripped = trimmed.startsWith("/") ? trimmed.slice(1) : trimmed;
+  return stripped.replace(/\[(\d+)\]/g, ".$1");
+}
+
+function addTokenWithParents(raw: unknown, out: Set<string>): void {
+  const token = normalizeReferenceToken(raw);
+  if (!token) return;
+  const parts = token.split(/[./[\]]+/).filter(Boolean);
+  if (parts.length === 0) return;
+  for (let i = parts.length; i >= 1; i--) {
+    out.add(parts.slice(0, i).join("."));
+  }
+  out.add(parts[parts.length - 1]);
+}
+
+function readStringValues(source: unknown, keys: string[]): string[] {
+  if (!isRecord(source)) return [];
+  const out: string[] = [];
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      out.push(value.trim());
+      continue;
+    }
+    if (!Array.isArray(value)) continue;
+    for (const entry of value) {
+      if (typeof entry === "string" && entry.trim().length > 0) {
+        out.push(entry.trim());
+      }
+    }
+  }
+  return out;
+}
+
+function readLedgerExplicitReferencePaths(entry: unknown): string[] {
+  return readStringValues(entry, ["path", "paths", "deltaPath", "deltaPaths", "refPath", "refPaths"]);
+}
+
+function readLedgerGroupTokens(entry: unknown): Set<string> {
+  const out = new Set<string>();
+  const groups = readStringValues(entry, ["causalGroup", "causalGroups", "group", "groups"]);
+  for (const group of groups) {
+    out.add(normalizeReferenceToken(group));
+  }
+  return out;
+}
+
+function readDeltaGroupTokens(delta: unknown): Set<string> {
+  const out = new Set<string>();
+  const groups = readStringValues(delta, ["causalGroup", "causalGroups", "group", "groups"]);
+  for (const group of groups) {
+    out.add(normalizeReferenceToken(group));
+  }
+  return out;
+}
+
+function readDeltaDisplayPath(delta: unknown, index: number): string {
+  const explicit = explicitDeltaPath(delta);
+  if (explicit) return explicit;
+  if (isRecord(delta) && typeof delta.op === "string" && delta.op.trim().length > 0) {
+    return delta.op.trim();
+  }
+  if (isRecord(delta) && typeof delta.key === "string" && delta.key.trim().length > 0) {
+    return delta.key.trim();
+  }
+  return `#${index}`;
+}
+
+function buildDeltaReferenceTokens(delta: unknown): string[] {
+  const out = new Set<string>();
+  const explicit = explicitDeltaPath(delta);
+  if (explicit) {
+    addTokenWithParents(explicit, out);
+  }
+  if (isRecord(delta) && typeof delta.op === "string" && delta.op.trim().length > 0) {
+    addTokenWithParents(delta.op, out);
+  }
+  if (isRecord(delta) && typeof delta.key === "string" && delta.key.trim().length > 0) {
+    addTokenWithParents(delta.key, out);
+  }
+  return [...out];
+}
+
+function ledgerEntrySearchText(entry: unknown): string {
+  try {
+    return stableStringifyDeterministic(entry, "ledger.search").toLowerCase();
+  } catch {
+    const fallback = JSON.stringify(entry);
+    return typeof fallback === "string" ? fallback.toLowerCase() : "";
+  }
+}
+
+function ledgerExplanationText(entry: unknown): string {
+  if (isRecord(entry)) {
+    const labels = ["message", "because", "kind"];
+    const parts: string[] = [];
+    for (const label of labels) {
+      const value = entry[label];
+      if (typeof value === "string" && value.trim().length > 0) {
+        parts.push(value.trim());
+      }
+    }
+    if (parts.length > 0) {
+      return parts.join(" | ");
+    }
+  }
+  try {
+    return stableStringifyDeterministic(entry, "ledger.explanation");
+  } catch {
+    const fallback = JSON.stringify(entry);
+    return typeof fallback === "string" ? fallback : "(none)";
+  }
+}
+
+function tokenInText(text: string, token: string): boolean {
+  if (!token) return false;
+  const normalizedToken = token.toLowerCase();
+  const escaped = normalizedToken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`(^|[^a-z0-9_])${escaped}($|[^a-z0-9_])`);
+  return pattern.test(text);
+}
+
+function buildDeltaTokenSet(deltas: unknown[]): Set<string> {
+  const out = new Set<string>();
+  for (const delta of deltas) {
+    for (const token of buildDeltaReferenceTokens(delta)) {
+      out.add(token);
+    }
+  }
+  return out;
+}
+
+function buildDeltaReferencePathsForLedger(deltas: unknown[]): string[] {
+  const out: string[] = [];
+  for (const delta of deltas) {
+    const explicit = explicitDeltaPath(delta);
+    if (explicit) {
+      const normalized = normalizeReferenceToken(explicit);
+      if (normalized) out.push(normalized);
+      continue;
+    }
+    if (isRecord(delta) && typeof delta.op === "string" && delta.op.trim().length > 0) {
+      const normalized = normalizeReferenceToken(delta.op);
+      if (normalized) out.push(normalized);
+      continue;
+    }
+    if (isRecord(delta) && typeof delta.key === "string" && delta.key.trim().length > 0) {
+      const normalized = normalizeReferenceToken(delta.key);
+      if (normalized) out.push(normalized);
+    }
+  }
+  return out;
+}
+
+function ledgerPathMatchesDeltaPath(ledgerPath: string, deltaPath: string): boolean {
+  if (ledgerPath === deltaPath) return true;
+  return deltaPath.startsWith(`${ledgerPath}.`);
+}
+
+export function buildDeltaLedgerExplanationRows(args: {
+  deltas: unknown[];
+  ledgerAdds: unknown[];
+  allowImplicitSinglePair?: boolean;
+  systemNoLedger?: boolean;
+}): { rows: DeltaLedgerExplanationRow[]; coverage: CausalCoverageSummary } {
+  const deltas = Array.isArray(args.deltas) ? args.deltas : [];
+  const ledgerAdds = Array.isArray(args.ledgerAdds) ? args.ledgerAdds : [];
+  const allowImplicitSinglePair = args.allowImplicitSinglePair !== false;
+  const systemNoLedger = args.systemNoLedger === true;
+
+  const ledgerContexts = ledgerAdds.map((entry) => {
+    const explicitRefs = new Set<string>();
+    for (const rawPath of readLedgerExplicitReferencePaths(entry)) {
+      addTokenWithParents(rawPath, explicitRefs);
+    }
+    return {
+      searchText: ledgerEntrySearchText(entry),
+      explanation: ledgerExplanationText(entry),
+      explicitRefs,
+      groupTokens: readLedgerGroupTokens(entry),
+    };
+  });
+
+  const rows: DeltaLedgerExplanationRow[] = deltas.map((delta, index) => {
+    if (systemNoLedger && ledgerAdds.length === 0) {
+      return {
+        deltaPath: readDeltaDisplayPath(delta, index),
+        ledgerExplanations: ["system/no-ledger"],
+        explained: true,
+      };
+    }
+
+    const deltaTokens = buildDeltaReferenceTokens(delta);
+    const deltaGroups = readDeltaGroupTokens(delta);
+
+    const matchedExplanations: string[] = [];
+    for (const ledgerContext of ledgerContexts) {
+      const byPath = deltaTokens.some((token) => ledgerContext.explicitRefs.has(token));
+      const byGroup = deltaGroups.size > 0 && [...deltaGroups].some((group) => ledgerContext.groupTokens.has(group));
+      const byText = deltaTokens.some((token) => tokenInText(ledgerContext.searchText, token));
+      if (byPath || byGroup || byText) {
+        matchedExplanations.push(ledgerContext.explanation);
+      }
+    }
+
+    if (
+      matchedExplanations.length === 0 &&
+      allowImplicitSinglePair &&
+      deltas.length === 1 &&
+      ledgerContexts.length === 1
+    ) {
+      matchedExplanations.push(ledgerContexts[0].explanation);
+    }
+
+    return {
+      deltaPath: readDeltaDisplayPath(delta, index),
+      ledgerExplanations: matchedExplanations,
+      explained: matchedExplanations.length > 0,
+    };
+  });
+
+  const explainedDeltas = rows.filter((row) => row.explained).length;
+  return {
+    rows,
+    coverage: {
+      totalDeltas: rows.length,
+      explainedDeltas,
+      unexplainedDeltas: rows.length - explainedDeltas,
+    },
+  };
+}
+
 export function assertLedgerConsistency(events: ReplayEvent[]): void {
   const turnIndexes = new Set<number>(events.map((event) => event.seq));
   const seenLedgerIds = new Set<string>();
@@ -455,6 +705,58 @@ export function assertLedgerConsistency(events: ReplayEvent[]): void {
   if (totalLedgerFromRows !== totalLedgerFromEvents) {
     throw new Error("LEDGER_TELEMETRY_MISMATCH");
   }
+}
+
+export function assertCausalCoverage(events: ReplayEvent[]): CausalCoverageSummary {
+  let totalDeltas = 0;
+  let explainedDeltas = 0;
+  let unexplainedDeltas = 0;
+
+  for (const event of events) {
+    const turnJson = isRecord(event.turnJson) ? event.turnJson : {};
+    const deltas = getReplayDeltas(event);
+    const ledgerAdds = Array.isArray(turnJson.ledgerAdds) ? turnJson.ledgerAdds : [];
+    const systemNoLedger = hasSystemNoLedgerTag(turnJson) && ledgerAdds.length === 0;
+
+    const { rows, coverage } = buildDeltaLedgerExplanationRows({
+      deltas,
+      ledgerAdds,
+      allowImplicitSinglePair: true,
+      systemNoLedger,
+    });
+    totalDeltas += coverage.totalDeltas;
+    explainedDeltas += coverage.explainedDeltas;
+    unexplainedDeltas += coverage.unexplainedDeltas;
+
+    const firstUnexplained = rows.find((row) => !row.explained);
+    if (firstUnexplained) {
+      throw new Error(`DELTA_WITHOUT_LEDGER_EXPLANATION seq=${event.seq} path=${firstUnexplained.deltaPath}`);
+    }
+
+    const deltaTokens = buildDeltaTokenSet(deltas);
+    const deltaReferencePaths = buildDeltaReferencePathsForLedger(deltas);
+    for (let idx = 0; idx < ledgerAdds.length; idx++) {
+      const entry = ledgerAdds[idx];
+      const explicitPaths = readLedgerExplicitReferencePaths(entry);
+      if (explicitPaths.length === 0) continue;
+      for (const rawPath of explicitPaths) {
+        const normalizedPath = normalizeReferenceToken(rawPath);
+        if (!normalizedPath) continue;
+        const matchesDelta =
+          deltaReferencePaths.some((deltaPath) => ledgerPathMatchesDeltaPath(normalizedPath, deltaPath)) ||
+          deltaTokens.has(normalizedPath);
+        if (!matchesDelta) {
+          throw new Error(`LEDGER_WITHOUT_DELTA_MUTATION seq=${event.seq} idx=${idx} path=${normalizedPath}`);
+        }
+      }
+    }
+  }
+
+  return {
+    totalDeltas,
+    explainedDeltas,
+    unexplainedDeltas,
+  };
 }
 
 export function assertFailForwardInvariant(events: ReplayEvent[]): Map<number, FailForwardSignal> {
@@ -564,6 +866,7 @@ export type ReplayWithGuardSummary = {
   styleLockPresent: boolean;
   failForwardCheck: "PASS" | "FAIL";
   failForwardSignal: FailForwardSignal | "NONE";
+  causalCoverage: CausalCoverageSummary;
 };
 
 /**
@@ -582,6 +885,11 @@ function replayStateFromTurnJsonInternal(
   let state: any = genesisState ?? createInitialStateV1();
   let styleLockPresent = false;
   let failForwardSignal: FailForwardSignal | "NONE" = "NONE";
+  let causalCoverage: CausalCoverageSummary = {
+    totalDeltas: 0,
+    explainedDeltas: 0,
+    unexplainedDeltas: 0,
+  };
 
   assertTurnMonotonicity(events);
   mark("TURN_MONOTONICITY");
@@ -610,6 +918,8 @@ function replayStateFromTurnJsonInternal(
     mark("STYLE_LOCK_INVARIANT");
     state = nextState;
   }
+  causalCoverage = assertCausalCoverage(events);
+  mark("CAUSAL_COVERAGE");
   assertReplayStateInvariant(state);
   mark("REPLAY_STATE_INVARIANT");
 
@@ -620,6 +930,7 @@ function replayStateFromTurnJsonInternal(
       styleLockPresent,
       failForwardCheck: "PASS",
       failForwardSignal,
+      causalCoverage,
     };
   }
 

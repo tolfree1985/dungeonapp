@@ -321,6 +321,10 @@ async function main() {
   console.log(`REPLAY_GUARD_SUMMARY ${guardSummary.guardSummary.join(",")}`);
   console.log(`FAIL_FORWARD_SIGNAL: ${guardSummary.failForwardSignal}`);
   console.log(`FAIL_FORWARD_CHECK: ${guardSummary.failForwardCheck}`);
+  console.log("CAUSAL_COVERAGE:");
+  console.log(`  totalDeltas: ${guardSummary.causalCoverage.totalDeltas}`);
+  console.log(`  explainedDeltas: ${guardSummary.causalCoverage.explainedDeltas}`);
+  console.log(`  unexplainedDeltas: ${guardSummary.causalCoverage.unexplainedDeltas}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");

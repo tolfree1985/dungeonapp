@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { classifyFailForwardSignal } from "@/lib/game/replay";
+import { buildDeltaLedgerExplanationRows, classifyFailForwardSignal } from "@/lib/game/replay";
 import { categorizeDeltaPath } from "@/lib/support/deltaPathMeaningMap";
 import { buildDeterministicReproCliText } from "@/lib/support/buildDeterministicReproCliText";
 import { buildSupportShareBlockText } from "@/lib/support/buildSupportShareBlockText";
@@ -1602,6 +1602,21 @@ export function SupportDashboard({
     [selectedTurnKey, turnRows],
   );
 
+  const selectedTurnCausal = useMemo(() => {
+    if (!selectedTurn) {
+      return {
+        rows: [] as Array<{ deltaPath: string; ledgerExplanations: string[]; explained: boolean }>,
+        coverage: { totalDeltas: 0, explainedDeltas: 0, unexplainedDeltas: 0 },
+      };
+    }
+    return buildDeltaLedgerExplanationRows({
+      deltas: selectedTurn.stateDeltas,
+      ledgerAdds: selectedTurn.ledgerAdds,
+      allowImplicitSinglePair: true,
+      systemNoLedger: false,
+    });
+  }, [selectedTurn]);
+
   const selectedTurnReproText = useMemo(() => {
     if (!selectedTurn) return "";
     return buildSupportTurnReproBlockText({
@@ -2759,6 +2774,44 @@ export function SupportDashboard({
             <pre className="rounded border p-2 whitespace-pre-wrap">{prettyStableJson(selectedTurn.ledgerAdds)}</pre>
             <div className="mt-2 text-xs">raw turn JSON</div>
             <pre className="rounded border p-2 whitespace-pre-wrap">{prettyStableJson(selectedTurn.rawTurn)}</pre>
+
+            <div className="mt-3 rounded border p-3" aria-label="Why This Changed">
+              <div className="font-semibold">Why This Changed</div>
+              <div className="mt-1 text-xs">
+                explainedDeltas: {selectedTurnCausal.coverage.explainedDeltas} / {selectedTurnCausal.coverage.totalDeltas}
+              </div>
+              {selectedTurnCausal.coverage.unexplainedDeltas > 0 ? (
+                <div className="mt-1 text-xs font-semibold text-red-700">UNEXPLAINED DELTA</div>
+              ) : null}
+              <div className="mt-2 overflow-auto">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr>
+                      <th className="border p-2 text-left">Delta Path</th>
+                      <th className="border p-2 text-left">Ledger Explanation(s)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedTurnCausal.rows.length === 0 ? (
+                      <tr>
+                        <td className="border p-2" colSpan={2}>
+                          (none)
+                        </td>
+                      </tr>
+                    ) : (
+                      selectedTurnCausal.rows.map((row, index) => (
+                        <tr key={`${selectedTurn.turnKey}-causal-${row.deltaPath}-${index}`}>
+                          <td className="border p-2">{row.deltaPath}</td>
+                          <td className="border p-2">
+                            {row.ledgerExplanations.length > 0 ? row.ledgerExplanations.join(" || ") : "(none)"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
             <div className="mt-2 flex items-center gap-3">
               <button
