@@ -3,7 +3,9 @@ import { ResolutionBadge } from "@/components/ResolutionBadge";
 import {
   CONSEQUENCE_RULE_TABLE,
   classifyConsequence,
+  deriveCapSnapshot,
   explainConsequence,
+  type CapReason,
   type ConsequenceCostType,
   type ConsequenceEscalation,
   type ConsequenceRiskLevel,
@@ -27,6 +29,7 @@ type DemoTurn = {
   stateDeltas: unknown[];
   ledgerAdds: unknown[];
   suggestedOptions: DemoOption[];
+  capReason?: CapReason;
 };
 
 const COST_TYPE_ICON_MAP: Record<ConsequenceCostType, string> = {
@@ -89,6 +92,7 @@ const demoTurns: DemoTurn[] = [
       { type: "resource", summary: "Supplies lost while breaking contact." },
       { type: "social", summary: "Squad confidence dipped after the failed push." },
     ],
+    capReason: "OPTIONS_TRUNCATED",
     suggestedOptions: [
       { id: "o7", label: "Regroup at a safe house.", contextTag: "resource" },
       { id: "o8", label: "Push deeper before they reset defenses.", contextTag: "hazard" },
@@ -225,9 +229,18 @@ export default function Home() {
               const previousSignal = index > 0 ? demoTurnSignals[index - 1] : undefined;
               const turnSignal = demoTurnSignals[index];
               const stableTurnId = t.id;
+              const isLatestTurn = index === demoTurns.length - 1;
               const reportedRisk = t.reportedRiskLevel ?? turnSignal.consequence.riskLevel;
               const hasStakeSyncError = reportedRisk !== turnSignal.consequence.riskLevel;
               const playerFriendlyReasons = toPlayerFriendlyStakesReasons(turnSignal.reasonLines);
+              const capSnapshot = deriveCapSnapshot({
+                resolution: { tier: t.outcome },
+                deltas: t.stateDeltas,
+                ledgerAdds: t.ledgerAdds,
+                options: t.suggestedOptions,
+                assistantText: t.assistantText,
+                capReason: t.capReason,
+              });
 
               return (
                 <article
@@ -268,6 +281,11 @@ export default function Home() {
                     >
                       <div>COMPLICATION TRIGGERED</div>
                       {turnSignal.consequence.escalation === "MAJOR" ? <div>MAJOR CONSEQUENCE</div> : null}
+                    </div>
+                  ) : null}
+                  {isLatestTurn && capSnapshot.capReason !== "NONE" ? (
+                    <div style={{ marginTop: 8, fontSize: "0.75rem", color: "#fca5a5" }}>
+                      LIMIT APPLIED: {capSnapshot.capReason}
                     </div>
                   ) : null}
 

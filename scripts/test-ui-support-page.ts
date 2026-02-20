@@ -136,6 +136,10 @@ function main() {
   assert(dashboardSource.includes("RISK_LEVEL"), "Expected per-turn telemetry RISK_LEVEL header");
   assert(dashboardSource.includes("COST_TYPES"), "Expected per-turn telemetry COST_TYPES header");
   assert(dashboardSource.includes("ESCALATION"), "Expected per-turn telemetry ESCALATION header");
+  assert(dashboardSource.includes("CAP"), "Expected CAP panel heading");
+  assert(dashboardSource.includes("CAP_REASON"), "Expected CAP_REASON telemetry field");
+  assert(dashboardSource.includes("Why Was It Capped?"), 'Expected "Why Was It Capped?" deterministic label');
+  assert(dashboardSource.includes("capExplanation"), "Expected deterministic cap explanation wiring");
   assert(dashboardSource.includes("explainConsequence"), "Expected deterministic stakes reason derivation");
   assert(
     dashboardSource.includes('row.stakesReason.join("\\n")'),

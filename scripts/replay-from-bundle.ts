@@ -9,6 +9,8 @@ import {
 } from "../src/lib/support/supportManifest";
 import { SUPPORT_PACKAGE_VERSION, type DriftSeverity, type SupportPackageV1 } from "../src/lib/support/supportPackage";
 import {
+  deriveCapSnapshot,
+  explainCapReason,
   classifyConsequence,
   classifyFailForwardSignal,
   replayStateFromTurnJsonWithGuardSummary,
@@ -307,6 +309,7 @@ async function main() {
   const guardSummary = replayStateFromTurnJsonWithGuardSummary(replayEvents);
   const failForwardSignalByTurn = new Map<number, string>();
   const consequenceByTurn = new Map<number, ReturnType<typeof classifyConsequence>>();
+  const capSnapshotByTurn = new Map<number, ReturnType<typeof deriveCapSnapshot>>();
   const emptyConsequence: ConsequenceSummary = { riskLevel: "LOW", costTypes: [], escalation: "NONE" };
   for (const event of replayEvents) {
     const signal = classifyFailForwardSignal(event.turnJson);
@@ -314,6 +317,7 @@ async function main() {
       failForwardSignalByTurn.set(event.seq, signal);
     }
     consequenceByTurn.set(event.seq, classifyConsequence(event.turnJson));
+    capSnapshotByTurn.set(event.seq, deriveCapSnapshot(event.turnJson));
   }
   const contiguous = isSeqContiguous(perTurn.map((row) => row.turnIndex));
   const ledgerCount = manifest.telemetry.totalLedgerEntries;
@@ -353,6 +357,18 @@ async function main() {
   console.log("DIFFICULTY_CURVE");
   console.log(`momentumCurve: ${guardSummary.difficultyState.curve.join(",")}`);
   console.log(`finalTier: ${guardSummary.difficultyState.tier}`);
+  const latestTurnIndex = perTurn.length > 0 ? perTurn[perTurn.length - 1].turnIndex : null;
+  const latestCapSnapshot =
+    latestTurnIndex == null ? null : capSnapshotByTurn.get(latestTurnIndex) ?? deriveCapSnapshot({});
+  if (latestCapSnapshot) {
+    console.log("CAP_SNAPSHOT");
+    console.log(`OUTPUT_CHAR_LIMIT: ${latestCapSnapshot.outputCharLimit}`);
+    console.log(`MAX_OPTIONS: ${latestCapSnapshot.maxOptions}`);
+    console.log(`MAX_LEDGER_ENTRIES: ${latestCapSnapshot.maxLedgerEntries}`);
+    console.log(`MAX_DELTA_COUNT: ${latestCapSnapshot.maxDeltaCount}`);
+    console.log(`CAP_REASON: ${latestCapSnapshot.capReason}`);
+    console.log(`CAP_EXPLANATION: ${explainCapReason(latestCapSnapshot)}`);
+  }
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");

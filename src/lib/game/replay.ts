@@ -90,6 +90,28 @@ export type ConsequenceSummary = {
   escalation: ConsequenceEscalation;
 };
 
+export type CapReason =
+  | "NONE"
+  | "OUTPUT_TRUNCATED"
+  | "OPTIONS_TRUNCATED"
+  | "LEDGER_TRUNCATED"
+  | "DELTA_TRUNCATED";
+
+export type CapSnapshot = {
+  outputCharLimit: number;
+  maxOptions: number;
+  maxLedgerEntries: number;
+  maxDeltaCount: number;
+  capReason: CapReason;
+};
+
+export const TURN_CAP_LIMITS = {
+  outputCharLimit: 1200,
+  maxOptions: 5,
+  maxLedgerEntries: 128,
+  maxDeltaCount: 128,
+} as const;
+
 export type DifficultyTier = "CALM" | "TENSE" | "DANGEROUS" | "CRITICAL";
 
 export type DifficultyStateSummary = {
@@ -761,6 +783,177 @@ function readTurnLedgerForConsequence(source: unknown): unknown[] {
     return source.turnJson.ledgerAdds;
   }
   return [];
+}
+
+function readTurnOptionsForCap(source: unknown): unknown[] {
+  if (!isRecord(source)) return [];
+  if (Array.isArray(source.options)) return source.options;
+  if (Array.isArray(source.suggestedOptions)) return source.suggestedOptions;
+  if (Array.isArray(source.choices)) return source.choices;
+  if (isRecord(source.turnJson)) {
+    if (Array.isArray(source.turnJson.options)) return source.turnJson.options;
+    if (Array.isArray(source.turnJson.suggestedOptions)) return source.turnJson.suggestedOptions;
+    if (Array.isArray(source.turnJson.choices)) return source.turnJson.choices;
+  }
+  return [];
+}
+
+function readTurnOutputTextForCap(source: unknown): string {
+  if (!isRecord(source)) return "";
+  const candidates: unknown[] = [
+    source.assistantText,
+    source.narrative,
+    source.scene,
+    source.output,
+    source.text,
+    isRecord(source.turnJson) ? source.turnJson.assistantText : undefined,
+    isRecord(source.turnJson) ? source.turnJson.narrative : undefined,
+    isRecord(source.turnJson) ? source.turnJson.scene : undefined,
+    isRecord(source.turnJson) ? source.turnJson.output : undefined,
+    isRecord(source.turnJson) ? source.turnJson.text : undefined,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
+function readTurnCapReasonCandidate(source: unknown): CapReason | null {
+  if (!isRecord(source)) return null;
+  const candidates: unknown[] = [
+    source.capReason,
+    isRecord(source.capSnapshot) ? source.capSnapshot.capReason : undefined,
+    isRecord(source.cap) ? source.cap.reason : undefined,
+    isRecord(source.debug) ? source.debug.capReason : undefined,
+    isRecord(source.turnJson) ? source.turnJson.capReason : undefined,
+    isRecord(source.turnJson) && isRecord(source.turnJson.capSnapshot)
+      ? source.turnJson.capSnapshot.capReason
+      : undefined,
+    isRecord(source.turnJson) && isRecord(source.turnJson.cap) ? source.turnJson.cap.reason : undefined,
+    isRecord(source.turnJson) && isRecord(source.turnJson.debug) ? source.turnJson.debug.capReason : undefined,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const normalized = candidate.trim().toUpperCase();
+    if (
+      normalized === "NONE" ||
+      normalized === "OUTPUT_TRUNCATED" ||
+      normalized === "OPTIONS_TRUNCATED" ||
+      normalized === "LEDGER_TRUNCATED" ||
+      normalized === "DELTA_TRUNCATED"
+    ) {
+      return normalized as CapReason;
+    }
+  }
+  return null;
+}
+
+function readTurnCapFlag(source: unknown, key: "outputTruncated" | "optionsTruncated" | "ledgerTruncated" | "deltaTruncated"): boolean {
+  if (!isRecord(source)) return false;
+  const read = (value: unknown): boolean =>
+    value === true || (typeof value === "string" && value.trim().toLowerCase() === "true");
+  const candidates: unknown[] = [
+    source[key],
+    isRecord(source.cap) ? source.cap[key] : undefined,
+    isRecord(source.capSnapshot) ? source.capSnapshot[key] : undefined,
+    isRecord(source.debug) ? source.debug[key] : undefined,
+    isRecord(source.turnJson) ? source.turnJson[key] : undefined,
+    isRecord(source.turnJson) && isRecord(source.turnJson.cap) ? source.turnJson.cap[key] : undefined,
+    isRecord(source.turnJson) && isRecord(source.turnJson.capSnapshot)
+      ? source.turnJson.capSnapshot[key]
+      : undefined,
+    isRecord(source.turnJson) && isRecord(source.turnJson.debug) ? source.turnJson.debug[key] : undefined,
+  ];
+  return candidates.some((candidate) => read(candidate));
+}
+
+function readCapObserved(source: unknown) {
+  const outputLength = readTurnOutputTextForCap(source).length;
+  const optionsCount = readTurnOptionsForCap(source).length;
+  const ledgerCount = readTurnLedgerForConsequence(source).length;
+  const deltaCount = readTurnDeltasForConsequence(source).length;
+  return {
+    outputLength,
+    optionsCount,
+    ledgerCount,
+    deltaCount,
+  };
+}
+
+export function deriveCapSnapshot(turnJson: unknown): CapSnapshot {
+  const observed = readCapObserved(turnJson);
+  const explicitReason = readTurnCapReasonCandidate(turnJson);
+  let capReason: CapReason = explicitReason ?? "NONE";
+
+  if (capReason === "NONE") {
+    if (
+      readTurnCapFlag(turnJson, "outputTruncated") ||
+      observed.outputLength > TURN_CAP_LIMITS.outputCharLimit
+    ) {
+      capReason = "OUTPUT_TRUNCATED";
+    } else if (
+      readTurnCapFlag(turnJson, "optionsTruncated") ||
+      observed.optionsCount > TURN_CAP_LIMITS.maxOptions
+    ) {
+      capReason = "OPTIONS_TRUNCATED";
+    } else if (
+      readTurnCapFlag(turnJson, "ledgerTruncated") ||
+      observed.ledgerCount > TURN_CAP_LIMITS.maxLedgerEntries
+    ) {
+      capReason = "LEDGER_TRUNCATED";
+    } else if (
+      readTurnCapFlag(turnJson, "deltaTruncated") ||
+      observed.deltaCount > TURN_CAP_LIMITS.maxDeltaCount
+    ) {
+      capReason = "DELTA_TRUNCATED";
+    }
+  }
+
+  return {
+    outputCharLimit: TURN_CAP_LIMITS.outputCharLimit,
+    maxOptions: TURN_CAP_LIMITS.maxOptions,
+    maxLedgerEntries: TURN_CAP_LIMITS.maxLedgerEntries,
+    maxDeltaCount: TURN_CAP_LIMITS.maxDeltaCount,
+    capReason,
+  };
+}
+
+export function explainCapReason(snapshot: CapSnapshot): string {
+  if (snapshot.capReason === "OUTPUT_TRUNCATED") {
+    return `Output truncated to OUTPUT_CHAR_LIMIT=${snapshot.outputCharLimit}`;
+  }
+  if (snapshot.capReason === "OPTIONS_TRUNCATED") {
+    return `Options truncated to MAX_OPTIONS=${snapshot.maxOptions}`;
+  }
+  if (snapshot.capReason === "LEDGER_TRUNCATED") {
+    return `Ledger truncated to MAX_LEDGER_ENTRIES=${snapshot.maxLedgerEntries}`;
+  }
+  if (snapshot.capReason === "DELTA_TRUNCATED") {
+    return `Deltas truncated to MAX_DELTA_COUNT=${snapshot.maxDeltaCount}`;
+  }
+  return "No cap applied";
+}
+
+export function assertCapSnapshotConsistency(turnJson: unknown, seq?: number): CapSnapshot {
+  const snapshot = deriveCapSnapshot(turnJson);
+  if (snapshot.capReason === "NONE") return snapshot;
+
+  const observed = readCapObserved(turnJson);
+  if (
+    observed.outputLength > snapshot.outputCharLimit ||
+    observed.optionsCount > snapshot.maxOptions ||
+    observed.ledgerCount > snapshot.maxLedgerEntries ||
+    observed.deltaCount > snapshot.maxDeltaCount
+  ) {
+    const prefix = seq == null ? "CAP_ENFORCEMENT_VIOLATION" : `CAP_ENFORCEMENT_VIOLATION seq=${seq}`;
+    throw new Error(
+      `${prefix} reason=${snapshot.capReason} outputLen=${observed.outputLength} options=${observed.optionsCount} ledger=${observed.ledgerCount} deltas=${observed.deltaCount}`,
+    );
+  }
+
+  return snapshot;
 }
 
 function numericDecreaseForDelta(delta: unknown): number {
@@ -1764,6 +1957,7 @@ function replayStateFromTurnJsonInternal(
   assertFailForwardConsequenceAlignment(events);
 
   for (const e of events) {
+    assertCapSnapshotConsistency(e.turnJson, e.seq);
     const rawDeltas = getReplayDeltasStrict(e);
     rawDeltas.forEach((delta) => {
       assertStateDeltaShape(delta);

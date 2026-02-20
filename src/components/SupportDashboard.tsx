@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildDeltaLedgerExplanationRows,
+  deriveCapSnapshot,
   deriveDifficultyStateFromTurnJson,
   classifyConsequence,
   classifyFailForwardSignal,
   deriveStyleStabilityFromEvents,
+  explainCapReason,
   explainConsequence,
 } from "@/lib/game/replay";
 import { categorizeDeltaPath } from "@/lib/support/deltaPathMeaningMap";
@@ -119,6 +121,8 @@ type PerTurnTelemetryRow = {
   costTypes: string;
   escalation: "NONE" | "MINOR" | "MAJOR";
   stakesReason: string[];
+  capReason: "NONE" | "OUTPUT_TRUNCATED" | "OPTIONS_TRUNCATED" | "LEDGER_TRUNCATED" | "DELTA_TRUNCATED";
+  capExplanation: string;
 };
 
 type StyleStabilityPanel = {
@@ -1339,34 +1343,43 @@ export function SupportDashboard({
     const failForwardSignalByTurn = new Map<number, string>();
     const consequenceByTurn = new Map<number, ReturnType<typeof classifyConsequence>>();
     const stakesReasonByTurn = new Map<number, string[]>();
+    const capByTurn = new Map<number, ReturnType<typeof deriveCapSnapshot>>();
     turnRows.forEach((row, index) => {
       const turnIndex = parseTurnIndex(row.turnIndex, index);
       const signal = classifyFailForwardSignal(row.rawTurn);
       const consequence = classifyConsequence(row.rawTurn);
       const reasonLines = explainConsequence(row.rawTurn);
+      const capSnapshot = deriveCapSnapshot(row.rawTurn);
       if (signal) {
         failForwardSignalByTurn.set(turnIndex, signal);
       }
       consequenceByTurn.set(turnIndex, consequence);
       stakesReasonByTurn.set(turnIndex, reasonLines);
+      capByTurn.set(turnIndex, capSnapshot);
     });
 
     if (supportManifest) {
       return [...supportManifest.perTurn]
-        .map((row) => ({
-          ...row,
-          failForwardSignal: failForwardSignalByTurn.get(row.turnIndex) ?? "",
-          riskLevel: (consequenceByTurn.get(row.turnIndex)?.riskLevel ?? "LOW") as "LOW" | "MODERATE" | "HIGH",
-          costTypes: (consequenceByTurn.get(row.turnIndex)?.costTypes ?? []).join(","),
-          escalation: (consequenceByTurn.get(row.turnIndex)?.escalation ?? "NONE") as "NONE" | "MINOR" | "MAJOR",
-          stakesReason: stakesReasonByTurn.get(row.turnIndex) ?? [],
-        }))
+        .map((row) => {
+          const capSnapshot = capByTurn.get(row.turnIndex) ?? deriveCapSnapshot({});
+          return {
+            ...row,
+            failForwardSignal: failForwardSignalByTurn.get(row.turnIndex) ?? "",
+            riskLevel: (consequenceByTurn.get(row.turnIndex)?.riskLevel ?? "LOW") as "LOW" | "MODERATE" | "HIGH",
+            costTypes: (consequenceByTurn.get(row.turnIndex)?.costTypes ?? []).join(","),
+            escalation: (consequenceByTurn.get(row.turnIndex)?.escalation ?? "NONE") as "NONE" | "MINOR" | "MAJOR",
+            stakesReason: stakesReasonByTurn.get(row.turnIndex) ?? [],
+            capReason: capSnapshot.capReason,
+            capExplanation: explainCapReason(capSnapshot),
+          };
+        })
         .sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
     }
 
     const rows = turnRows.map((row, index) => {
       const turnIndex = parseTurnIndex(row.turnIndex, index);
       const consequence = consequenceByTurn.get(turnIndex) ?? classifyConsequence(row.rawTurn);
+      const capSnapshot = capByTurn.get(turnIndex) ?? deriveCapSnapshot(row.rawTurn);
       return {
         turnIndex,
         deltaCount: row.stateDeltas.length,
@@ -1377,6 +1390,8 @@ export function SupportDashboard({
         costTypes: consequence.costTypes.join(","),
         escalation: consequence.escalation,
         stakesReason: stakesReasonByTurn.get(turnIndex) ?? [],
+        capReason: capSnapshot.capReason,
+        capExplanation: explainCapReason(capSnapshot),
       };
     });
     rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
@@ -1622,7 +1637,7 @@ export function SupportDashboard({
         : perTurnTelemetry
             .map(
               (row) =>
-                `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution} FAIL_FORWARD_SIGNAL: ${row.failForwardSignal} RISK_LEVEL: ${row.riskLevel} COST_TYPES: ${row.costTypes} ESCALATION: ${row.escalation}`,
+                `TURN_INDEX: ${row.turnIndex} DELTA_COUNT: ${row.deltaCount} LEDGER_COUNT: ${row.ledgerCount} HAS_RESOLUTION: ${row.hasResolution} FAIL_FORWARD_SIGNAL: ${row.failForwardSignal} RISK_LEVEL: ${row.riskLevel} COST_TYPES: ${row.costTypes} ESCALATION: ${row.escalation} CAP_REASON: ${row.capReason}`,
             )
             .join("\n"),
     [perTurnTelemetry],
@@ -2626,6 +2641,22 @@ export function SupportDashboard({
         </div>
       </section>
 
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="CAP">
+        <h2 className="text-base font-semibold">CAP</h2>
+        {perTurnTelemetry.length === 0 ? (
+          <div className="mt-2 text-xs">(none)</div>
+        ) : (
+          <div className="mt-2 space-y-1 text-xs">
+            {perTurnTelemetry.map((row) => (
+              <div key={`cap-row-${row.turnIndex}`} className={row.capReason === "NONE" ? "" : "text-red-700"}>
+                <span>Turn {row.turnIndex} CAP_REASON: {row.capReason}</span>
+                <span className="ml-2">Why Was It Capped?: {row.capExplanation}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Replay Telemetry (Derived)">
         <h2 className="text-base font-semibold">Replay Telemetry (Derived)</h2>
         {telemetryDrift.isDrift ? (
@@ -2684,12 +2715,13 @@ export function SupportDashboard({
                 <th className="border p-2 text-left">RISK_LEVEL</th>
                 <th className="border p-2 text-left">COST_TYPES</th>
                 <th className="border p-2 text-left">ESCALATION</th>
+                <th className="border p-2 text-left">CAP_REASON</th>
               </tr>
             </thead>
             <tbody>
               {perTurnTelemetry.length === 0 ? (
                 <tr>
-                  <td className="border p-2" colSpan={8}>
+                  <td className="border p-2" colSpan={9}>
                     (none)
                   </td>
                 </tr>
@@ -2709,6 +2741,9 @@ export function SupportDashboard({
                     </td>
                     <td className="border p-2">{row.costTypes || "(none)"}</td>
                     <td className="border p-2">{row.escalation}</td>
+                    <td className="border p-2" title={row.capExplanation}>
+                      {row.capReason}
+                    </td>
                   </tr>
                 ))
               )}

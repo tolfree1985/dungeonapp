@@ -446,6 +446,48 @@ function parseDifficultyCurve(stdout: string): {
   };
 }
 
+function parseCapSnapshot(stdout: string): {
+  outputCharLimit: number;
+  maxOptions: number;
+  maxLedgerEntries: number;
+  maxDeltaCount: number;
+  capReason: string;
+} | null {
+  const lines = stdout.split(/\r?\n/);
+  const markerIndex = lines.findIndex((line) => line.trim() === "CAP_SNAPSHOT");
+  if (markerIndex < 0) return null;
+  const window = lines.slice(markerIndex, markerIndex + 8);
+  const readNumber = (prefix: string): number | null => {
+    const line = window.find((entry) => entry.trim().startsWith(prefix));
+    if (!line) return null;
+    const raw = line.trim().slice(prefix.length).trim();
+    if (!/^-?\d+$/.test(raw)) return null;
+    return Number(raw);
+  };
+  const capReasonLine = window.find((entry) => entry.trim().startsWith("CAP_REASON:"));
+  const capReason = capReasonLine ? capReasonLine.trim().slice("CAP_REASON:".length).trim() : "";
+  const outputCharLimit = readNumber("OUTPUT_CHAR_LIMIT:");
+  const maxOptions = readNumber("MAX_OPTIONS:");
+  const maxLedgerEntries = readNumber("MAX_LEDGER_ENTRIES:");
+  const maxDeltaCount = readNumber("MAX_DELTA_COUNT:");
+  if (
+    outputCharLimit == null ||
+    maxOptions == null ||
+    maxLedgerEntries == null ||
+    maxDeltaCount == null ||
+    capReason.length === 0
+  ) {
+    return null;
+  }
+  return {
+    outputCharLimit,
+    maxOptions,
+    maxLedgerEntries,
+    maxDeltaCount,
+    capReason,
+  };
+}
+
 function isFailureResolution(source: unknown): boolean {
   if (!isRecord(source)) return false;
   const resolution = isRecord(source.resolution) ? source.resolution : null;
@@ -653,6 +695,9 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   if (combinedOutput.includes("DIFFICULTY_COOLDOWN_INVALID")) {
     regressionMarkers.push("GOLDEN_DIFFICULTY_CURVE_REGRESSION marker=DIFFICULTY_COOLDOWN_INVALID");
   }
+  if (combinedOutput.includes("CAP_ENFORCEMENT_VIOLATION")) {
+    regressionMarkers.push("GOLDEN_CAP_REGRESSION marker=CAP_ENFORCEMENT_VIOLATION");
+  }
   if (combinedOutput.includes("DIFFICULTY_CAP_VIOLATION")) {
     regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION marker=DIFFICULTY_CAP_VIOLATION");
   }
@@ -669,6 +714,10 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   const difficultyCurve = parseDifficultyCurve(stdout);
   if (!difficultyCurve) {
     regressionMarkers.push("GOLDEN_DIFFICULTY_CURVE_REGRESSION missing=DIFFICULTY_CURVE_FIELDS");
+  }
+  const capSnapshot = parseCapSnapshot(stdout);
+  if (!capSnapshot) {
+    regressionMarkers.push("GOLDEN_CAP_REGRESSION missing=CAP_SNAPSHOT");
   }
   if (combinedOutput.includes("DELTA_WITHOUT_LEDGER_EXPLANATION")) {
     regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION marker=DELTA_WITHOUT_LEDGER_EXPLANATION");
@@ -805,6 +854,18 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
         secondDifficultyCurve.finalTier !== difficultyCurve.finalTier
       ) {
         regressionMarkers.push("GOLDEN_DIFFICULTY_CURVE_REGRESSION curve_unstable");
+      }
+      const secondCapSnapshot = parseCapSnapshot(childSecond.stdout ?? "");
+      if (
+        !secondCapSnapshot ||
+        !capSnapshot ||
+        secondCapSnapshot.outputCharLimit !== capSnapshot.outputCharLimit ||
+        secondCapSnapshot.maxOptions !== capSnapshot.maxOptions ||
+        secondCapSnapshot.maxLedgerEntries !== capSnapshot.maxLedgerEntries ||
+        secondCapSnapshot.maxDeltaCount !== capSnapshot.maxDeltaCount ||
+        secondCapSnapshot.capReason !== capSnapshot.capReason
+      ) {
+        regressionMarkers.push("GOLDEN_CAP_REGRESSION cap_snapshot_unstable");
       }
     }
   }

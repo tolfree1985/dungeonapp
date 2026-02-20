@@ -359,6 +359,7 @@ function main() {
     "STAKES RESULT",
     "COMPLICATION TRIGGERED",
     "MAJOR CONSEQUENCE",
+    "LIMIT APPLIED:",
     "Escalation Ladder:",
     "STAKE_SYNC_ERROR",
     "Why?",

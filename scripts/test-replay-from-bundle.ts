@@ -15,6 +15,7 @@ import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
 import {
   CONSEQUENCE_RULE_TABLE,
   REPLAY_GUARD_ORDER,
+  assertCapSnapshotConsistency,
   applyDifficultyMomentumStep,
   assertDifficultyMomentumCap,
   assertDifficultyMomentumProgression,
@@ -26,6 +27,7 @@ import {
   assertTurnMonotonicity,
   classifyDifficultyTier,
   classifyConsequence,
+  deriveCapSnapshot,
   deriveDifficultyStateFromTurnSignals,
   replayStateFromTurnJson,
   replayStateFromTurnJsonWithGuardSummary,
@@ -222,6 +224,49 @@ async function main() {
     () => assertDifficultyMomentumProgression(4, 2, true),
     /DIFFICULTY_MOMENTUM_REGRESSION/,
     "expected momentum regression guard to fail when cooldown decreases by more than one",
+  );
+  const capSnapshotNone = deriveCapSnapshot({
+    deltas: [{ op: "flag.set", path: "flags.ok", value: true }],
+    ledgerAdds: [{ id: "cap_none_ledger" }],
+    options: [{ label: "A" }],
+    assistantText: "Short text.",
+  });
+  assert.equal(capSnapshotNone.capReason, "NONE", "expected cap snapshot default reason NONE");
+
+  const capSnapshotOptions = deriveCapSnapshot({
+    capReason: "OPTIONS_TRUNCATED",
+    options: [{ label: "A" }, { label: "B" }, { label: "C" }],
+    deltas: [],
+    ledgerAdds: [],
+    assistantText: "Short text.",
+  });
+  assert.equal(
+    capSnapshotOptions.capReason,
+    "OPTIONS_TRUNCATED",
+    "expected explicit cap reason to be retained deterministically",
+  );
+  assert.doesNotThrow(
+    () =>
+      assertCapSnapshotConsistency({
+        capReason: "OPTIONS_TRUNCATED",
+        options: [{ label: "A" }, { label: "B" }, { label: "C" }],
+        deltas: [],
+        ledgerAdds: [],
+        assistantText: "Short text.",
+      }),
+    "expected cap consistency to pass when truncated payload stays within limits",
+  );
+  assert.throws(
+    () =>
+      assertCapSnapshotConsistency({
+        capReason: "OPTIONS_TRUNCATED",
+        options: Array.from({ length: 6 }, (_, idx) => ({ label: `O${idx}` })),
+        deltas: [],
+        ledgerAdds: [],
+        assistantText: "Short text.",
+      }),
+    /CAP_ENFORCEMENT_VIOLATION/,
+    "expected cap consistency guard to fail when options exceed deterministic cap",
   );
 
   assert.doesNotThrow(
@@ -1061,6 +1106,13 @@ async function main() {
   assert(out.includes("DIFFICULTY_CURVE"), "expected difficulty curve marker");
   assert(out.includes("momentumCurve:"), "expected difficulty curve momentum list field");
   assert(out.includes("finalTier:"), "expected difficulty curve final tier field");
+  assert(out.includes("CAP_SNAPSHOT"), "expected cap snapshot marker");
+  assert(out.includes("OUTPUT_CHAR_LIMIT:"), "expected output cap limit field");
+  assert(out.includes("MAX_OPTIONS:"), "expected max options cap field");
+  assert(out.includes("MAX_LEDGER_ENTRIES:"), "expected max ledger entries cap field");
+  assert(out.includes("MAX_DELTA_COUNT:"), "expected max delta count cap field");
+  assert(out.includes("CAP_REASON:"), "expected cap reason field");
+  assert(out.includes("CAP_EXPLANATION:"), "expected cap explanation field");
   assert(/cardsTriggered:\s*0/.test(out), "expected cardsTriggered to be zero for deterministic fixture");
   assert(/cardsApplied:\s*0/.test(out), "expected cardsApplied to be zero for deterministic fixture");
   const difficultyTierLine = out.split(/\r?\n/).find((line) => line.startsWith("tier:")) ?? "";
@@ -1097,6 +1149,13 @@ async function main() {
     "DIFFICULTY_CURVE",
     "momentumCurve:",
     "finalTier:",
+    "CAP_SNAPSHOT",
+    "OUTPUT_CHAR_LIMIT:",
+    "MAX_OPTIONS:",
+    "MAX_LEDGER_ENTRIES:",
+    "MAX_DELTA_COUNT:",
+    "CAP_REASON:",
+    "CAP_EXPLANATION:",
     `TELEMETRY_VERSION ${TELEMETRY_VERSION}`,
   ];
   const styleOrderIndex = styleOrder.map((marker) => lineIndex(marker));
@@ -1130,6 +1189,7 @@ async function main() {
   assert(out.includes("MANIFEST_HASH "), "expected MANIFEST_HASH output in base run");
 
   const telemetryBlockA = extractSection(out, "TELEMETRY", "PER_TURN_TELEMETRY");
+  const capSnapshotBlockA = extractSection(out, "CAP_SNAPSHOT", "TELEMETRY");
   const perTurnBlockA = extractSection(out, "PER_TURN_TELEMETRY");
   const hashLineA = (out.split(/\r?\n/).find((line) => line.startsWith("FINAL_STATE_HASH ")) ?? "").trim();
 
@@ -1171,10 +1231,12 @@ async function main() {
   assert.equal(result2.status, 0, `second replay script failed: ${result2.stderr || result2.stdout}`);
   const out2 = result2.stdout ?? "";
   const telemetryBlockB = extractSection(out2, "TELEMETRY", "PER_TURN_TELEMETRY");
+  const capSnapshotBlockB = extractSection(out2, "CAP_SNAPSHOT", "TELEMETRY");
   const perTurnBlockB = extractSection(out2, "PER_TURN_TELEMETRY");
   const hashLineB = (out2.split(/\r?\n/).find((line) => line.startsWith("FINAL_STATE_HASH ")) ?? "").trim();
 
   assert.equal(telemetryBlockA, telemetryBlockB, "telemetry block should be stable across runs");
+  assert.equal(capSnapshotBlockA, capSnapshotBlockB, "cap snapshot block should be stable across runs");
   assert.equal(perTurnBlockA, perTurnBlockB, "per-turn telemetry should be stable across runs");
   assert.equal(hashLineA, hashLineB, "final state hash should be stable across runs");
 
