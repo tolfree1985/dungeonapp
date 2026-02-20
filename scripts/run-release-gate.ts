@@ -30,7 +30,34 @@ type ReleaseGateReport = {
   commitHash?: string;
 };
 
+const RC_BUNDLE_SOURCE_PATH = "fixtures/rc/canonical_bundle.json";
+const RC_BUNDLE_OUT_DIR = ".rc/latest";
+const RC_BUILD_STEP_NAME = "rc-build";
+const RC_VERIFY_STEP_NAME = "rc-verify";
+const RC_SMOKE_STEP_NAME = "rc-smoke";
+
 const FULL_STEPS: readonly Step[] = [
+  {
+    name: RC_BUILD_STEP_NAME,
+    cmd: [
+      "node",
+      "--import",
+      "tsx",
+      "scripts/rc/rc_bundle_build.ts",
+      "--bundle",
+      RC_BUNDLE_SOURCE_PATH,
+      "--out",
+      RC_BUNDLE_OUT_DIR,
+    ],
+  },
+  {
+    name: RC_VERIFY_STEP_NAME,
+    cmd: ["node", "--import", "tsx", "scripts/rc/rc_bundle_verify.ts", "--bundle", RC_BUNDLE_OUT_DIR],
+  },
+  {
+    name: RC_SMOKE_STEP_NAME,
+    cmd: ["node", "--import", "tsx", "scripts/rc/rc_bundle_smoke.ts", "--bundle", RC_BUNDLE_OUT_DIR],
+  },
   { name: "prisma-validate", cmd: ["bash", "scripts/with-sqlite-env.sh", "npx", "prisma", "validate"] },
   { name: "typecheck", cmd: ["npx", "tsc", "--noEmit", "-p", "tsconfig.typecheck.json"] },
   { name: "boundary-lock", cmd: ["node", "--import", "tsx", "scripts/check-entropy-usage.ts"] },
@@ -126,6 +153,27 @@ const FULL_STEPS: readonly Step[] = [
 ];
 
 const TEST_STEPS: readonly Step[] = [
+  {
+    name: RC_BUILD_STEP_NAME,
+    cmd: [
+      "node",
+      "--import",
+      "tsx",
+      "scripts/rc/rc_bundle_build.ts",
+      "--bundle",
+      RC_BUNDLE_SOURCE_PATH,
+      "--out",
+      RC_BUNDLE_OUT_DIR,
+    ],
+  },
+  {
+    name: RC_VERIFY_STEP_NAME,
+    cmd: ["node", "--import", "tsx", "scripts/rc/rc_bundle_verify.ts", "--bundle", RC_BUNDLE_OUT_DIR],
+  },
+  {
+    name: RC_SMOKE_STEP_NAME,
+    cmd: ["node", "--import", "tsx", "scripts/rc/rc_bundle_smoke.ts", "--bundle", RC_BUNDLE_OUT_DIR],
+  },
   { name: "prisma-validate", cmd: ["bash", "scripts/with-sqlite-env.sh", "npx", "prisma", "validate"] },
   { name: "typecheck", cmd: ["npx", "tsc", "--noEmit", "-p", "tsconfig.typecheck.json"] },
   { name: "boundary-lock", cmd: ["node", "--import", "tsx", "scripts/check-entropy-usage.ts"] },
@@ -146,6 +194,14 @@ function isReleaseGateTestMode(): boolean {
 
 function getSteps(): readonly Step[] {
   return isReleaseGateTestMode() ? TEST_STEPS : FULL_STEPS;
+}
+
+function isRcStepName(name: string): boolean {
+  return name === RC_BUILD_STEP_NAME || name === RC_VERIFY_STEP_NAME || name === RC_SMOKE_STEP_NAME;
+}
+
+function cleanupRcOutput(): void {
+  fs.rmSync(path.join(process.cwd(), RC_BUNDLE_OUT_DIR), { recursive: true, force: true });
 }
 
 function readFixtureCount(): number {
@@ -222,6 +278,8 @@ function main(): void {
   const stepResults: StepResult[] = [];
 
   console.log("RELEASE_GATE_BEGIN");
+  console.log("RELEASE_GATE_RC_VERIFICATION_BEGIN");
+  cleanupRcOutput();
 
   for (const step of steps) {
     console.log(`RELEASE_GATE_STEP ${step.name}`);
@@ -229,6 +287,10 @@ function main(): void {
     if (!result.ok) {
       stepResults.push({ name: step.name, status: "fail" });
       console.log(`RELEASE_GATE_FAIL ${step.name}`);
+      if (isRcStepName(step.name)) {
+        console.log("RELEASE_GATE_RC_VERIFICATION_FAILED");
+      }
+      cleanupRcOutput();
       console.log("RELEASE_GATE_FAILURE_EXCERPT_BEGIN");
       console.log(`STEP_NAME ${step.name}`);
       console.log(`FIRST_FAIL_MARKER ${findFirstFailMarker(result.output)}`);
@@ -243,9 +305,13 @@ function main(): void {
     }
     stepResults.push({ name: step.name, status: "pass" });
     console.log(`RELEASE_GATE_OK ${step.name}`);
+    if (step.name === RC_SMOKE_STEP_NAME) {
+      console.log("RELEASE_GATE_RC_VERIFICATION_OK");
+    }
   }
 
   const report = buildReport(stepResults);
+  cleanupRcOutput();
   console.log(`RELEASE_GATE_REPORT_JSON ${JSON.stringify(report)}`);
   console.log("RELEASE_TAG_READY");
   console.log("RELEASE_GATE_END");

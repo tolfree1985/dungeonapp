@@ -1,0 +1,46 @@
+{
+  "adventureId": "adv-rc-canonical",
+  "buildVersion": "build-test",
+  "bundleId": "rc_bundle_canonical",
+  "engineVersion": "engine-test",
+  "scenarioContentHash": "scenario-rc-canonical-hash",
+  "scenarioId": "scenario-rc-canonical",
+  "turns": [
+    {
+      "ledgerAdds": [
+        {
+          "id": "ledger_rc_0",
+          "message": "time +1",
+          "turnIndex": 0
+        }
+      ],
+      "stateDeltas": [
+        {
+          "by": 1,
+          "op": "time.inc"
+        }
+      ],
+      "turnIndex": 0
+    },
+    {
+      "ledgerAdds": [
+        {
+          "id": "ledger_rc_1",
+          "message": "dockSeen true",
+          "turnIndex": 1
+        }
+      ],
+      "resolution": {
+        "tier": "hit"
+      },
+      "stateDeltas": [
+        {
+          "key": "dockSeen",
+          "op": "flag.set",
+          "value": true
+        }
+      ],
+      "turnIndex": 1
+    }
+  ]
+}
