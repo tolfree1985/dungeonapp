@@ -1,6 +1,8 @@
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { write_registry_entry } from "./modules/write_registry_entry";
+import { build_registry_index } from "./modules/build_registry_index";
 
 function must(flag: string): string {
   const i = process.argv.indexOf(flag);
@@ -21,6 +23,9 @@ async function main() {
   const moduleDir = must("--module-dir");
   const outRoot = must("--out");
   const pubKey = must("--pub");
+  const registryDir = must("--registry");
+  const signingKey = must("--key");
+  const signIndex = process.argv.includes("--sign-index");
 
   // Ensure output root directory exists
   mkdirSync(outRoot, { recursive: true });
@@ -107,7 +112,32 @@ async function main() {
     `${digestPath}.sig`,
   ]);
 
+  const trustDest = join(builtDir, "trust_root.pub");
+  if (!existsSync(pubKey)) {
+    throw new Error(`MISSING_PUBKEY: ${pubKey}`);
+  }
+  copyFileSync(pubKey, trustDest);
+
+  const entry = write_registry_entry({
+    registryDir,
+    distDir: builtDir,
+    moduleName: name,
+    moduleVersion: version,
+    signingKey,
+    pubKey,
+  });
+
+  build_registry_index({
+    registryDir,
+    pubKey,
+    signingKey: signIndex ? signingKey : undefined,
+    sign: signIndex,
+  });
+
+  console.log(`REGISTRY_ENTRY_OK ${entry.entryPath}`);
+  console.log("REGISTRY_INDEX_OK");
   process.stdout.write("PUBLISH_READY\n");
+  process.stdout.write("PUBLISH_COMPLETE\n");
 }
 
 main().catch((err) => {
