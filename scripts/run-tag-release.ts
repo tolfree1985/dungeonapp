@@ -19,7 +19,11 @@ function parseArgs(argv: string[]): { dryRun: boolean; apply: boolean; testMode:
   };
 }
 
-function run(command: string, args: string[], extraEnv?: Record<string, string>): { ok: boolean; stdout: string; stderr: string } {
+function run(
+  command: string,
+  args: string[],
+  extraEnv?: Record<string, string>,
+): { ok: boolean; stdout: string; stderr: string } {
   const result = spawnSync(command, args, {
     encoding: "utf8",
     env: { ...process.env, ...(extraEnv ?? {}) },
@@ -37,9 +41,7 @@ function findFirstFailMarker(output: string): string {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (failPattern.test(trimmed)) {
-      return trimmed;
-    }
+    if (failPattern.test(trimmed)) return trimmed;
   }
   return "NO_FAIL_MARKER_FOUND";
 }
@@ -65,11 +67,12 @@ function getLastReleaseTag(): string | null {
   return list.length > 0 ? list[list.length - 1] : null;
 }
 
-function readHeadCommitHash(): string | null {
+// Match release-gate behavior: read commit hash from HEAD
+function readCommitHash(): string | null {
   const result = run("git", ["rev-parse", "HEAD"]);
   if (!result.ok) return null;
-  const value = result.stdout.trim();
-  return /^[a-f0-9]{40}$/.test(value) ? value : null;
+  const hash = result.stdout.trim();
+  return /^[a-f0-9]{40}$/.test(hash) ? hash : null;
 }
 
 function buildNextTag(lastTag: string | null): string {
@@ -108,6 +111,7 @@ function main(): void {
   let gateReady = false;
   const forceGateFail = process.env.TAG_RELEASE_FORCE_GATE_FAIL === "1";
   let gateOutput = "";
+
   if (!forceGateFail) {
     const gateArgs = ["--import", "tsx", "scripts/run-release-gate.ts"];
     const gateEnv: Record<string, string> = {};
@@ -115,62 +119,65 @@ function main(): void {
       gateArgs.push("--test-mode");
       gateEnv.RELEASE_GATE_TEST_MODE = "1";
     }
-  const gate = run("node", gateArgs, gateEnv);
-  gateOutput = `${gate.stdout}\n${gate.stderr}`;
-  gateReady =
-    gate.ok &&
-    gate.stdout.includes("RELEASE_TAG_READY") &&
-    gate.stdout.includes("RELEASE_GATE_RC_VERIFICATION_OK") &&
-    gate.stdout.includes("RC_ARTIFACT_DIGEST=");
-}
-if (!gateReady) {
-  emitFailure("TAG_RELEASE_BLOCKED_GATE_NOT_READY", gateOutput);
-}
 
-const commitHash = readHeadCommitHash();
+    const gate = run("node", gateArgs, gateEnv);
+    gateOutput = `${gate.stdout}\n${gate.stderr}`;
+
+    gateReady =
+      gate.ok &&
+      gate.stdout.includes("RELEASE_TAG_READY") &&
+      gate.stdout.includes("RELEASE_GATE_RC_VERIFICATION_OK") &&
+      gate.stdout.includes("RC_ARTIFACT_DIGEST=");
+  }
+
+  if (!gateReady) {
+    emitFailure("TAG_RELEASE_BLOCKED_GATE_NOT_READY", gateOutput);
+  }
+
+  const commitHash = readCommitHash();
   if (!commitHash) {
     emitFailure("TAG_RELEASE_BLOCKED_COMMIT_HASH_UNAVAILABLE");
   }
 
-const artifactManifestPath = path.join(process.cwd(), ".rc", "artifacts", commitHash, "manifest.json");
-if (!existsSync(artifactManifestPath)) {
-  emitFailure("TAG_RELEASE_BLOCKED_RC_ARTIFACT_MISSING");
-}
-
-const gateDigestMatch = gateOutput
-  .split(/\r?\n/)
-  .find((line) => line.trim().startsWith("RC_ARTIFACT_DIGEST="));
-if (!gateDigestMatch) {
-  emitFailure("TAG_RELEASE_BLOCKED_RC_DIGEST_MISSING", gateOutput);
-}
-const rcArtifactDigest = gateDigestMatch.split("=").pop();
-if (!rcArtifactDigest) {
-  emitFailure("TAG_RELEASE_BLOCKED_RC_DIGEST_EMPTY", gateOutput);
-}
-
-const artifactDir = path.join(process.cwd(), ".rc", "artifacts", commitHash);
-
-const runNode = (args: string[]): void => {
-  const res = spawnSync(process.execPath, args, {
-    stdio: "inherit",
-    env: process.env,
-  });
-  if (res.status !== 0) {
-    emitFailure("TAG_RELEASE_BLOCKED_PROVENANCE_CHECK_FAILED", res.stderr?.toString() ?? "");
+  const artifactManifestPath = path.join(process.cwd(), ".rc", "artifacts", commitHash, "manifest.json");
+  if (!existsSync(artifactManifestPath)) {
+    emitFailure("TAG_RELEASE_BLOCKED_RC_ARTIFACT_MISSING");
   }
-};
 
-runNode([
-  "--import",
-  "tsx",
-  "scripts/rc/rc_verify_provenance.ts",
-  "--artifact",
-  artifactDir,
-  "--commit",
-  commitHash,
-  "--expected-digest",
-  rcArtifactDigest,
-]);
+  const gateDigestMatch = gateOutput
+    .split(/\r?\n/)
+    .find((line) => line.trim().startsWith("RC_ARTIFACT_DIGEST="));
+  if (!gateDigestMatch) {
+    emitFailure("TAG_RELEASE_BLOCKED_RC_DIGEST_MISSING", gateOutput);
+  }
+  const rcArtifactDigest = gateDigestMatch.split("=").pop();
+  if (!rcArtifactDigest) {
+    emitFailure("TAG_RELEASE_BLOCKED_RC_DIGEST_EMPTY", gateOutput);
+  }
+
+  const artifactDir = path.join(process.cwd(), ".rc", "artifacts", commitHash);
+
+  const runNode = (nodeArgs: string[]): void => {
+    const res = spawnSync(process.execPath, nodeArgs, {
+      stdio: "inherit",
+      env: process.env,
+    });
+    if (res.status !== 0) {
+      emitFailure("TAG_RELEASE_BLOCKED_PROVENANCE_CHECK_FAILED");
+    }
+  };
+
+  runNode([
+    "--import",
+    "tsx",
+    "scripts/rc/rc_verify_provenance.ts",
+    "--artifact",
+    artifactDir,
+    "--commit",
+    commitHash,
+    "--expected-digest",
+    rcArtifactDigest,
+  ]);
 
   const lastTag = getLastReleaseTag();
   const tag = buildNextTag(lastTag);
