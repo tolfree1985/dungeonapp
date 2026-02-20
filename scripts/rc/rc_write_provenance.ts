@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { mustGetArg } from "./_cli";
 import { computeDirectoryDigest } from "./_artifact_digest";
 import type { RcProvenance } from "./_provenance_types";
 import { computeManifestDigests } from "./_provenance_types";
+import { spawnSync } from "node:child_process";
 
 function stableStringify(value: unknown): string {
   const normalize = (input: unknown): unknown => {
@@ -32,6 +33,17 @@ function readOptionalArg(flag: string): string | null {
   return value;
 }
 
+function gitCommitDate(commit: string): string {
+  const result = spawnSync("git", ["show", "-s", "--format=%cI", commit], {
+    encoding: "utf8",
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    throw new Error(`git show failed: ${result.stderr?.trim() ?? "unknown error"}`);
+  }
+  return result.stdout.trim() || "1970-01-01T00:00:00Z";
+}
+
 async function main(): Promise<void> {
   const artifactDir = mustGetArg("--artifact");
   const commit = mustGetArg("--commit");
@@ -45,7 +57,7 @@ async function main(): Promise<void> {
   const artifactDigest = computeDirectoryDigest(artifactDir);
   const provenancePath = join(artifactDir, "provenance.json");
 
-  let createdAtIso = new Date().toISOString();
+  let createdAtIso = gitCommitDate(commit);
   let existing: RcProvenance | null = null;
   if (existsSync(provenancePath)) {
     const loaded = JSON.parse(readFileSync(provenancePath, "utf8")) as RcProvenance;
