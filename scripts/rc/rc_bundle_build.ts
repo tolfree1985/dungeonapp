@@ -220,9 +220,10 @@ async function main(): Promise<void> {
     rcBundleVersion: 1,
     engineVersion: (supportManifest.engineVersion as string | undefined) ?? readPackageVersion(),
     scenarioId: scenarioIdFromBundle || "unknown",
-    scenarioContentHash: (supportManifest.scenarioContentHash as string | undefined) ?? scenarioHashFromBundle || "unknown",
+    scenarioContentHash:
+      ((supportManifest.scenarioContentHash as string | undefined) ?? scenarioHashFromBundle) || "unknown",
     createdAtIso: "unknown",
-    adventureId: (supportManifest.adventureId as string | undefined) ?? adventureIdFromBundle || "unknown",
+    adventureId: ((supportManifest.adventureId as string | undefined) ?? adventureIdFromBundle) || "unknown",
     seed: readSeed(bundleJson),
     turnInputs: turnInputsPayload.turnInputs,
     files,
