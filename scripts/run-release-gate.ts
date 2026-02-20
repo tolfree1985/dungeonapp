@@ -34,6 +34,7 @@ const FULL_STEPS: readonly Step[] = [
   { name: "prisma-validate", cmd: ["bash", "scripts/with-sqlite-env.sh", "npx", "prisma", "validate"] },
   { name: "typecheck", cmd: ["npx", "tsc", "--noEmit", "-p", "tsconfig.typecheck.json"] },
   { name: "boundary-lock", cmd: ["node", "--import", "tsx", "scripts/check-entropy-usage.ts"] },
+  { name: "artifact-manifest", cmd: ["node", "--import", "tsx", "scripts/test-artifact-manifest.ts", "--gate"] },
   { name: "ci-billing", cmd: ["npm", "run", "ci:billing"] },
   { name: "ci-creator", cmd: ["npm", "run", "ci:creator"] },
   { name: "test-scenario-bootstrap", cmd: ["node", "--import", "tsx", "scripts/test-scenario-bootstrap.ts"] },
@@ -128,6 +129,7 @@ const TEST_STEPS: readonly Step[] = [
   { name: "prisma-validate", cmd: ["bash", "scripts/with-sqlite-env.sh", "npx", "prisma", "validate"] },
   { name: "typecheck", cmd: ["npx", "tsc", "--noEmit", "-p", "tsconfig.typecheck.json"] },
   { name: "boundary-lock", cmd: ["node", "--import", "tsx", "scripts/check-entropy-usage.ts"] },
+  { name: "artifact-manifest", cmd: ["node", "--import", "tsx", "scripts/test-artifact-manifest.ts"] },
   { name: "test-scenario-bootstrap", cmd: ["node", "--import", "tsx", "scripts/test-scenario-bootstrap.ts"] },
   { name: "validate-scenario", cmd: ["node", "--import", "tsx", "scripts/validate-scenario.ts", "scenarios"] },
   {

@@ -22,6 +22,7 @@ const SCRIPTS = [
   "scripts/test-release-gate.ts",
   "scripts/test-tag-release.ts",
   "scripts/test-boundary-lock.ts",
+  "scripts/test-artifact-manifest.ts",
 ];
 
 function runScript(script: string): Promise<void> {
