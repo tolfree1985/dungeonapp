@@ -20,6 +20,7 @@ const SCRIPTS = [
   "scripts/test-scenario-versioning.ts",
   "scripts/test-scenario-share.ts",
   "scripts/test-release-gate.ts",
+  "scripts/test-tag-release.ts",
 ];
 
 function runScript(script: string): Promise<void> {
