@@ -9,14 +9,13 @@ import { spawnSync } from "node:child_process";
 function stableStringify(value: unknown): string {
   const normalize = (input: unknown): unknown => {
     if (Array.isArray(input)) {
-      return input.map((entry) => normalize(entry));
+      return input.map((v) => normalize(v));
     }
     if (input && typeof input === "object") {
-      const record = input as Record<string, unknown>;
+      const obj = input as Record<string, unknown>;
       const out: Record<string, unknown> = {};
-      const keys = Object.keys(record).sort();
-      for (const key of keys) {
-        out[key] = normalize(record[key]);
+      for (const k of Object.keys(obj).sort()) {
+        out[k] = normalize(obj[k]);
       }
       return out;
     }
@@ -26,22 +25,22 @@ function stableStringify(value: unknown): string {
 }
 
 function readOptionalArg(flag: string): string | null {
-  const index = process.argv.indexOf(flag);
-  if (index === -1) return null;
-  const value = process.argv[index + 1];
-  if (!value || value.startsWith("--")) return null;
-  return value;
+  const i = process.argv.indexOf(flag);
+  if (i === -1) return null;
+  const v = process.argv[i + 1];
+  if (!v || v.startsWith("--")) return null;
+  return v;
 }
 
 function gitCommitDate(commit: string): string {
-  const result = spawnSync("git", ["show", "-s", "--format=%cI", commit], {
+  const res = spawnSync("git", ["show", "-s", "--format=%cI", commit], {
     encoding: "utf8",
     env: process.env,
   });
-  if (result.status !== 0) {
-    throw new Error(`git show failed: ${result.stderr?.trim() ?? "unknown error"}`);
+  if (res.status !== 0) {
+    throw new Error(`git show failed: ${res.stderr?.trim() ?? "unknown error"}`);
   }
-  return result.stdout.trim() || "1970-01-01T00:00:00Z";
+  return res.stdout.trim() || "1970-01-01T00:00:00Z";
 }
 
 async function main(): Promise<void> {
@@ -55,24 +54,39 @@ async function main(): Promise<void> {
 
   const { manifestDigest, supportManifestDigest } = computeManifestDigests(artifactDir);
   const artifactDigest = computeDirectoryDigest(artifactDir);
+
   const provenancePath = join(artifactDir, "provenance.json");
+  const manifestPath = join(artifactDir, "manifest.json");
 
   let createdAtIso = gitCommitDate(commit);
   let existing: RcProvenance | null = null;
+
+  // Restore prior provenance if it exists
   if (existsSync(provenancePath)) {
     const loaded = JSON.parse(readFileSync(provenancePath, "utf8")) as RcProvenance;
+
     if (loaded.commit !== commit) {
-      throw new Error(`existing provenance commit ${loaded.commit} differs from ${commit}`);
+      throw new Error(
+        `existing provenance commit ${loaded.commit} differs from current commit ${commit}`
+      );
     }
-    if (loaded.manifestDigest !== manifestDigest || loaded.supportManifestDigest !== supportManifestDigest) {
-      throw new Error("provenance manifest digests mismatch current artifact");
+    if (
+      loaded.manifestDigest !== manifestDigest ||
+      loaded.supportManifestDigest !== supportManifestDigest
+    ) {
+      throw new Error(`existing provenance digest mismatch`);
     }
+
     existing = loaded;
     createdAtIso = loaded.createdAtIso;
   }
 
   const provenance: RcProvenance = existing
-    ? { ...existing, tag: tag ?? existing.tag, rcArtifactDigest: artifactDigest }
+    ? {
+        ...existing,
+        tag: tag ?? existing.tag,
+        rcArtifactDigest: artifactDigest,
+      }
     : {
         rcProvenanceVersion: 1,
         commit,
@@ -88,8 +102,28 @@ async function main(): Promise<void> {
     provenance.tag = tag;
   }
 
-  writeFileSync(provenancePath, `${stableStringify(provenance)}\n`, "utf8");
+  // Write provenance.json
+  writeFileSync(provenancePath, stableStringify(provenance) + "\n", "utf8");
   console.log("RC_PROVENANCE_WRITTEN");
+
+  // Embed provenance into manifest.json (required for tag-release test)
+  if (existsSync(manifestPath)) {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+
+    manifest.provenance = {
+      commit: provenance.commit,
+      tag: provenance.tag,
+      manifestDigest: provenance.manifestDigest,
+      supportManifestDigest: provenance.supportManifestDigest,
+      artifactDigest: provenance.artifactDigest,
+      rcArtifactDigest: provenance.rcArtifactDigest,
+      createdAtIso: provenance.createdAtIso,
+      rcProvenanceVersion: provenance.rcProvenanceVersion,
+    };
+
+    writeFileSync(manifestPath, stableStringify(manifest) + "\n", "utf8");
+    console.log("RC_PROVENANCE_EMBEDDED_IN_MANIFEST");
+  }
 }
 
 main().catch((err) => {
