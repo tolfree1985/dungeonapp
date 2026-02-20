@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { replayStateFromTurnJsonWithGuardSummary } from "../src/lib/game/replay";
 import {
   TELEMETRY_VERSION,
   buildSupportManifestFromBundle,
@@ -7,6 +8,7 @@ import {
   sha256HexFromText,
   type SupportManifestV1,
 } from "../src/lib/support/supportManifest";
+import { deriveSessionMetrics } from "../src/lib/support/sessionMetrics";
 import {
   SUPPORT_PACKAGE_VERSION,
   assertSupportPackageIntegrity,
@@ -21,6 +23,7 @@ type PerTurnRefRow = {
   ledgerCount: number;
   hasResolution: boolean;
 };
+type ReplayEvent = { seq: number; turnJson: unknown };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -38,6 +41,49 @@ function parseArgs(argv: string[]): Record<string, string> {
     out[arg.slice(2, eq)] = arg.slice(eq + 1);
   }
   return out;
+}
+
+function asSeq(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return Number(value.trim());
+  return fallback;
+}
+
+function toTurnJson(source: any): any {
+  const direct = source?.turnJson;
+  if (direct && typeof direct === "object") {
+    const deltas = Array.isArray(direct.deltas)
+      ? direct.deltas
+      : Array.isArray(source?.deltas)
+        ? source.deltas
+        : Array.isArray(source?.stateDeltas)
+          ? source.stateDeltas
+          : [];
+    return { ...direct, deltas, resolution: direct?.resolution ?? source?.resolution };
+  }
+
+  const deltas = Array.isArray(source?.deltas)
+    ? source.deltas
+    : Array.isArray(source?.stateDeltas)
+      ? source.stateDeltas
+      : [];
+
+  return {
+    deltas,
+    ledgerAdds: Array.isArray(source?.ledgerAdds) ? source.ledgerAdds : [],
+    resolution: source?.resolution,
+  };
+}
+
+function extractEvents(bundle: unknown): ReplayEvent[] {
+  const root = isRecord(bundle) ? bundle : {};
+  const rawEvents = Array.isArray(root.events) ? root.events : Array.isArray(root.turns) ? root.turns : [];
+  const mapped = rawEvents.map((raw: any, index: number) => ({
+    seq: asSeq(raw?.seq ?? raw?.turnIndex, index),
+    turnJson: toTurnJson(raw),
+  }));
+  mapped.sort((a, b) => a.seq - b.seq);
+  return mapped;
 }
 
 function readPath(value: unknown, pathParts: string[]): unknown {
@@ -174,7 +220,10 @@ function buildSupportPackage(
   bundle: unknown,
   manifest: SupportManifestV1,
   manifestHash: string,
+  replayEvents: ReplayEvent[],
 ): Omit<SupportPackageV1, "integrity"> {
+  const guardSummary = replayStateFromTurnJsonWithGuardSummary(replayEvents as any);
+  const sessionMetrics = deriveSessionMetrics(replayEvents, guardSummary);
   return {
     packageVersion: SUPPORT_PACKAGE_VERSION,
     manifest,
@@ -196,6 +245,7 @@ function buildSupportPackage(
         hasResolution: row.hasResolution,
       })),
     },
+    sessionMetrics,
     drift: buildDrift(bundle, manifest),
     runbook: {
       build: "docs/deploy-runbook#build",
@@ -215,10 +265,11 @@ async function main() {
   const outDir = args["out-dir"] || "./support-output";
   const bundleText = fs.readFileSync(bundlePath, "utf8");
   const bundle = JSON.parse(bundleText);
+  const replayEvents = extractEvents(bundle);
 
   const manifest = await buildSupportManifestFromBundle(bundle);
   const manifestHash = await hashSupportManifest(manifest);
-  const pkgWithoutIntegrity = buildSupportPackage(bundle, manifest, manifestHash);
+  const pkgWithoutIntegrity = buildSupportPackage(bundle, manifest, manifestHash, replayEvents);
   const integrity = await assertSupportPackageIntegrity(pkgWithoutIntegrity);
   const pkg: SupportPackageV1 = {
     ...pkgWithoutIntegrity,

@@ -488,6 +488,37 @@ function parseCapSnapshot(stdout: string): {
   };
 }
 
+function parseSessionMetricsJson(stdout: string): {
+  turns: number;
+  causalCoverage: { totalDeltas: number; unexplainedDeltas: number };
+} | null {
+  const line = stdout
+    .split(/\r?\n/)
+    .find((entry) => entry.startsWith("SESSION_METRICS_JSON "));
+  if (!line) return null;
+  const raw = line.slice("SESSION_METRICS_JSON ".length).trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!isRecord(parsed)) return null;
+    if (typeof parsed.turns !== "number" || !Number.isFinite(parsed.turns)) return null;
+    if (!isRecord(parsed.causalCoverage)) return null;
+    const totalDeltas = parsed.causalCoverage.totalDeltas;
+    const unexplainedDeltas = parsed.causalCoverage.unexplainedDeltas;
+    if (typeof totalDeltas !== "number" || !Number.isFinite(totalDeltas)) return null;
+    if (typeof unexplainedDeltas !== "number" || !Number.isFinite(unexplainedDeltas)) return null;
+    return {
+      turns: Math.trunc(parsed.turns),
+      causalCoverage: {
+        totalDeltas: Math.trunc(totalDeltas),
+        unexplainedDeltas: Math.trunc(unexplainedDeltas),
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 function isFailureResolution(source: unknown): boolean {
   if (!isRecord(source)) return false;
   const resolution = isRecord(source.resolution) ? source.resolution : null;
@@ -657,6 +688,36 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   }
   if (!stdout.includes("DRIFT_SEVERITY: NONE")) {
     regressionMarkers.push("GOLDEN_REGRESSION missing=DRIFT_SEVERITY_NONE");
+  }
+  if (!stdout.includes("SESSION_METRICS_JSON ")) {
+    regressionMarkers.push("GOLDEN_SESSION_METRICS_REGRESSION missing=SESSION_METRICS_JSON");
+  }
+  const sessionMetrics = parseSessionMetricsJson(stdout);
+  const expectedSessionTurns = parsePerTurnTelemetryRows(stdout).length;
+  if (!sessionMetrics) {
+    regressionMarkers.push("GOLDEN_SESSION_METRICS_REGRESSION parse_error");
+  } else {
+    if (sessionMetrics.turns !== expectedSessionTurns) {
+      regressionMarkers.push(
+        `GOLDEN_SESSION_METRICS_REGRESSION turns=${sessionMetrics.turns} expected=${expectedSessionTurns}`,
+      );
+    }
+    if (sessionMetrics.causalCoverage.unexplainedDeltas !== 0) {
+      regressionMarkers.push(
+        `GOLDEN_SESSION_METRICS_REGRESSION unexplainedDeltas=${sessionMetrics.causalCoverage.unexplainedDeltas}`,
+      );
+    }
+  }
+  const sessionMetricsLine = stdout
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("SESSION_METRICS_JSON "));
+  if (
+    sessionMetricsLine &&
+    /timestamp|duration|\bms\b|\bseconds\b|token|random|seed|Date\.now|performance\.now/i.test(
+      sessionMetricsLine,
+    )
+  ) {
+    regressionMarkers.push("GOLDEN_SESSION_METRICS_REGRESSION entropy_token");
   }
   if (stdout.includes("DRIFT_BLOCK_MISSING")) {
     regressionMarkers.push("GOLDEN_REGRESSION unexpected=DRIFT_BLOCK_MISSING");

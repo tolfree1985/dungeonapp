@@ -78,6 +78,7 @@ async function main() {
     "\"manifest\":",
     "\"telemetryVersion\":",
     "\"replay\":",
+    "\"sessionMetrics\":",
     "\"drift\":",
     "\"integrity\":",
     "\"runbook\":",
@@ -92,6 +93,17 @@ async function main() {
 
   const expectedManifestHashA = await hashSupportManifest(jsonA.manifest);
   assert.equal(jsonA.manifestHash, expectedManifestHashA, "manifestHash should match manifest");
+  assert.equal(jsonA.sessionMetrics?.version, 1, "expected sessionMetrics.version to be 1");
+  assert.equal(
+    jsonA.sessionMetrics?.turns,
+    jsonA.manifest.replay.turnCount,
+    "expected sessionMetrics.turns to match manifest replay.turnCount",
+  );
+  assert.equal(
+    jsonA.sessionMetrics?.causalCoverage?.unexplainedDeltas,
+    0,
+    "expected deterministic session metrics unexplained deltas to be zero",
+  );
 
   const { integrity: _discardedIntegrity, ...pkgWithoutIntegrityA } = jsonA as SupportPackageV1;
   const recomputedIntegrity = await assertSupportPackageIntegrity(pkgWithoutIntegrityA);

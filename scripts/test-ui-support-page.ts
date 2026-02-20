@@ -118,6 +118,10 @@ function main() {
   assert(dashboardSource.includes("Momentum:"), "Expected difficulty momentum row");
   assert(dashboardSource.includes("Tier:"), "Expected difficulty tier row");
   assert(dashboardSource.includes("Momentum sparkline:"), "Expected difficulty momentum sparkline row");
+  assert(dashboardSource.includes("Session Metrics"), "Expected session metrics panel");
+  assert(dashboardSource.includes("SESSION_METRICS_JSON"), "Expected session metrics json marker");
+  assert(dashboardSource.includes("Copy Session Metrics JSON"), "Expected session metrics copy control");
+  assert(dashboardSource.includes("SESSION_METRICS_RED_FLAG"), "Expected session metrics red-flag marker signal");
   assert(dashboardSource.includes("Replay Telemetry (Derived)"), "Expected derived telemetry panel");
   assert(dashboardSource.includes("TELEMETRY_VERSION"), "Expected telemetry version marker in UI panel");
   assert(dashboardSource.includes("TELEMETRY"), "Expected telemetry marker in UI panel");

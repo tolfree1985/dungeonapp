@@ -1,4 +1,5 @@
 import { hashSupportManifest, serializeSupportManifest, type SupportManifestV1 } from "./supportManifest";
+import { serializeSessionMetrics, type SessionMetricsV1 } from "./sessionMetrics";
 
 export const SUPPORT_PACKAGE_VERSION = 1 as const;
 
@@ -31,6 +32,7 @@ export type SupportPackageV1 = {
       hasResolution: boolean;
     }>;
   };
+  sessionMetrics?: SessionMetricsV1;
   drift: {
     severity: DriftSeverity;
     firstDriftTurnIndex?: number;
@@ -153,6 +155,7 @@ export function serializeSupportPackage(pkg: SupportPackageV1): string {
         hasResolution: row.hasResolution,
       })),
     },
+    ...(pkg.sessionMetrics ? { sessionMetrics: JSON.parse(serializeSessionMetrics(pkg.sessionMetrics)) } : {}),
     drift: {
       severity: pkg.drift.severity,
       ...(pkg.drift.firstDriftTurnIndex !== undefined

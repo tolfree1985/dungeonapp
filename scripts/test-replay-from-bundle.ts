@@ -1113,6 +1113,8 @@ async function main() {
   assert(out.includes("MAX_DELTA_COUNT:"), "expected max delta count cap field");
   assert(out.includes("CAP_REASON:"), "expected cap reason field");
   assert(out.includes("CAP_EXPLANATION:"), "expected cap explanation field");
+  assert(out.includes("SESSION_METRICS"), "expected session metrics marker");
+  assert(out.includes("SESSION_METRICS_JSON "), "expected session metrics json marker");
   assert(/cardsTriggered:\s*0/.test(out), "expected cardsTriggered to be zero for deterministic fixture");
   assert(/cardsApplied:\s*0/.test(out), "expected cardsApplied to be zero for deterministic fixture");
   const difficultyTierLine = out.split(/\r?\n/).find((line) => line.startsWith("tier:")) ?? "";
@@ -1156,6 +1158,8 @@ async function main() {
     "MAX_DELTA_COUNT:",
     "CAP_REASON:",
     "CAP_EXPLANATION:",
+    "SESSION_METRICS",
+    "SESSION_METRICS_JSON ",
     `TELEMETRY_VERSION ${TELEMETRY_VERSION}`,
   ];
   const styleOrderIndex = styleOrder.map((marker) => lineIndex(marker));
@@ -1191,6 +1195,22 @@ async function main() {
   const telemetryBlockA = extractSection(out, "TELEMETRY", "PER_TURN_TELEMETRY");
   const capSnapshotBlockA = extractSection(out, "CAP_SNAPSHOT", "TELEMETRY");
   const perTurnBlockA = extractSection(out, "PER_TURN_TELEMETRY");
+  const sessionMetricsLineA =
+    out.split(/\r?\n/).find((line) => line.startsWith("SESSION_METRICS_JSON ")) ?? "";
+  assert(sessionMetricsLineA.length > 0, "expected SESSION_METRICS_JSON line");
+  const sessionMetricsJsonA = sessionMetricsLineA.replace(/^SESSION_METRICS_JSON\s+/, "");
+  const sessionMetricsA = JSON.parse(sessionMetricsJsonA);
+  assert.equal(sessionMetricsA.version, 1, "expected session metrics version to be 1");
+  assert.equal(sessionMetricsA.turns, bundle.turns.length, "expected session metrics turns to match replay turns");
+  assert.equal(
+    sessionMetricsA.causalCoverage.unexplainedDeltas,
+    0,
+    "expected deterministic session metrics unexplained deltas to be zero",
+  );
+  assert(
+    !/timestamp|duration|\bms\b|\bseconds\b|token|random|seed|Date\.now|performance\.now/i.test(sessionMetricsJsonA),
+    "session metrics JSON should not include timing/entropy fields",
+  );
   const hashLineA = (out.split(/\r?\n/).find((line) => line.startsWith("FINAL_STATE_HASH ")) ?? "").trim();
 
   const telemetryValues: Record<string, number> = {};
@@ -1233,11 +1253,15 @@ async function main() {
   const telemetryBlockB = extractSection(out2, "TELEMETRY", "PER_TURN_TELEMETRY");
   const capSnapshotBlockB = extractSection(out2, "CAP_SNAPSHOT", "TELEMETRY");
   const perTurnBlockB = extractSection(out2, "PER_TURN_TELEMETRY");
+  const sessionMetricsLineB =
+    out2.split(/\r?\n/).find((line) => line.startsWith("SESSION_METRICS_JSON ")) ?? "";
+  assert(sessionMetricsLineB.length > 0, "expected SESSION_METRICS_JSON line in second replay run");
   const hashLineB = (out2.split(/\r?\n/).find((line) => line.startsWith("FINAL_STATE_HASH ")) ?? "").trim();
 
   assert.equal(telemetryBlockA, telemetryBlockB, "telemetry block should be stable across runs");
   assert.equal(capSnapshotBlockA, capSnapshotBlockB, "cap snapshot block should be stable across runs");
   assert.equal(perTurnBlockA, perTurnBlockB, "per-turn telemetry should be stable across runs");
+  assert.equal(sessionMetricsLineA, sessionMetricsLineB, "session metrics JSON should be stable across runs");
   assert.equal(hashLineA, hashLineB, "final state hash should be stable across runs");
 
   const withJson = spawnSync(

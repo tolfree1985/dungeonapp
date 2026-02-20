@@ -16,6 +16,7 @@ import {
   replayStateFromTurnJsonWithGuardSummary,
   type ConsequenceSummary,
 } from "../src/lib/game/replay";
+import { deriveSessionMetrics, serializeSessionMetrics } from "../src/lib/support/sessionMetrics";
 
 type ReplaySupportPackage = Omit<SupportPackageV1, "drift"> & {
   drift?: SupportPackageV1["drift"];
@@ -322,6 +323,7 @@ async function main() {
   const contiguous = isSeqContiguous(perTurn.map((row) => row.turnIndex));
   const ledgerCount = manifest.telemetry.totalLedgerEntries;
   const deltaCount = manifest.telemetry.totalStateDeltas;
+  const sessionMetrics = deriveSessionMetrics(replayEvents, guardSummary);
 
   console.log(`BUNDLE_ID ${bundleId}`);
   console.log(`TURNS ${manifest.replay.turnCount}`);
@@ -369,6 +371,8 @@ async function main() {
     console.log(`CAP_REASON: ${latestCapSnapshot.capReason}`);
     console.log(`CAP_EXPLANATION: ${explainCapReason(latestCapSnapshot)}`);
   }
+  console.log("SESSION_METRICS");
+  console.log(`SESSION_METRICS_JSON ${serializeSessionMetrics(sessionMetrics)}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");

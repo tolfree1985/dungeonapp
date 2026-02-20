@@ -30,6 +30,11 @@ import {
   serializeSupportPackage,
   type SupportPackageV1,
 } from "@/lib/support/supportPackage";
+import {
+  deriveSessionMetrics,
+  serializeSessionMetrics,
+  type SessionMetricsV1,
+} from "@/lib/support/sessionMetrics";
 
 type RunbookLink = {
   label: string;
@@ -756,6 +761,25 @@ function parseTurnIndex(value: string, fallback: number): number {
   return fallback;
 }
 
+function isFailureResolution(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const resolution = isRecord(value.resolution) ? value.resolution : {};
+  const total = resolution.total;
+  if (typeof total === "number" && Number.isFinite(total)) {
+    return total <= 6;
+  }
+  const candidates = [resolution.tier, resolution.outcome, resolution.band, value.outcome, value.tier, value.band];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const normalized = candidate.trim().toLowerCase();
+    if (!normalized) continue;
+    if (normalized === "fail" || normalized === "failure" || normalized === "fail-forward") return true;
+    if (normalized.includes("fail")) return true;
+    if (normalized === "2-6") return true;
+  }
+  return false;
+}
+
 function readLedgerTurnReference(entry: unknown): string {
   if (!isRecord(entry)) return "";
   const candidates = [entry.refTurnIndex, entry.turnIndex, entry.turn, entry.refEventId];
@@ -901,6 +925,7 @@ export function SupportDashboard({
   const [supportPackageCliCopyStatus, setSupportPackageCliCopyStatus] = useState("");
   const [supportPackageImmutableHashCopyStatus, setSupportPackageImmutableHashCopyStatus] = useState("");
   const [criticalAnchorsCopyStatus, setCriticalAnchorsCopyStatus] = useState("");
+  const [sessionMetricsCopyStatus, setSessionMetricsCopyStatus] = useState("");
   const [intakeConsistencyState, setIntakeConsistencyState] = useState<IntakeConsistencyState>({
     status: "idle",
     message: "No support package loaded.",
@@ -1397,6 +1422,57 @@ export function SupportDashboard({
     rows.sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1));
     return rows;
   }, [supportManifest, turnRows]);
+
+  const sessionMetricEvents = useMemo(() => {
+    return turnRows
+      .map((row, index) => ({
+        seq: parseTurnIndex(row.turnIndex, index),
+        turnJson: isRecord(row.rawTurn)
+          ? row.rawTurn
+          : {
+              resolution: row.resolution,
+              deltas: row.stateDeltas,
+              ledgerAdds: row.ledgerAdds,
+            },
+      }))
+      .sort((a, b) => (a.seq === b.seq ? 0 : a.seq < b.seq ? -1 : 1));
+  }, [turnRows]);
+
+  const fallbackSessionMetrics = useMemo<SessionMetricsV1>(() => {
+    const turnJsons = sessionMetricEvents.map((entry) => entry.turnJson);
+    return deriveSessionMetrics(sessionMetricEvents, {
+      difficultyState: deriveDifficultyStateFromTurnJson(turnJsons),
+      causalCoverage: {
+        totalDeltas: replayTelemetry.totalStateDeltaCount,
+        unexplainedDeltas: 0,
+      },
+    });
+  }, [replayTelemetry.totalStateDeltaCount, sessionMetricEvents]);
+
+  const sessionMetrics = useMemo<SessionMetricsV1>(
+    () => supportPackageData?.sessionMetrics ?? fallbackSessionMetrics,
+    [fallbackSessionMetrics, supportPackageData],
+  );
+
+  const hasLowRiskFailure = useMemo(() => {
+    const byTurn = new Map<number, PerTurnTelemetryRow>();
+    perTurnTelemetry.forEach((row) => {
+      byTurn.set(row.turnIndex, row);
+    });
+    for (let i = 0; i < turnRows.length; i++) {
+      const row = turnRows[i];
+      const turnIndex = parseTurnIndex(row.turnIndex, i);
+      if (!isFailureResolution(row.rawTurn)) continue;
+      const telemetryRow = byTurn.get(turnIndex);
+      if (telemetryRow?.riskLevel === "LOW") {
+        return true;
+      }
+    }
+    return false;
+  }, [perTurnTelemetry, turnRows]);
+
+  const sessionMetricsRedFlag = sessionMetrics.causalCoverage.unexplainedDeltas > 0 || hasLowRiskFailure;
+  const sessionMetricsJson = useMemo(() => serializeSessionMetrics(sessionMetrics), [sessionMetrics]);
 
   const styleStability = useMemo<StyleStabilityPanel>(() => {
     if (turnRows.length === 0) {
@@ -1934,6 +2010,10 @@ export function SupportDashboard({
 
   async function onCopyDriftReport() {
     await copyText(driftReportText, setDriftReportCopyStatus);
+  }
+
+  async function onCopySessionMetrics() {
+    await copyText(sessionMetricsJson, setSessionMetricsCopyStatus);
   }
 
   function applySupportPackage(pkg: SupportPackageV1, sourceText: string) {
@@ -2639,6 +2719,64 @@ export function SupportDashboard({
         <div className="text-xs">
           Momentum sparkline: {difficultyState.curve.length > 0 ? difficultyState.curve.join("-") : "(none)"}
         </div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Session Metrics">
+        <h2 className="text-base font-semibold">Session Metrics</h2>
+        {sessionMetricsRedFlag ? (
+          <div className="mt-2 font-semibold text-red-700">SESSION_METRICS_RED_FLAG</div>
+        ) : (
+          <div className="mt-2 text-green-700">SESSION_METRICS_OK</div>
+        )}
+        <div className="mt-1 text-xs">version: {sessionMetrics.version}</div>
+        <div className="text-xs">turns: {sessionMetrics.turns}</div>
+        <div className="text-xs">
+          outcomes: success={sessionMetrics.successes} mixed={sessionMetrics.mixed} fail={sessionMetrics.failures}
+        </div>
+        <div className="mt-2 overflow-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className="border p-2 text-left">group</th>
+                <th className="border p-2 text-left">values</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="border p-2">riskCounts</td>
+                <td className="border p-2">
+                  LOW={sessionMetrics.riskCounts.LOW} MODERATE={sessionMetrics.riskCounts.MODERATE} HIGH=
+                  {sessionMetrics.riskCounts.HIGH}
+                </td>
+              </tr>
+              <tr>
+                <td className="border p-2">escalationCounts</td>
+                <td className="border p-2">
+                  NONE={sessionMetrics.escalationCounts.NONE} MINOR={sessionMetrics.escalationCounts.MINOR} MAJOR=
+                  {sessionMetrics.escalationCounts.MAJOR}
+                </td>
+              </tr>
+              <tr>
+                <td className="border p-2">causalCoverage</td>
+                <td className="border p-2">
+                  totalDeltas={sessionMetrics.causalCoverage.totalDeltas} unexplainedDeltas=
+                  {sessionMetrics.causalCoverage.unexplainedDeltas}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={onCopySessionMetrics}>
+            Copy Session Metrics JSON
+          </button>
+          <span role="status" aria-live="polite">
+            {sessionMetricsCopyStatus}
+          </span>
+        </div>
+        <pre className="mt-2 rounded border p-2 whitespace-pre-wrap text-xs">
+          {["SESSION_METRICS", `SESSION_METRICS_JSON ${sessionMetricsJson}`].join("\n")}
+        </pre>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="CAP">
