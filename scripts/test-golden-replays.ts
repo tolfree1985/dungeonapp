@@ -84,6 +84,7 @@ function main() {
     "expected deterministic GOLDEN_SUMMARY line",
   );
   assert(!runA.stdout.includes("GOLDEN_MEMORY_REGRESSION"), "did not expect memory regression markers in golden run");
+  assert(!runA.stdout.includes("GOLDEN_DIFFICULTY_REGRESSION"), "did not expect difficulty regression markers in golden run");
   assert(!runA.stdout.includes("/Users/"), "expected no absolute unix path in output");
   assert(!runA.stdout.includes("C:\\"), "expected no absolute windows path in output");
 

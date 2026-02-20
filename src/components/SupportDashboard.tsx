@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildDeltaLedgerExplanationRows,
+  deriveDifficultyStateFromTurnSignals,
   classifyConsequence,
   classifyFailForwardSignal,
   deriveStyleStabilityFromEvents,
@@ -1420,6 +1421,16 @@ export function SupportDashboard({
     }
   }, [turnRows]);
 
+  const difficultyState = useMemo(() => {
+    return deriveDifficultyStateFromTurnSignals(
+      perTurnTelemetry.map((row) => ({
+        riskLevel: row.riskLevel,
+        escalation: row.escalation,
+        isFailure: row.failForwardSignal.length > 0,
+      })),
+    );
+  }, [perTurnTelemetry]);
+
   const telemetryReference = useMemo(() => extractTelemetryReference(bundleData), [bundleData]);
   const telemetryReferencePerTurn = useMemo(
     () =>
@@ -2601,6 +2612,14 @@ export function SupportDashboard({
           Pacing: {styleStability.pacingStable ? "STABLE" : "DRIFTED"}
         </div>
         <div className="text-xs">Drift Count: {styleStability.driftCount}</div>
+      </section>
+
+      <section className="mt-4 rounded border p-4 text-sm" aria-label="Difficulty">
+        <h2 className="text-base font-semibold">DIFFICULTY</h2>
+        <div className="mt-2 text-xs">Momentum: {difficultyState.momentum}</div>
+        <div className={`text-xs ${difficultyState.tier === "CRITICAL" ? "text-red-700 font-semibold" : ""}`}>
+          Tier: {difficultyState.tier}
+        </div>
       </section>
 
       <section className="mt-4 rounded border p-4 text-sm" aria-label="Replay Telemetry (Derived)">

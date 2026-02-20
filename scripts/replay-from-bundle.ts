@@ -347,6 +347,9 @@ async function main() {
   console.log(`cardsTriggered: ${guardSummary.memoryStability.cardsTriggered}`);
   console.log(`cardsApplied: ${guardSummary.memoryStability.cardsApplied}`);
   console.log(`memoryHash: ${guardSummary.memoryStability.memoryHash}`);
+  console.log("DIFFICULTY_STATE");
+  console.log(`momentum: ${guardSummary.difficultyState.momentum}`);
+  console.log(`tier: ${guardSummary.difficultyState.tier}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");

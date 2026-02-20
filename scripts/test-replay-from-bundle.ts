@@ -15,13 +15,18 @@ import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
 import {
   CONSEQUENCE_RULE_TABLE,
   REPLAY_GUARD_ORDER,
+  applyDifficultyMomentumStep,
+  assertDifficultyMomentumCap,
+  assertDifficultyMomentumProgression,
   assertCausalCoverage,
   assertDeltaApplyIdempotency,
   assertFailForwardInvariant,
   assertLedgerConsistency,
   assertStateDeltaShape,
   assertTurnMonotonicity,
+  classifyDifficultyTier,
   classifyConsequence,
+  deriveDifficultyStateFromTurnSignals,
   replayStateFromTurnJson,
   replayStateFromTurnJsonWithGuardSummary,
 } from "../src/lib/game/replay";
@@ -154,6 +159,33 @@ async function main() {
     }).riskLevel,
     "MODERATE",
     "expected failure risk floor to prevent LOW suppression by ledger stakes override",
+  );
+  assert.equal(classifyDifficultyTier(0), "CALM", "expected difficulty tier mapping at low momentum");
+  assert.equal(classifyDifficultyTier(3), "TENSE", "expected difficulty tier mapping at tense momentum");
+  assert.equal(classifyDifficultyTier(6), "DANGEROUS", "expected difficulty tier mapping at dangerous momentum");
+  assert.equal(classifyDifficultyTier(10), "CRITICAL", "expected difficulty tier mapping at critical momentum");
+  assert.deepEqual(
+    deriveDifficultyStateFromTurnSignals([
+      { riskLevel: "MODERATE", escalation: "MINOR", isFailure: false },
+      { riskLevel: "HIGH", escalation: "MAJOR", isFailure: true },
+    ]),
+    { momentum: 5, tier: "TENSE" },
+    "expected deterministic momentum accumulation from turn signals",
+  );
+  assert.equal(
+    applyDifficultyMomentumStep(10, { riskLevel: "HIGH", escalation: "MAJOR", isFailure: true }),
+    12,
+    "expected critical-tier high-risk turn momentum capping at 12",
+  );
+  assert.throws(
+    () => assertDifficultyMomentumCap(13),
+    /DIFFICULTY_CAP_VIOLATION/,
+    "expected explicit difficulty cap violation when momentum exceeds 12",
+  );
+  assert.throws(
+    () => assertDifficultyMomentumProgression(4, 3),
+    /DIFFICULTY_MOMENTUM_REGRESSION/,
+    "expected difficulty momentum regression guard to fail on decreasing momentum",
   );
 
   assert.doesNotThrow(
@@ -858,6 +890,8 @@ async function main() {
     /^[a-f0-9]{64}$/.test(guardSummaryReplay.memoryStability.memoryHash),
     "expected deterministic 64-char memory stability hash",
   );
+  assert.equal(guardSummaryReplay.difficultyState.momentum, 0, "expected default difficulty momentum in guard summary");
+  assert.equal(guardSummaryReplay.difficultyState.tier, "CALM", "expected default difficulty tier in guard summary");
 
   const styleDriftAllowedSummary = replayStateFromTurnJsonWithGuardSummary(
     [
@@ -980,8 +1014,16 @@ async function main() {
   assert(out.includes("cardsTriggered:"), "expected memory stability triggered field");
   assert(out.includes("cardsApplied:"), "expected memory stability applied field");
   assert(out.includes("memoryHash:"), "expected memory stability hash field");
+  assert(out.includes("DIFFICULTY_STATE"), "expected difficulty state marker");
+  assert(out.includes("momentum:"), "expected difficulty momentum field");
+  assert(out.includes("tier:"), "expected difficulty tier field");
   assert(/cardsTriggered:\s*0/.test(out), "expected cardsTriggered to be zero for deterministic fixture");
   assert(/cardsApplied:\s*0/.test(out), "expected cardsApplied to be zero for deterministic fixture");
+  const difficultyTierLine = out.split(/\r?\n/).find((line) => line.startsWith("tier:")) ?? "";
+  assert(
+    /^tier:\s+(CALM|TENSE|DANGEROUS|CRITICAL)$/.test(difficultyTierLine),
+    "expected deterministic difficulty tier label",
+  );
   const memoryHashLine = out.split(/\r?\n/).find((line) => line.startsWith("memoryHash:")) ?? "";
   assert(/memoryHash:\s*[a-f0-9]{64}$/.test(memoryHashLine), "expected deterministic 64-char memory hash");
   const lineIndex = (lineText: string): number => {
@@ -1000,6 +1042,9 @@ async function main() {
     "cardsTriggered:",
     "cardsApplied:",
     "memoryHash:",
+    "DIFFICULTY_STATE",
+    "momentum:",
+    "tier:",
     `TELEMETRY_VERSION ${TELEMETRY_VERSION}`,
   ];
   const styleOrderIndex = styleOrder.map((marker) => lineIndex(marker));

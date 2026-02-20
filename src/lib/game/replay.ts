@@ -90,6 +90,13 @@ export type ConsequenceSummary = {
   escalation: ConsequenceEscalation;
 };
 
+export type DifficultyTier = "CALM" | "TENSE" | "DANGEROUS" | "CRITICAL";
+
+export type DifficultyStateSummary = {
+  momentum: number;
+  tier: DifficultyTier;
+};
+
 export const CONSEQUENCE_RULE_TABLE = {
   healthLossHighThreshold: 3,
   relationshipNegativeThreshold: 1,
@@ -577,6 +584,69 @@ function compareConsequenceRisk(a: ConsequenceRiskLevel, b: ConsequenceRiskLevel
 
 function compareConsequenceEscalation(a: ConsequenceEscalation, b: ConsequenceEscalation): number {
   return CONSEQUENCE_ESCALATION_ORDER.indexOf(a) - CONSEQUENCE_ESCALATION_ORDER.indexOf(b);
+}
+
+function difficultyRiskIncrement(riskLevel: ConsequenceRiskLevel): number {
+  if (riskLevel === "HIGH") return 2;
+  if (riskLevel === "MODERATE") return 1;
+  return 0;
+}
+
+export function classifyDifficultyTier(momentum: number): DifficultyTier {
+  if (momentum <= 2) return "CALM";
+  if (momentum <= 5) return "TENSE";
+  if (momentum <= 9) return "DANGEROUS";
+  return "CRITICAL";
+}
+
+export function assertDifficultyMomentumCap(momentum: number): void {
+  if (momentum > 12) {
+    throw new Error("DIFFICULTY_CAP_VIOLATION");
+  }
+}
+
+export function assertDifficultyMomentumProgression(previous: number, next: number): void {
+  if (next < previous) {
+    throw new Error("DIFFICULTY_MOMENTUM_REGRESSION");
+  }
+}
+
+export function applyDifficultyMomentumStep(
+  currentMomentum: number,
+  turn: {
+    riskLevel: ConsequenceRiskLevel;
+    escalation: ConsequenceEscalation;
+    isFailure: boolean;
+  },
+): number {
+  let increment = difficultyRiskIncrement(turn.riskLevel);
+  if (turn.escalation === "MAJOR") increment += 1;
+  if (turn.isFailure) increment += 1;
+  let next = currentMomentum + increment;
+  const currentTier = classifyDifficultyTier(currentMomentum);
+  if (currentTier === "CRITICAL" && turn.riskLevel === "HIGH" && next > 12) {
+    next = 12;
+  }
+  assertDifficultyMomentumCap(next);
+  assertDifficultyMomentumProgression(currentMomentum, next);
+  return next;
+}
+
+export function deriveDifficultyStateFromTurnSignals(
+  turns: Array<{
+    riskLevel: ConsequenceRiskLevel;
+    escalation: ConsequenceEscalation;
+    isFailure: boolean;
+  }>,
+): DifficultyStateSummary {
+  let momentum = 0;
+  for (const turn of turns) {
+    momentum = applyDifficultyMomentumStep(momentum, turn);
+  }
+  return {
+    momentum,
+    tier: classifyDifficultyTier(momentum),
+  };
 }
 
 function asNumber(value: unknown): number | null {
@@ -1544,6 +1614,7 @@ export type ReplayWithGuardSummary = {
   styleLockPresent: boolean;
   styleStability: StyleStabilitySummary;
   memoryStability: MemoryStabilitySummary;
+  difficultyState: DifficultyStateSummary;
   failForwardCheck: "PASS" | "FAIL";
   failForwardSignal: FailForwardSignal | "NONE";
   causalCoverage: CausalCoverageSummary;
@@ -1576,6 +1647,10 @@ function replayStateFromTurnJsonInternal(
     cardsTriggered: 0,
     cardsApplied: 0,
     memoryHash: stableHashHex64("[]"),
+  };
+  let difficultyState: DifficultyStateSummary = {
+    momentum: 0,
+    tier: "CALM",
   };
   const memoryDigestRows: Array<{ seq: number; triggered: string[]; applied: string[] }> = [];
   let failForwardSignal: FailForwardSignal | "NONE" = "NONE";
@@ -1650,6 +1725,16 @@ function replayStateFromTurnJsonInternal(
       cardsApplied: memoryStability.cardsApplied + sortedApplied.length,
       memoryHash: memoryStability.memoryHash,
     };
+    const turnConsequence = classifyConsequence(e.turnJson);
+    const nextDifficultyMomentum = applyDifficultyMomentumStep(difficultyState.momentum, {
+      riskLevel: turnConsequence.riskLevel,
+      escalation: turnConsequence.escalation,
+      isFailure: readsFailureBand(e.turnJson),
+    });
+    difficultyState = {
+      momentum: nextDifficultyMomentum,
+      tier: classifyDifficultyTier(nextDifficultyMomentum),
+    };
     mark("MEMORY_STABILITY");
     state = nextState;
   }
@@ -1666,6 +1751,7 @@ function replayStateFromTurnJsonInternal(
       styleLockPresent,
       styleStability,
       memoryStability,
+      difficultyState,
       failForwardCheck: "PASS",
       failForwardSignal,
       causalCoverage,

@@ -377,6 +377,28 @@ function parseMemoryStability(stdout: string): {
   return { cardsTriggered, cardsApplied, memoryHash };
 }
 
+function parseDifficultyState(stdout: string): {
+  momentum: number;
+  tier: "CALM" | "TENSE" | "DANGEROUS" | "CRITICAL";
+} | null {
+  const lines = stdout.split(/\r?\n/);
+  const markerIndex = lines.findIndex((line) => line.trim() === "DIFFICULTY_STATE");
+  if (markerIndex < 0) return null;
+  const window = lines.slice(markerIndex, markerIndex + 4);
+  const momentumLine = window.find((entry) => entry.trim().startsWith("momentum:"));
+  const tierLine = window.find((entry) => entry.trim().startsWith("tier:"));
+  const momentumRaw = momentumLine ? momentumLine.trim().slice("momentum:".length).trim() : "";
+  const tierRaw = tierLine ? tierLine.trim().slice("tier:".length).trim() : "";
+  if (!/^-?\d+$/.test(momentumRaw)) return null;
+  if (tierRaw !== "CALM" && tierRaw !== "TENSE" && tierRaw !== "DANGEROUS" && tierRaw !== "CRITICAL") {
+    return null;
+  }
+  return {
+    momentum: Number(momentumRaw),
+    tier: tierRaw,
+  };
+}
+
 function isFailureResolution(source: unknown): boolean {
   if (!isRecord(source)) return false;
   const resolution = isRecord(source.resolution) ? source.resolution : null;
@@ -562,6 +584,19 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   if (!memoryStability) {
     regressionMarkers.push("GOLDEN_MEMORY_REGRESSION missing=MEMORY_STABILITY");
   }
+  if (combinedOutput.includes("DIFFICULTY_MOMENTUM_REGRESSION")) {
+    regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION marker=DIFFICULTY_MOMENTUM_REGRESSION");
+  }
+  if (combinedOutput.includes("DIFFICULTY_CAP_VIOLATION")) {
+    regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION marker=DIFFICULTY_CAP_VIOLATION");
+  }
+  if (!stdout.includes("DIFFICULTY_STATE")) {
+    regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION missing=DIFFICULTY_STATE");
+  }
+  const difficultyState = parseDifficultyState(stdout);
+  if (!difficultyState) {
+    regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION missing=DIFFICULTY_FIELDS");
+  }
   if (combinedOutput.includes("DELTA_WITHOUT_LEDGER_EXPLANATION")) {
     regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION marker=DELTA_WITHOUT_LEDGER_EXPLANATION");
   }
@@ -669,7 +704,7 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
     regressionMarkers.push("GOLDEN_GUARD_SUMMARY_MISSING");
   }
 
-  if (regressionMarkers.length === 0 && memoryStability) {
+  if (regressionMarkers.length === 0 && memoryStability && difficultyState) {
     const childSecond = spawnSync(
       process.execPath,
       ["--import", "tsx", replayScriptPath, `--support-package-path=${fixturePath}`],
@@ -681,6 +716,14 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
       const secondStability = parseMemoryStability(childSecond.stdout ?? "");
       if (!secondStability || secondStability.memoryHash !== memoryStability.memoryHash) {
         regressionMarkers.push("GOLDEN_MEMORY_REGRESSION memory_hash_unstable");
+      }
+      const secondDifficultyState = parseDifficultyState(childSecond.stdout ?? "");
+      if (
+        !secondDifficultyState ||
+        secondDifficultyState.momentum !== difficultyState.momentum ||
+        secondDifficultyState.tier !== difficultyState.tier
+      ) {
+        regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION difficulty_state_unstable");
       }
     }
   }
