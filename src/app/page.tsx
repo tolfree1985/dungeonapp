@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 import { ResolutionBadge } from "@/components/ResolutionBadge";
 import {
@@ -51,6 +54,17 @@ const OPTION_RISK_EXPLANATION_MAP: Record<ConsequenceRiskLevel, string> = {
 const ESCALATION_LADDER: ConsequenceEscalation[] = ["NONE", "MINOR", "MAJOR"];
 const SESSION_ARC_TURN_THRESHOLD = 10;
 const demoSaveSlots: string[] = [];
+const EXAMPLE_PROMPTS: readonly string[] = ["Inspect the room", "Ask the guard for details", "Secure an exit route"];
+
+type OnboardingBannerKey = "guided" | "consequencePrimer" | "failForward" | "difficultyIntro" | "capExplanation";
+
+const ONBOARDING_BANNER_KEYS: readonly OnboardingBannerKey[] = [
+  "guided",
+  "consequencePrimer",
+  "failForward",
+  "difficultyIntro",
+  "capExplanation",
+];
 
 const demoTurns: DemoTurn[] = [
   {
@@ -212,8 +226,39 @@ function formatCostTypeIcons(costTypes: ConsequenceCostType[]): string {
 }
 
 export default function Home() {
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null);
+  const [dismissedBanners, setDismissedBanners] = useState<Record<OnboardingBannerKey, boolean>>({
+    guided: false,
+    consequencePrimer: false,
+    failForward: false,
+    difficultyIntro: false,
+    capExplanation: false,
+  });
   const isFirstSession = demoSaveSlots.length === 0;
   const showSessionComplete = demoTurns.length >= SESSION_ARC_TURN_THRESHOLD;
+
+  function dismissBanner(key: OnboardingBannerKey): void {
+    setDismissedBanners((prev) => ({ ...prev, [key]: true }));
+  }
+
+  function startDemoScenario(): void {
+    setSelectedScenarioId("mystery-docks-demo");
+  }
+
+  function startNewSession(): void {
+    setSelectedScenarioId(null);
+    const next: Record<OnboardingBannerKey, boolean> = {
+      guided: false,
+      consequencePrimer: false,
+      failForward: false,
+      difficultyIntro: false,
+      capExplanation: false,
+    };
+    for (const key of ONBOARDING_BANNER_KEYS) {
+      next[key] = false;
+    }
+    setDismissedBanners(next);
+  }
 
   return (
     <div className={styles.page}>
@@ -274,40 +319,92 @@ export default function Home() {
           </a>
         </div>
 
-        {isFirstSession ? (
-          <section
-            style={{
-              width: "100%",
-              marginTop: "1rem",
-              border: "1px solid #334155",
-              borderRadius: 12,
-              padding: "0.75rem",
-              background: "rgba(15,23,42,0.25)",
-            }}
-          >
-            <div style={{ fontSize: "0.95rem", fontWeight: 700 }}>WELCOME TO YOUR FIRST SESSION</div>
-            <div style={{ marginTop: 8, fontSize: "0.8rem", color: "#cbd5e1" }}>GUIDED FIRST TURN</div>
-            <ul style={{ marginTop: 6, paddingLeft: "1rem", fontSize: "0.8rem", color: "#e2e8f0" }}>
-              <li>You choose actions.</li>
-              <li>Risk is shown before you act.</li>
-              <li>Failure creates new paths.</li>
-            </ul>
-            <details style={{ marginTop: 8 }}>
-              <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "#cbd5e1" }}>
-                Risk badge guide
-              </summary>
-              <ul style={{ marginTop: 6, paddingLeft: "1rem", fontSize: "0.75rem", color: "#cbd5e1" }}>
-                <li>LOW = minor consequence</li>
-                <li>MODERATE = complication likely</li>
-                <li>HIGH = serious consequence possible</li>
+        <section className={styles.playSurface}>
+          <div className={styles.sessionControls}>
+            <button type="button" onClick={startNewSession} className={styles.dismissButton}>
+              New session
+            </button>
+            <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+              {selectedScenarioId ? `Scenario: ${selectedScenarioId}` : "No scenario selected"}
+            </span>
+          </div>
+
+          {!selectedScenarioId ? (
+            <div className={styles.onboardingCard} role="status" aria-live="polite">
+              <div style={{ fontSize: "0.95rem", fontWeight: 700 }}>Choose a scenario to begin</div>
+              <ul style={{ marginTop: 6, paddingLeft: "1rem", fontSize: "0.8rem", color: "#e2e8f0" }}>
+                <li>Start with one clear objective.</li>
+                <li>Set an opening risk level before acting.</li>
+                <li>Use consequences to branch your next move.</li>
               </ul>
-            </details>
-          </section>
-        ) : null}
+              <button type="button" onClick={startDemoScenario} className={styles.dismissButton} style={{ marginTop: 8 }}>
+                Use demo scenario
+              </button>
+            </div>
+          ) : null}
+
+          {isFirstSession && !dismissedBanners.guided ? (
+            <div className={styles.onboardingCard} role="status" aria-live="polite">
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ fontSize: "0.95rem", fontWeight: 700 }}>WELCOME TO YOUR FIRST SESSION</div>
+                <button type="button" onClick={() => dismissBanner("guided")} className={styles.dismissButton}>
+                  Dismiss
+                </button>
+              </div>
+              <div style={{ marginTop: 8, fontSize: "0.8rem", color: "#cbd5e1" }}>GUIDED FIRST TURN</div>
+              <ul style={{ marginTop: 6, paddingLeft: "1rem", fontSize: "0.8rem", color: "#e2e8f0" }}>
+                <li>You choose actions.</li>
+                <li>Risk is shown before you act.</li>
+                <li>Failure creates new paths.</li>
+              </ul>
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "#cbd5e1" }}>
+                  Risk badge guide
+                </summary>
+                <ul style={{ marginTop: 6, paddingLeft: "1rem", fontSize: "0.75rem", color: "#cbd5e1" }}>
+                  <li>LOW = minor consequence</li>
+                  <li>MODERATE = complication likely</li>
+                  <li>HIGH = serious consequence possible</li>
+                </ul>
+              </details>
+            </div>
+          ) : null}
+
+          <div className={styles.composerCard}>
+            <label htmlFor="first-session-action" style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>
+              Your action
+            </label>
+            <input
+              id="first-session-action"
+              type="text"
+              placeholder="Describe what you do next..."
+              style={{
+                marginTop: 6,
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #334155",
+                background: "rgba(15,23,42,0.3)",
+                color: "#e2e8f0",
+                padding: "0.55rem 0.6rem",
+                fontSize: "0.8rem",
+              }}
+            />
+            {isFirstSession ? (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Example prompts</div>
+                <ul style={{ marginTop: 4, paddingLeft: "1rem", fontSize: "0.75rem", color: "#cbd5e1" }}>
+                  {EXAMPLE_PROMPTS.map((prompt) => (
+                    <li key={prompt}>Try: {prompt}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </section>
 
         <section style={{ width: "100%", marginTop: "1rem" }}>
           <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.75rem" }}>Turn Transcript</h2>
-          <div style={{ display: "grid", gap: "0.75rem" }}>
+          <div className={styles.transcriptScroller} style={{ display: "grid", gap: "0.75rem" }}>
             {demoTurns.map((t, index) => {
               const previousSignal = index > 0 ? demoTurnSignals[index - 1] : undefined;
               const turnSignal = demoTurnSignals[index];
@@ -317,10 +414,13 @@ export default function Home() {
               const hasStakeSyncError = reportedRisk !== turnSignal.consequence.riskLevel;
               const playerFriendlyReasons = toPlayerFriendlyStakesReasons(turnSignal.reasonLines);
               const capSnapshot = demoCapSnapshots[index];
-              const isFirstResolvedTurn = index === firstResolvedTurnIndex;
-              const isFirstFailureTurn = index === firstFailureTurnIndex;
-              const isFirstCappedTurn = index === firstCapTurnIndex;
-              const isFirstCalmToTenseTurn = index === firstCalmToTenseTurnIndex;
+              const difficultyTier = demoDifficultyStates[index]?.tier ?? "CALM";
+              const showFirstResolvedTurnBanner =
+                index === firstResolvedTurnIndex && !dismissedBanners.consequencePrimer;
+              const showFirstFailureTurnBanner = index === firstFailureTurnIndex && !dismissedBanners.failForward;
+              const showFirstCappedTurnBanner = index === firstCapTurnIndex && !dismissedBanners.capExplanation;
+              const showFirstCalmToTenseBanner =
+                index === firstCalmToTenseTurnIndex && !dismissedBanners.difficultyIntro;
 
               return (
                 <article
@@ -332,12 +432,14 @@ export default function Home() {
                     padding: "0.75rem",
                     background: "rgba(10,10,10,0.25)",
                   }}
-                  >
-                    <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>You</div>
-                    <div style={{ marginTop: 4 }}>{t.playerText}</div>
-                  {isFirstResolvedTurn ? (
+                >
+                  <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>You</div>
+                  <div style={{ marginTop: 4 }}>{t.playerText}</div>
+                  {showFirstResolvedTurnBanner ? (
                     <details
                       open
+                      role="status"
+                      aria-live="polite"
                       style={{
                         marginTop: 10,
                         border: "1px solid #334155",
@@ -354,6 +456,14 @@ export default function Home() {
                         <br />
                         You can inspect them anytime.
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => dismissBanner("consequencePrimer")}
+                        className={styles.dismissButton}
+                        style={{ marginTop: 6 }}
+                      >
+                        Dismiss
+                      </button>
                     </details>
                   ) : null}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
@@ -365,11 +475,34 @@ export default function Home() {
                     >
                       See why
                     </a>
+                    <a
+                      href={`#turn-${stableTurnId}-why-peek`}
+                      className="ml-2 text-xs text-neutral-400 underline hover:text-neutral-200"
+                    >
+                      Why? peek
+                    </a>
                   </div>
                   <div style={{ marginTop: 4 }}>{t.assistantText}</div>
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                      marginTop: 8,
+                      display: "flex",
+                      gap: 6,
+                      flexWrap: "wrap",
+                      fontSize: "0.7rem",
+                    }}
+                  >
+                    <span className={styles.recapChip}>Risk: {reportedRisk}</span>
+                    <span className={styles.recapChip}>Escalation: {turnSignal.consequence.escalation}</span>
+                    <span className={styles.recapChip}>Difficulty: {difficultyTier}</span>
+                  </div>
 
                   {t.outcome === "fail" ? (
                     <div
+                      role="status"
+                      aria-live="polite"
                       style={{
                         marginTop: 10,
                         border: "1px solid #7f1d1d",
@@ -382,8 +515,18 @@ export default function Home() {
                     >
                       <div>COMPLICATION TRIGGERED</div>
                       {turnSignal.consequence.escalation === "MAJOR" ? <div>MAJOR CONSEQUENCE</div> : null}
-                      {isFirstFailureTurn ? (
-                        <div style={{ marginTop: 4 }}>FAILURE CHANGES THE STORY — IT DOES NOT END IT.</div>
+                      {showFirstFailureTurnBanner ? (
+                        <div style={{ marginTop: 4 }}>
+                          FAILURE CHANGES THE STORY — IT DOES NOT END IT.
+                          <button
+                            type="button"
+                            onClick={() => dismissBanner("failForward")}
+                            className={styles.dismissButton}
+                            style={{ marginLeft: 8 }}
+                          >
+                            Dismiss
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   ) : null}
@@ -392,8 +535,10 @@ export default function Home() {
                       LIMIT APPLIED: {capSnapshot?.capReason}
                     </div>
                   ) : null}
-                  {isFirstCappedTurn && capSnapshot?.capReason !== "NONE" ? (
+                  {showFirstCappedTurnBanner && capSnapshot?.capReason !== "NONE" ? (
                     <details
+                      role="status"
+                      aria-live="polite"
                       style={{
                         marginTop: 8,
                         border: "1px solid #7c2d12",
@@ -406,10 +551,20 @@ export default function Home() {
                     >
                       <summary style={{ cursor: "pointer", fontWeight: 600 }}>WHY IS THERE A LIMIT?</summary>
                       <div style={{ marginTop: 6 }}>Limits ensure consistent performance and pacing.</div>
+                      <button
+                        type="button"
+                        onClick={() => dismissBanner("capExplanation")}
+                        className={styles.dismissButton}
+                        style={{ marginTop: 6 }}
+                      >
+                        Dismiss
+                      </button>
                     </details>
                   ) : null}
-                  {isFirstCalmToTenseTurn ? (
+                  {showFirstCalmToTenseBanner ? (
                     <div
+                      role="status"
+                      aria-live="polite"
                       style={{
                         marginTop: 8,
                         border: "1px solid #0e7490",
@@ -422,6 +577,14 @@ export default function Home() {
                     >
                       <div>TENSION IS RISING.</div>
                       <div>Your choices are shaping the stakes.</div>
+                      <button
+                        type="button"
+                        onClick={() => dismissBanner("difficultyIntro")}
+                        className={styles.dismissButton}
+                        style={{ marginTop: 6 }}
+                      >
+                        Dismiss
+                      </button>
                     </div>
                   ) : null}
 
@@ -504,7 +667,7 @@ export default function Home() {
                   </div>
 
                   <div id={`turn-${stableTurnId}-consequences`} style={{ marginTop: 10 }}>
-                    <details>
+                    <details id={`turn-${stableTurnId}-why-peek`}>
                       <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "#cbd5e1" }}>Why?</summary>
                       <ul style={{ marginTop: 8, paddingLeft: "1rem", fontSize: "0.75rem", color: "#cbd5e1" }}>
                         {playerFriendlyReasons.map((reason, reasonIndex) => (
@@ -537,6 +700,8 @@ export default function Home() {
         ) : null}
 
         <section
+          role="status"
+          aria-live="polite"
           style={{
             width: "100%",
             marginTop: "0.75rem",
@@ -548,6 +713,7 @@ export default function Home() {
         >
           <div>Type /state to inspect state</div>
           <div>Type /summary to recap</div>
+          <div style={{ marginTop: 6, color: "#94a3b8" }}>Hint: use /rewind to revisit a prior turn.</div>
         </section>
       </main>
     </div>

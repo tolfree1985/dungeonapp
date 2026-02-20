@@ -83,6 +83,57 @@
   font-weight: 500;
 }
 
+.playSurface {
+  width: 100%;
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.sessionControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.onboardingCard {
+  width: 100%;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: rgba(15, 23, 42, 0.25);
+}
+
+.composerCard {
+  width: 100%;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.dismissButton {
+  border: 1px solid #334155;
+  border-radius: 999px;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  cursor: pointer;
+}
+
+.recapChip {
+  display: inline-block;
+  border: 1px solid #475569;
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  color: #e2e8f0;
+}
+
+.transcriptScroller {
+  width: 100%;
+}
+
 a.primary {
   background: var(--text-primary);
   color: var(--background);
@@ -119,6 +170,12 @@ a.secondary {
     font-size: 32px;
     line-height: 40px;
     letter-spacing: -1.92px;
+  }
+
+  .transcriptScroller {
+    max-height: 42vh;
+    overflow-y: auto;
+    padding-right: 4px;
   }
 }
 
