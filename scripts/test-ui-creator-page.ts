@@ -44,6 +44,9 @@ function main() {
   assert(source.includes("Preview check not run."), 'Expected deterministic preview status baseline');
   assert(source.includes("Final state hash:"), 'Expected deterministic preview hash output label');
   assert(source.includes("Telemetry summary:"), 'Expected deterministic preview telemetry output label');
+  assert(source.includes("SCENARIO_VERSION"), "Expected scenario version stamp label");
+  assert(source.includes("SCENARIO_CONTENT_HASH"), "Expected scenario content hash label");
+  assert(source.includes("Copy scenario content hash"), "Expected copy scenario content hash control");
   assert(source.includes("REPLAY_GUARD_SUMMARY"), 'Expected deterministic replay guard summary output label');
   assert(source.includes("Guard failures:"), 'Expected deterministic replay guard failures label');
   assert(source.includes("PREVIEW_REPLAY_FAILED"), 'Expected deterministic preview replay failure marker');
@@ -62,9 +65,12 @@ function main() {
   assert(source.includes("Determinism validated"), 'Expected readiness item label for determinism');
   assert(source.includes("Preview replay passed"), 'Expected readiness item label for preview replay');
   assert(source.includes("No style-lock violations"), 'Expected readiness item label for style lock');
+  assert(source.includes("No style instability"), 'Expected readiness item label for style instability');
+  assert(source.includes("No stakes contradiction"), 'Expected readiness item label for stakes contradiction');
   assert(source.includes("No float stat mutations"), 'Expected readiness item label for float stats');
   assert(source.includes("No namespace violations"), 'Expected readiness item label for namespace');
   assert(source.includes("Publish scenario"), 'Expected "Publish scenario" control');
+  assert(source.includes("PUBLISH_BLOCKED — VALIDATION FAILED"), "Expected deterministic publish blocked marker");
   assert(
     source.includes("Publish disabled: validation must pass."),
     'Expected deterministic publish disabled reason text',

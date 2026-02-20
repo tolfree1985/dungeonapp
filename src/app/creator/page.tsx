@@ -17,6 +17,7 @@ import {
 } from "@/lib/game/replay";
 import { buildPromptParts } from "@/lib/promptScaffold";
 import { validateScenarioDeterminism } from "@/lib/scenario/validateScenarioDeterminism";
+import { buildScenarioVersionStamp, SCENARIO_VERSION } from "@/lib/scenario/scenarioVersion";
 import { buildSupportManifestFromBundle } from "@/lib/support/supportManifest";
 
 type ValidationIssue = { path: string; code: string; message: string };
@@ -469,6 +470,7 @@ export default function CreatorPage() {
   const [debugBundleCopyStatus, setDebugBundleCopyStatus] = useState("");
   const [shareLinkCopyStatus, setShareLinkCopyStatus] = useState("");
   const [promptBundleCopyStatus, setPromptBundleCopyStatus] = useState("");
+  const [scenarioHashCopyStatus, setScenarioHashCopyStatus] = useState("");
   const [createDraftStatus, setCreateDraftStatus] = useState("");
   const [forkStatus, setForkStatus] = useState("");
   const [billingBanner, setBillingBanner] = useState("");
@@ -501,7 +503,6 @@ export default function CreatorPage() {
   const validation = useMemo(() => validateScenarioContentJson(contentJson), [contentJson]);
   const validationView = lastValidation ?? validation;
   const groupedValidation = useMemo(() => groupValidationIssues(validationView.issues), [validationView.issues]);
-  const publishEnabled = validation.ok;
   const preview = useMemo(() => {
     try {
       const parsed = JSON.parse(contentJson) as any;
@@ -563,6 +564,7 @@ export default function CreatorPage() {
     }
   }, [preview]);
   const lintWarnings = useMemo(() => lintScenario(preview), [preview]);
+  const scenarioVersionStamp = useMemo(() => (preview ? buildScenarioVersionStamp(preview) : null), [preview]);
   useEffect(() => {
     setBillingBanner("");
     setLastMappedError("");
@@ -631,13 +633,23 @@ export default function CreatorPage() {
     [previewReplayReport],
   );
   const hasStyleLockViolation = determinismValidation.errors.includes("SCENARIO_STYLE_LOCK_TRANSITION_INVALID");
+  const hasStyleInstability = determinismValidation.errors.includes("SCENARIO_STYLE_INSTABILITY");
+  const hasStakesContradiction = determinismValidation.errors.includes("SCENARIO_STAKES_CONTRADICTION");
   const hasFloatStatViolation = determinismValidation.errors.includes("SCENARIO_FLOAT_STAT_MUTATION");
   const hasNamespaceViolation = determinismValidation.errors.includes("SCENARIO_DELTA_NAMESPACE_INVALID");
+  const publishEnabled =
+    validation.ok &&
+    determinismValidation.valid &&
+    previewReplayPassed &&
+    !hasStyleInstability &&
+    !hasStakesContradiction;
   const readinessChecklist = useMemo(
     () => [
       { label: "Determinism validated", ok: determinismValidation.valid },
       { label: "Preview replay passed", ok: previewReplayPassed },
       { label: "No style-lock violations", ok: !hasStyleLockViolation },
+      { label: "No style instability", ok: !hasStyleInstability },
+      { label: "No stakes contradiction", ok: !hasStakesContradiction },
       { label: "No float stat mutations", ok: !hasFloatStatViolation },
       { label: "No namespace violations", ok: !hasNamespaceViolation },
     ],
@@ -645,6 +657,8 @@ export default function CreatorPage() {
       determinismValidation.valid,
       hasFloatStatViolation,
       hasNamespaceViolation,
+      hasStakesContradiction,
+      hasStyleInstability,
       hasStyleLockViolation,
       previewReplayPassed,
     ],
@@ -1054,6 +1068,19 @@ export default function CreatorPage() {
     setShareLinkCopyStatus("Copied");
   }
 
+  async function onCopyScenarioContentHash() {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      setScenarioHashCopyStatus("Copy not supported");
+      return;
+    }
+    if (!scenarioVersionStamp?.contentHash) {
+      setScenarioHashCopyStatus("No hash available");
+      return;
+    }
+    await navigator.clipboard.writeText(scenarioVersionStamp.contentHash);
+    setScenarioHashCopyStatus("Copied");
+  }
+
   return (
     <main className="mx-auto max-w-4xl p-6">
       <h1 className="text-2xl font-semibold">Scenario Creator</h1>
@@ -1249,6 +1276,25 @@ export default function CreatorPage() {
             <div>
               Summary: {typeof preview.summary === "string" && preview.summary ? preview.summary : "(missing)"}
             </div>
+            <div>SCENARIO_VERSION {SCENARIO_VERSION}</div>
+            <div>
+              SCENARIO_CONTENT_HASH{" "}
+              {scenarioVersionStamp?.contentHash
+                ? `${scenarioVersionStamp.contentHash.slice(0, 16)}...`
+                : "(missing)"}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onCopyScenarioContentHash}
+                className="rounded border px-2 py-1 text-xs"
+              >
+                Copy scenario content hash
+              </button>
+              <span role="status" aria-live="polite">
+                {scenarioHashCopyStatus}
+              </span>
+            </div>
             <div>
               Start sceneId:{" "}
               {typeof preview.start?.sceneId === "string" && preview.start.sceneId
@@ -1442,6 +1488,9 @@ export default function CreatorPage() {
           </button>
           <span>{publishEnabled ? "Publish enabled: validation passed." : "Publish disabled: validation must pass."}</span>
         </div>
+        {!publishEnabled ? (
+          <div className="mt-2 text-xs">PUBLISH_BLOCKED — VALIDATION FAILED</div>
+        ) : null}
         <div className="mt-2 flex items-center gap-3">
           <button type="button" onClick={onCreateDraft} className="rounded border px-2 py-1 text-xs">
             Create draft

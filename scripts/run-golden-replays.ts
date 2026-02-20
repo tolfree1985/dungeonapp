@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { validateScenarioDeterminism } from "../src/lib/scenario/validateScenarioDeterminism";
+import { computeScenarioContentHash } from "../src/lib/scenario/scenarioVersion";
 
 type GoldenIndex = {
   version: number;
@@ -137,6 +138,29 @@ function readScenarioMetadataFromFixture(fixturePath: string): unknown | null {
     return null;
   } catch {
     return null;
+  }
+}
+
+function readExpectedScenarioContentHashFromFixture(fixturePath: string): string {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+    if (!isRecord(parsed)) return "";
+
+    const fromManifest =
+      isRecord(parsed.manifest) && typeof parsed.manifest.scenarioContentHash === "string"
+        ? parsed.manifest.scenarioContentHash.trim()
+        : "";
+    if (fromManifest) return fromManifest;
+
+    const fromBundle =
+      isRecord(parsed.originalBundle) && typeof parsed.originalBundle.scenarioContentHash === "string"
+        ? parsed.originalBundle.scenarioContentHash.trim()
+        : "";
+    if (fromBundle) return fromBundle;
+
+    return "";
+  } catch {
+    return "";
   }
 }
 
@@ -533,6 +557,7 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
     };
   }
   const scenarioMetadata = readScenarioMetadataFromFixture(fixturePath);
+  const expectedScenarioContentHash = readExpectedScenarioContentHashFromFixture(fixturePath);
   const hasStyleLockFields = hasStyleLockFieldsInScenario(scenarioMetadata);
   const failureTurnIndexes = getFailureTurnIndexesFromFixture(fixturePath);
   if (scenarioMetadata) {
@@ -545,6 +570,18 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
         markers,
         excerptLines: buildFailureExcerpt("", markers),
       };
+    }
+    if (expectedScenarioContentHash) {
+      const actualScenarioHash = computeScenarioContentHash(scenarioMetadata);
+      if (actualScenarioHash !== expectedScenarioContentHash) {
+        const markers = ["GOLDEN_SCENARIO_HASH_MISMATCH"];
+        return {
+          ok: false,
+          fixtureName,
+          markers,
+          excerptLines: buildFailureExcerpt("", markers),
+        };
+      }
     }
   }
 

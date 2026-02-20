@@ -16,6 +16,7 @@ const SCRIPTS = [
   "scripts/test-build-support-package.ts",
   "scripts/test-golden-replays.ts",
   "scripts/test-scenario-determinism.ts",
+  "scripts/test-scenario-versioning.ts",
 ];
 
 function runScript(script: string): Promise<void> {

@@ -1,3 +1,5 @@
+import { buildScenarioVersionStamp } from "./scenario/scenarioVersion";
+
 type ValidationIssue = {
   path: string;
   code: string;
@@ -40,19 +42,26 @@ export function buildScenarioDraftBundleText(args: {
   }
 
   let exportContentJson = args.contentJson;
-  if (args.determinismReport !== undefined) {
-    try {
-      const parsed = JSON.parse(args.contentJson) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        const withReport = {
-          ...(parsed as Record<string, unknown>),
-          determinismReport: args.determinismReport,
-        };
-        exportContentJson = JSON.stringify(withReport, null, 2);
-      }
-    } catch {
-      exportContentJson = args.contentJson;
+  try {
+    const parsed = JSON.parse(args.contentJson) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const withReport =
+        args.determinismReport === undefined
+          ? (parsed as Record<string, unknown>)
+          : {
+              ...(parsed as Record<string, unknown>),
+              determinismReport: args.determinismReport,
+            };
+      const stamp = buildScenarioVersionStamp(withReport);
+      const stamped = {
+        ...withReport,
+        scenarioVersion: stamp.scenarioVersion,
+        scenarioContentHash: stamp.contentHash,
+      };
+      exportContentJson = JSON.stringify(stamped, null, 2);
     }
+  } catch {
+    exportContentJson = args.contentJson;
   }
 
   lines.push("");
