@@ -11,6 +11,9 @@ function main() {
   assert(source.includes("Scenario Creator"), 'Expected "Scenario Creator" heading');
   assert(source.includes("Paste scenario JSON"), 'Expected JSON import input label');
   assert(source.includes("Import JSON"), 'Expected "Import JSON" control');
+  assert(source.includes("Import share package JSON"), 'Expected scenario share import panel label');
+  assert(source.includes("Import share package"), 'Expected "Import share package" control');
+  assert(source.includes("Load .scenario-share.json"), 'Expected deterministic scenario share file loader label');
   assert(source.includes("JSON import error"), 'Expected deterministic JSON import error block label');
   assert(source.includes("Validate scenario"), 'Expected "Validate scenario" control');
   assert(
@@ -95,6 +98,12 @@ function main() {
     source.includes("Copy scenario draft bundle"),
     'Expected "Copy scenario draft bundle" control',
   );
+  assert(source.includes("Export share package"), 'Expected "Export share package" control');
+  assert(source.includes("SHARE_EXPORT_READY"), 'Expected deterministic share export ready marker');
+  assert(source.includes("SHARE_IMPORT_OK"), 'Expected deterministic share import success marker');
+  assert(source.includes("SHARE_IMPORT_BLOCKED"), 'Expected deterministic share import blocked marker');
+  assert(source.includes("SHARE_COMPAT_WARNING"), 'Expected deterministic share compatibility warning marker');
+  assert(source.includes("SHARE_COMPAT_BLOCKED"), 'Expected deterministic share compatibility blocked marker');
   assert(source.includes("EXPORT READY — DETERMINISM VERIFIED"), "Expected export-ready deterministic banner");
   assert(
     source.includes("EXPORT BLOCKED — DETERMINISM VIOLATIONS PRESENT"),

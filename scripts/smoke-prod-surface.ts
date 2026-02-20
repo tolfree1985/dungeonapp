@@ -17,6 +17,7 @@ const SCRIPTS = [
   "scripts/test-golden-replays.ts",
   "scripts/test-scenario-determinism.ts",
   "scripts/test-scenario-versioning.ts",
+  "scripts/test-scenario-share.ts",
 ];
 
 function runScript(script: string): Promise<void> {

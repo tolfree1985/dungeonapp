@@ -16,6 +16,12 @@ import {
   replayStateFromTurnJsonWithGuardSummary,
 } from "@/lib/game/replay";
 import { buildPromptParts } from "@/lib/promptScaffold";
+import {
+  buildScenarioSharePackage,
+  evaluateScenarioShareCompatibility,
+  parseScenarioSharePackage,
+  serializeScenarioSharePackage,
+} from "@/lib/scenario/scenarioShare";
 import { validateScenarioDeterminism } from "@/lib/scenario/validateScenarioDeterminism";
 import { buildScenarioVersionStamp, SCENARIO_VERSION } from "@/lib/scenario/scenarioVersion";
 import { buildSupportManifestFromBundle } from "@/lib/support/supportManifest";
@@ -469,6 +475,14 @@ export default function CreatorPage() {
   const [draftCopyStatus, setDraftCopyStatus] = useState("");
   const [debugBundleCopyStatus, setDebugBundleCopyStatus] = useState("");
   const [shareLinkCopyStatus, setShareLinkCopyStatus] = useState("");
+  const [sharePackageCopyStatus, setSharePackageCopyStatus] = useState("");
+  const [shareImportText, setShareImportText] = useState("");
+  const [shareImportStatus, setShareImportStatus] = useState("");
+  const [shareImportIssues, setShareImportIssues] = useState<string[]>([]);
+  const [shareCompatMarker, setShareCompatMarker] = useState<"" | "SHARE_COMPAT_WARNING" | "SHARE_COMPAT_BLOCKED">(
+    "",
+  );
+  const [shareCompatIssues, setShareCompatIssues] = useState<string[]>([]);
   const [promptBundleCopyStatus, setPromptBundleCopyStatus] = useState("");
   const [scenarioHashCopyStatus, setScenarioHashCopyStatus] = useState("");
   const [createDraftStatus, setCreateDraftStatus] = useState("");
@@ -1039,6 +1053,89 @@ export default function CreatorPage() {
     setJsonImportStatus("Import complete.");
   }
 
+  function applyImportedScenarioDraft(scenario: Record<string, unknown>) {
+    const importedTitle = typeof scenario.title === "string" ? scenario.title : "";
+    const importedSummary = typeof scenario.summary === "string" ? scenario.summary : "";
+    const importedContentJson = JSON.stringify(scenario, null, 2);
+
+    setTitle(importedTitle);
+    setSummary(importedSummary);
+    setContentJson(importedContentJson);
+    setBaselineSnapshot({
+      title: importedTitle,
+      summary: importedSummary,
+      contentJson: importedContentJson,
+    });
+    setLastValidation(validateScenarioContentJson(importedContentJson));
+  }
+
+  async function onCopyScenarioSharePackage() {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      setSharePackageCopyStatus("Copy not supported");
+      return;
+    }
+    if (!preview || !determinismValidation.valid) {
+      setSharePackageCopyStatus("SHARE_EXPORT_BLOCKED");
+      return;
+    }
+
+    const pkg = buildScenarioSharePackage(preview);
+    const serialized = serializeScenarioSharePackage(pkg);
+    await navigator.clipboard.writeText(serialized);
+    setSharePackageCopyStatus("SHARE_EXPORT_READY");
+  }
+
+  function onImportScenarioSharePackage(raw: string) {
+    const parsed = parseScenarioSharePackage(raw);
+    if (!parsed.pkg) {
+      setShareCompatMarker("");
+      setShareCompatIssues([]);
+      setShareImportIssues([...parsed.issues].sort(compareText));
+      setShareImportStatus("SHARE_IMPORT_BLOCKED");
+      return;
+    }
+
+    const compatibility = evaluateScenarioShareCompatibility(parsed.pkg.engineCompat);
+    setShareCompatMarker(compatibility.marker);
+    setShareCompatIssues([...compatibility.issues].sort(compareText));
+    if (compatibility.blocked) {
+      setShareImportIssues(["compatibility_blocked", ...compatibility.issues].sort(compareText));
+      setShareImportStatus("SHARE_IMPORT_BLOCKED");
+      return;
+    }
+
+    const determinism = validateScenarioDeterminism(parsed.pkg.scenario);
+    if (!determinism.valid) {
+      setShareImportIssues([...determinism.errors].sort(compareText));
+      setShareImportStatus("SHARE_IMPORT_BLOCKED");
+      return;
+    }
+
+    setShareImportIssues([]);
+    applyImportedScenarioDraft(parsed.pkg.scenario);
+    setShareImportStatus("SHARE_IMPORT_OK");
+  }
+
+  function onLoadScenarioShareFile(file: File | null) {
+    if (!file) {
+      setShareImportStatus("SHARE_IMPORT_BLOCKED");
+      setShareImportIssues(["file_missing"]);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = typeof reader.result === "string" ? reader.result : "";
+      setShareImportText(text);
+      onImportScenarioSharePackage(text);
+    };
+    reader.onerror = () => {
+      setShareImportStatus("SHARE_IMPORT_BLOCKED");
+      setShareImportIssues(["file_read_error"]);
+    };
+    reader.readAsText(file);
+  }
+
   function togglePromptSection(section: keyof typeof promptSectionOpen) {
     setPromptSectionOpen((prev) => ({
       ...prev,
@@ -1124,6 +1221,57 @@ export default function CreatorPage() {
           {jsonImportStatus.startsWith("Import error:") ? (
             <div className="mt-2 rounded border p-2 text-xs" aria-label="JSON import error">
               {jsonImportStatus}
+            </div>
+          ) : null}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium" htmlFor="scenario-share-import">
+            Import share package JSON
+          </label>
+          <textarea
+            id="scenario-share-import"
+            value={shareImportText}
+            onChange={(e) => setShareImportText(e.target.value)}
+            className="w-full rounded border px-3 py-2 font-mono text-sm"
+            rows={6}
+            placeholder='{"shareVersion":1,"scenarioVersion":1,"scenarioContentHash":"...","engineCompat":{"telemetryVersion":1,"supportManifestVersion":1,"supportPackageVersion":1},"scenario":{}}'
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onImportScenarioSharePackage(shareImportText)}
+              className="rounded border px-2 py-1 text-xs"
+            >
+              Import share package
+            </button>
+            <label className="rounded border px-2 py-1 text-xs">
+              Load .scenario-share.json
+              <input
+                type="file"
+                accept=".json,.scenario-share.json"
+                className="sr-only"
+                onChange={(e) => onLoadScenarioShareFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <span role="status" aria-live="polite">
+              {shareImportStatus}
+            </span>
+          </div>
+          {shareCompatMarker ? (
+            <div className="mt-2 rounded border p-2 text-xs" aria-label="Share compatibility gate">
+              <div>{shareCompatMarker}</div>
+              <div>Issues: {shareCompatIssues.length > 0 ? shareCompatIssues.join(", ") : "(none)"}</div>
+            </div>
+          ) : null}
+          {shareImportIssues.length > 0 ? (
+            <div className="mt-2 rounded border p-2 text-xs" aria-label="Share import issues">
+              <div>SHARE_IMPORT_BLOCKED</div>
+              <ol className="mt-1 list-decimal pl-6">
+                {shareImportIssues.map((issue) => (
+                  <li key={`share-import-issue:${issue}`}>{issue}</li>
+                ))}
+              </ol>
             </div>
           ) : null}
         </div>
@@ -1552,6 +1700,14 @@ export default function CreatorPage() {
           </button>
           <span role="status" aria-live="polite">
             {draftCopyStatus}
+          </span>
+        </div>
+        <div className="mt-2 flex items-center gap-3">
+          <button type="button" onClick={onCopyScenarioSharePackage} className="rounded border px-2 py-1 text-xs">
+            Export share package
+          </button>
+          <span role="status" aria-live="polite">
+            {sharePackageCopyStatus}
           </span>
         </div>
         <div className="mt-2 flex items-center gap-3">
