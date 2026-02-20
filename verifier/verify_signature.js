@@ -1,3 +1,11 @@
+// verifier/verify_signature.js
+// Deterministic external signature verifier for DungeonPP release pipeline.
+// Emits only:
+//   EXTERNAL_VERIFY_OK
+//   EXTERNAL_VERIFY_FAILED
+//
+// No timestamps, no stack traces, no nondeterministic output.
+
 const fs = require("fs");
 const crypto = require("crypto");
 const path = require("path");
@@ -5,17 +13,10 @@ const path = require("path");
 function mustGetArg(flag) {
   const idx = process.argv.indexOf(flag);
   if (idx === -1 || !process.argv[idx + 1]) {
-    console.error(`Missing required ${flag}`);
+    console.log("EXTERNAL_VERIFY_FAILED");
     process.exit(1);
   }
   return process.argv[idx + 1];
-}
-
-function assert(cond, message) {
-  if (!cond) {
-    console.error(message);
-    process.exit(1);
-  }
 }
 
 function main() {
@@ -23,22 +24,41 @@ function main() {
   const sigPath = path.resolve(mustGetArg("--sig"));
   const pubPath = path.resolve(mustGetArg("--pub"));
 
-  assert(fs.existsSync(filePath), `file missing: ${filePath}`);
-  assert(fs.existsSync(sigPath), `signature missing: ${sigPath}`);
-  assert(fs.existsSync(pubPath), `public key missing: ${pubPath}`);
+  let dataBuf, sigBuf, pubKeyPem;
 
-  const data = fs.readFileSync(filePath);
-  const signature = fs.readFileSync(sigPath, "utf8");
-  const pubKey = fs.readFileSync(pubPath, "utf8");
-  const verifier = crypto.createVerify("sha512");
-  verifier.update(data);
-  verifier.end();
-  const ok = verifier.verify(pubKey, signature, "base64");
-  if (!ok) {
-    console.error("Signature verification failed");
+  try {
+    // Raw deterministic reads (no encoding conversions unless needed)
+    dataBuf = fs.readFileSync(filePath);
+    const sigTxt = fs.readFileSync(sigPath, "utf8").trim();
+    sigBuf = Buffer.from(sigTxt, "base64");
+    pubKeyPem = fs.readFileSync(pubPath, "utf8");
+  } catch (_err) {
+    console.log("EXTERNAL_VERIFY_FAILED");
     process.exit(1);
   }
-  console.log("EXTERNAL_VERIFY_OK");
+
+  let ok = false;
+
+  try {
+    // Ed25519 verification is deterministic. Hash parameter = null.
+    ok = crypto.verify(
+      null,
+      dataBuf,
+      { key: pubKeyPem, dsaEncoding: "ieee-p1363" },
+      sigBuf
+    );
+  } catch (_err) {
+    console.log("EXTERNAL_VERIFY_FAILED");
+    process.exit(1);
+  }
+
+  if (ok) {
+    console.log("EXTERNAL_VERIFY_OK");
+    process.exit(0);
+  } else {
+    console.log("EXTERNAL_VERIFY_FAILED");
+    process.exit(1);
+  }
 }
 
-setTimeout(main, 0);
+main();
