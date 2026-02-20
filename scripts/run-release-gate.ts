@@ -342,6 +342,17 @@ function main(): void {
       const { digest } = storeRcArtifact(commitHash);
       console.log(`RC_ARTIFACT_DIGEST=${digest}`);
       console.log("RC_ARTIFACT_STORED");
+      const artifactPath = path.join(process.cwd(), RC_ARTIFACT_ROOT_DIR, commitHash);
+      const writeProv = spawnSync(process.execPath, [
+        "--import",
+        "tsx",
+        "scripts/rc/rc_write_provenance.ts",
+        "--artifact",
+        artifactPath,
+        "--commit",
+        commitHash,
+      ], { stdio: "inherit", env: process.env });
+      assert(writeProv.status === 0, "rc_write_provenance failed");
       console.log("RELEASE_GATE_RC_VERIFICATION_OK");
       cleanupRcOutput();
     }
