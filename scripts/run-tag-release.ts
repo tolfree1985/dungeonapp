@@ -115,31 +115,92 @@ function main(): void {
       gateArgs.push("--test-mode");
       gateEnv.RELEASE_GATE_TEST_MODE = "1";
     }
-    const gate = run("node", gateArgs, gateEnv);
-    gateOutput = `${gate.stdout}\n${gate.stderr}`;
-    gateReady =
-      gate.ok &&
-      gate.stdout.includes("RELEASE_TAG_READY") &&
-      gate.stdout.includes("RELEASE_GATE_RC_VERIFICATION_OK") &&
-      gate.stdout.includes("RC_ARTIFACT_DIGEST=");
-  }
-  if (!gateReady) {
-    emitFailure("TAG_RELEASE_BLOCKED_GATE_NOT_READY", gateOutput);
-  }
+  const gate = run("node", gateArgs, gateEnv);
+  gateOutput = `${gate.stdout}\n${gate.stderr}`;
+  gateReady =
+    gate.ok &&
+    gate.stdout.includes("RELEASE_TAG_READY") &&
+    gate.stdout.includes("RELEASE_GATE_RC_VERIFICATION_OK") &&
+    gate.stdout.includes("RC_ARTIFACT_DIGEST=");
+}
+if (!gateReady) {
+  emitFailure("TAG_RELEASE_BLOCKED_GATE_NOT_READY", gateOutput);
+}
 
-  const commitHash = readHeadCommitHash();
+const commitHash = readHeadCommitHash();
   if (!commitHash) {
     emitFailure("TAG_RELEASE_BLOCKED_COMMIT_HASH_UNAVAILABLE");
   }
 
-  const artifactManifestPath = path.join(process.cwd(), ".rc", "artifacts", commitHash, "manifest.json");
-  if (!existsSync(artifactManifestPath)) {
-    emitFailure("TAG_RELEASE_BLOCKED_RC_ARTIFACT_MISSING");
+const artifactManifestPath = path.join(process.cwd(), ".rc", "artifacts", commitHash, "manifest.json");
+if (!existsSync(artifactManifestPath)) {
+  emitFailure("TAG_RELEASE_BLOCKED_RC_ARTIFACT_MISSING");
+}
+
+const gateDigestMatch = gateOutput
+  .split(/\r?\n/)
+  .find((line) => line.trim().startsWith("RC_ARTIFACT_DIGEST="));
+if (!gateDigestMatch) {
+  emitFailure("TAG_RELEASE_BLOCKED_RC_DIGEST_MISSING", gateOutput);
+}
+const rcArtifactDigest = gateDigestMatch.split("=").pop();
+if (!rcArtifactDigest) {
+  emitFailure("TAG_RELEASE_BLOCKED_RC_DIGEST_EMPTY", gateOutput);
+}
+
+const artifactDir = path.join(process.cwd(), ".rc", "artifacts", commitHash);
+
+const runNode = (args: string[]): void => {
+  const res = spawnSync(process.execPath, args, {
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (res.status !== 0) {
+    emitFailure("TAG_RELEASE_BLOCKED_PROVENANCE_CHECK_FAILED", res.stderr?.toString() ?? "");
   }
+};
+
+runNode([
+  "--import",
+  "tsx",
+  "scripts/rc/rc_verify_provenance.ts",
+  "--artifact",
+  artifactDir,
+  "--commit",
+  commitHash,
+  "--expected-digest",
+  rcArtifactDigest,
+]);
 
   const lastTag = getLastReleaseTag();
   const tag = buildNextTag(lastTag);
   const releaseNotes = getReleaseNotes(lastTag);
+
+  runNode([
+    "--import",
+    "tsx",
+    "scripts/rc/rc_write_provenance.ts",
+    "--artifact",
+    artifactDir,
+    "--commit",
+    commitHash,
+    "--tag",
+    tag,
+  ]);
+
+  runNode([
+    "--import",
+    "tsx",
+    "scripts/rc/rc_verify_provenance.ts",
+    "--artifact",
+    artifactDir,
+    "--commit",
+    commitHash,
+    "--tag",
+    tag,
+    "--expected-digest",
+    rcArtifactDigest,
+  ]);
 
   console.log("RELEASE_NOTES_BEGIN");
   for (const line of releaseNotes) {
