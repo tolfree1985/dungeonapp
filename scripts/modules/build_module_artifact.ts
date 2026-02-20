@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, mkdirSync, writeFileSync, cpSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { execSync } from "node:child_process";
+import os from "node:os";
+import { execSync, execFileSync } from "node:child_process";
 
 function mustGetArg(flag: string): string {
   const i = process.argv.indexOf(flag);
@@ -33,12 +34,13 @@ async function main() {
 
   const tarPath = path.join(outDir, "module.tar.gz");
   execSync(
-    `tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -czf "${tarPath}" -C "${outDir}" .`,
+    `gtar --sort=name --exclude=.DS_Store --exclude=node_modules --exclude=dist-modules --exclude=registry --owner=0 --group=0 --numeric-owner --mtime=@0 -czf "${tarPath}" -C "${moduleDir}" .`,
     { stdio: "inherit" }
   );
 
   const digest = sha256buf(readFileSync(tarPath));
-  writeFileSync(path.join(outDir, "module_digest.txt"), digest);
+  writeFileSync(path.join(outDir, "module.tar.gz.sha256"), `sha256=${digest}\n`, "utf8");
+  writeFileSync(path.join(outDir, "module_digest.txt"), digest + "\n", "utf8");
 
   process.stdout.write("MODULE_ARTIFACT_OK\n");
 }

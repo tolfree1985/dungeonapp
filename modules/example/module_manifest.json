@@ -1,0 +1,6 @@
+{
+  "moduleManifestVersion": 1,
+  "moduleName": "example",
+  "moduleVersion": "0.1.0",
+  "entrypoint": "index.js"
+}
