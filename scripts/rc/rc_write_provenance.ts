@@ -61,14 +61,12 @@ async function main(): Promise<void> {
   let createdAtIso = gitCommitDate(commit);
   let existing: RcProvenance | null = null;
 
-  // Restore prior provenance if it exists
+  // Load existing provenance (if present)
   if (existsSync(provenancePath)) {
     const loaded = JSON.parse(readFileSync(provenancePath, "utf8")) as RcProvenance;
 
-    if (loaded.commit !== commit) {
-      throw new Error(
-        `existing provenance commit ${loaded.commit} differs from current commit ${commit}`
-      );
+    if (loaded.commitSha !== commit && loaded.commit !== commit) {
+      throw new Error(`existing provenance commit mismatch: found=${loaded.commitSha ?? loaded.commit}`);
     }
     if (
       loaded.manifestDigest !== manifestDigest ||
@@ -81,15 +79,18 @@ async function main(): Promise<void> {
     createdAtIso = loaded.createdAtIso;
   }
 
+  // FIXED: always include commitSha (required by rc_verify_provenance.ts)
   const provenance: RcProvenance = existing
     ? {
         ...existing,
+        commitSha: commit,
         tag: tag ?? existing.tag,
         rcArtifactDigest: artifactDigest,
       }
     : {
         rcProvenanceVersion: 1,
-        commit,
+        commit,              // legacy
+        commitSha: commit,   // REQUIRED
         artifactDigest,
         manifestDigest,
         supportManifestDigest,
@@ -106,12 +107,13 @@ async function main(): Promise<void> {
   writeFileSync(provenancePath, stableStringify(provenance) + "\n", "utf8");
   console.log("RC_PROVENANCE_WRITTEN");
 
-  // Embed provenance into manifest.json (required for tag-release test)
+  // Embed provenance inside manifest.json (required for tag-release test stability)
   if (existsSync(manifestPath)) {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 
     manifest.provenance = {
-      commit: provenance.commit,
+      commit: provenance.commitSha,
+      commitSha: provenance.commitSha,
       tag: provenance.tag,
       manifestDigest: provenance.manifestDigest,
       supportManifestDigest: provenance.supportManifestDigest,
