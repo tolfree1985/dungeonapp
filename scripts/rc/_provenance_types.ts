@@ -9,6 +9,7 @@ export type RcProvenance = {
   supportManifestDigest: string;
   rcArtifactDigest: string;
   tag?: string;
+  createdAtIso: string;
 };
 
 export function computeFileDigest(path: string): string {
