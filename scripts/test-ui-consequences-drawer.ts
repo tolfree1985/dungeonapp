@@ -355,6 +355,24 @@ function main() {
   }
 
   const playMarkers = [
+    "WELCOME TO YOUR FIRST SESSION",
+    "GUIDED FIRST TURN",
+    "You choose actions.",
+    "Risk is shown before you act.",
+    "Failure creates new paths.",
+    "LOW = minor consequence",
+    "MODERATE = complication likely",
+    "HIGH = serious consequence possible",
+    "WHY DID THIS HAPPEN?",
+    "FAILURE CHANGES THE STORY — IT DOES NOT END IT.",
+    "TENSION IS RISING.",
+    "Your choices are shaping the stakes.",
+    "WHY IS THERE A LIMIT?",
+    "Limits ensure consistent performance and pacing.",
+    "Type /state to inspect state",
+    "Type /summary to recap",
+    "SESSION_ARC_TURN_THRESHOLD = 10",
+    "SESSION ARC COMPLETE",
     "Suggested options (PRE-ACTION RISK)",
     "STAKES RESULT",
     "COMPLICATION TRIGGERED",
@@ -383,6 +401,11 @@ function main() {
     "LEDGER_WITHOUT_DELTA_MUTATION",
     "REPLAY_GUARD_SUMMARY",
     "raw:",
+    "Date.now(",
+    "performance.now(",
+    "Math.random(",
+    "timestamp",
+    "seed=",
   ];
   for (const token of forbiddenPlayTokens) {
     assert(

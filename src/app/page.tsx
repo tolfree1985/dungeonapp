@@ -2,6 +2,7 @@ import Image from "next/image";
 import { ResolutionBadge } from "@/components/ResolutionBadge";
 import {
   CONSEQUENCE_RULE_TABLE,
+  deriveDifficultyStateFromTurnSignals,
   classifyConsequence,
   deriveCapSnapshot,
   explainConsequence,
@@ -41,7 +42,15 @@ const COST_TYPE_ICON_MAP: Record<ConsequenceCostType, string> = {
   FLAG: "⚑",
 };
 
+const OPTION_RISK_EXPLANATION_MAP: Record<ConsequenceRiskLevel, string> = {
+  LOW: "LOW = minor consequence",
+  MODERATE: "MODERATE = complication likely",
+  HIGH: "HIGH = serious consequence possible",
+};
+
 const ESCALATION_LADDER: ConsequenceEscalation[] = ["NONE", "MINOR", "MAJOR"];
+const SESSION_ARC_TURN_THRESHOLD = 10;
+const demoSaveSlots: string[] = [];
 
 const demoTurns: DemoTurn[] = [
   {
@@ -114,6 +123,39 @@ const demoTurnSignals = demoTurns.map((turn) => {
   };
 });
 
+const demoCapSnapshots = demoTurns.map((turn) =>
+  deriveCapSnapshot({
+    resolution: { tier: turn.outcome },
+    deltas: turn.stateDeltas,
+    ledgerAdds: turn.ledgerAdds,
+    options: turn.suggestedOptions,
+    assistantText: turn.assistantText,
+    capReason: turn.capReason,
+  }),
+);
+
+const demoDifficultySignals = demoTurns.map((turn, index) => ({
+  riskLevel: demoTurnSignals[index]?.consequence.riskLevel ?? "LOW",
+  escalation: demoTurnSignals[index]?.consequence.escalation ?? "NONE",
+  isFailure: turn.outcome === "fail",
+  isSuccessBand: turn.outcome === "success",
+}));
+
+const demoDifficultyStates = demoDifficultySignals.map((_, index) =>
+  deriveDifficultyStateFromTurnSignals(demoDifficultySignals.slice(0, index + 1)),
+);
+
+const firstResolvedTurnIndex = demoTurns.findIndex((turn) =>
+  turn.outcome === "success" || turn.outcome === "mixed" || turn.outcome === "fail",
+);
+const firstFailureTurnIndex = demoTurns.findIndex((turn) => turn.outcome === "fail");
+const firstCapTurnIndex = demoCapSnapshots.findIndex((snapshot) => snapshot.capReason !== "NONE");
+const firstCalmToTenseTurnIndex = demoDifficultyStates.findIndex((state, index) => {
+  if (index === 0) return false;
+  const previous = demoDifficultyStates[index - 1];
+  return previous?.tier === "CALM" && state.tier === "TENSE";
+});
+
 function derivePreActionRisk(
   option: DemoOption,
   previous: (typeof demoTurnSignals)[number] | undefined,
@@ -148,6 +190,13 @@ function toPlayerFriendlyStakesReasons(reasonLines: string[]): string[] {
   return deduped.length > 0 ? deduped : ["No major costs were detected."];
 }
 
+function resolveOptionRiskExplanation(optionRisk: OptionRisk): string {
+  if (optionRisk === "UNKNOWN") {
+    return "UNKNOWN = risk cannot be inferred yet";
+  }
+  return OPTION_RISK_EXPLANATION_MAP[optionRisk];
+}
+
 function orderedCostTypes(costTypes: ConsequenceCostType[]): ConsequenceCostType[] {
   return [...CONSEQUENCE_RULE_TABLE.costTypeOrder].filter((costType) => costTypes.includes(costType));
 }
@@ -163,6 +212,9 @@ function formatCostTypeIcons(costTypes: ConsequenceCostType[]): string {
 }
 
 export default function Home() {
+  const isFirstSession = demoSaveSlots.length === 0;
+  const showSessionComplete = demoTurns.length >= SESSION_ARC_TURN_THRESHOLD;
+
   return (
     <div className={styles.page}>
       <main className={styles.main}>
@@ -222,6 +274,37 @@ export default function Home() {
           </a>
         </div>
 
+        {isFirstSession ? (
+          <section
+            style={{
+              width: "100%",
+              marginTop: "1rem",
+              border: "1px solid #334155",
+              borderRadius: 12,
+              padding: "0.75rem",
+              background: "rgba(15,23,42,0.25)",
+            }}
+          >
+            <div style={{ fontSize: "0.95rem", fontWeight: 700 }}>WELCOME TO YOUR FIRST SESSION</div>
+            <div style={{ marginTop: 8, fontSize: "0.8rem", color: "#cbd5e1" }}>GUIDED FIRST TURN</div>
+            <ul style={{ marginTop: 6, paddingLeft: "1rem", fontSize: "0.8rem", color: "#e2e8f0" }}>
+              <li>You choose actions.</li>
+              <li>Risk is shown before you act.</li>
+              <li>Failure creates new paths.</li>
+            </ul>
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "#cbd5e1" }}>
+                Risk badge guide
+              </summary>
+              <ul style={{ marginTop: 6, paddingLeft: "1rem", fontSize: "0.75rem", color: "#cbd5e1" }}>
+                <li>LOW = minor consequence</li>
+                <li>MODERATE = complication likely</li>
+                <li>HIGH = serious consequence possible</li>
+              </ul>
+            </details>
+          </section>
+        ) : null}
+
         <section style={{ width: "100%", marginTop: "1rem" }}>
           <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.75rem" }}>Turn Transcript</h2>
           <div style={{ display: "grid", gap: "0.75rem" }}>
@@ -233,14 +316,11 @@ export default function Home() {
               const reportedRisk = t.reportedRiskLevel ?? turnSignal.consequence.riskLevel;
               const hasStakeSyncError = reportedRisk !== turnSignal.consequence.riskLevel;
               const playerFriendlyReasons = toPlayerFriendlyStakesReasons(turnSignal.reasonLines);
-              const capSnapshot = deriveCapSnapshot({
-                resolution: { tier: t.outcome },
-                deltas: t.stateDeltas,
-                ledgerAdds: t.ledgerAdds,
-                options: t.suggestedOptions,
-                assistantText: t.assistantText,
-                capReason: t.capReason,
-              });
+              const capSnapshot = demoCapSnapshots[index];
+              const isFirstResolvedTurn = index === firstResolvedTurnIndex;
+              const isFirstFailureTurn = index === firstFailureTurnIndex;
+              const isFirstCappedTurn = index === firstCapTurnIndex;
+              const isFirstCalmToTenseTurn = index === firstCalmToTenseTurnIndex;
 
               return (
                 <article
@@ -252,9 +332,30 @@ export default function Home() {
                     padding: "0.75rem",
                     background: "rgba(10,10,10,0.25)",
                   }}
-                >
-                  <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>You</div>
-                  <div style={{ marginTop: 4 }}>{t.playerText}</div>
+                  >
+                    <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>You</div>
+                    <div style={{ marginTop: 4 }}>{t.playerText}</div>
+                  {isFirstResolvedTurn ? (
+                    <details
+                      open
+                      style={{
+                        marginTop: 10,
+                        border: "1px solid #334155",
+                        borderRadius: 10,
+                        padding: "0.5rem",
+                        fontSize: "0.75rem",
+                        color: "#e2e8f0",
+                        background: "rgba(30,41,59,0.2)",
+                      }}
+                    >
+                      <summary style={{ cursor: "pointer", fontWeight: 600 }}>WHY DID THIS HAPPEN?</summary>
+                      <div style={{ marginTop: 6 }}>
+                        Every consequence is tied to explicit state changes.
+                        <br />
+                        You can inspect them anytime.
+                      </div>
+                    </details>
+                  ) : null}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
                     <div style={{ fontSize: "0.875rem", color: "#94a3b8" }}>Narrator</div>
                     <ResolutionBadge outcome={t.outcome} />
@@ -281,11 +382,46 @@ export default function Home() {
                     >
                       <div>COMPLICATION TRIGGERED</div>
                       {turnSignal.consequence.escalation === "MAJOR" ? <div>MAJOR CONSEQUENCE</div> : null}
+                      {isFirstFailureTurn ? (
+                        <div style={{ marginTop: 4 }}>FAILURE CHANGES THE STORY — IT DOES NOT END IT.</div>
+                      ) : null}
                     </div>
                   ) : null}
-                  {isLatestTurn && capSnapshot.capReason !== "NONE" ? (
+                  {isLatestTurn && capSnapshot?.capReason !== "NONE" ? (
                     <div style={{ marginTop: 8, fontSize: "0.75rem", color: "#fca5a5" }}>
-                      LIMIT APPLIED: {capSnapshot.capReason}
+                      LIMIT APPLIED: {capSnapshot?.capReason}
+                    </div>
+                  ) : null}
+                  {isFirstCappedTurn && capSnapshot?.capReason !== "NONE" ? (
+                    <details
+                      style={{
+                        marginTop: 8,
+                        border: "1px solid #7c2d12",
+                        borderRadius: 10,
+                        padding: "0.5rem",
+                        fontSize: "0.75rem",
+                        color: "#fdba74",
+                        background: "rgba(124,45,18,0.2)",
+                      }}
+                    >
+                      <summary style={{ cursor: "pointer", fontWeight: 600 }}>WHY IS THERE A LIMIT?</summary>
+                      <div style={{ marginTop: 6 }}>Limits ensure consistent performance and pacing.</div>
+                    </details>
+                  ) : null}
+                  {isFirstCalmToTenseTurn ? (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        border: "1px solid #0e7490",
+                        borderRadius: 10,
+                        padding: "0.5rem",
+                        fontSize: "0.75rem",
+                        color: "#bae6fd",
+                        background: "rgba(14,116,144,0.2)",
+                      }}
+                    >
+                      <div>TENSION IS RISING.</div>
+                      <div>Your choices are shaping the stakes.</div>
                     </div>
                   ) : null}
 
@@ -347,6 +483,8 @@ export default function Home() {
                           >
                             <div>{option.label}</div>
                             <span
+                              title={resolveOptionRiskExplanation(optionRisk)}
+                              aria-label={resolveOptionRiskExplanation(optionRisk)}
                               style={{
                                 marginTop: 4,
                                 display: "inline-block",
@@ -379,6 +517,37 @@ export default function Home() {
               );
             })}
           </div>
+        </section>
+
+        {showSessionComplete ? (
+          <section
+            style={{
+              width: "100%",
+              marginTop: "1rem",
+              border: "1px solid #334155",
+              borderRadius: 12,
+              padding: "0.75rem",
+              background: "rgba(15,23,42,0.25)",
+              fontSize: "0.8rem",
+            }}
+          >
+            <div style={{ fontWeight: 700 }}>SESSION ARC COMPLETE</div>
+            <div>You can continue or start a new path.</div>
+          </section>
+        ) : null}
+
+        <section
+          style={{
+            width: "100%",
+            marginTop: "0.75rem",
+            borderTop: "1px solid #334155",
+            paddingTop: "0.75rem",
+            fontSize: "0.8rem",
+            color: "#cbd5e1",
+          }}
+        >
+          <div>Type /state to inspect state</div>
+          <div>Type /summary to recap</div>
         </section>
       </main>
     </div>
