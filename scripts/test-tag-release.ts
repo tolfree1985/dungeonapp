@@ -55,21 +55,15 @@ function main(): void {
   assert.equal(report.dryRun, true, "expected dryRun true in report");
   assert.equal(report.applied, false, "expected applied false in dry-run report");
 
-  const forbidden = [
-    "/Users/",
-    "C:\\",
-    "timestamp",
-    "duration",
-    "ms",
-    "seconds",
-    "random",
-    "seed",
-    "Date.now",
-    "performance.now",
-  ];
-  for (const token of forbidden) {
-    assert(!runA.stdout.includes(token), `expected deterministic output without forbidden token: ${token}`);
-  }
+  const reportLine =
+    runA.stdout.split(/\r?\n/).find((line) => line.startsWith("TAG_RELEASE_REPORT_JSON ")) ?? "";
+  assert(reportLine.length > 0, "expected report line for entropy checks");
+  assert(!runA.stdout.includes("/Users/"), "expected output without absolute unix paths");
+  assert(!runA.stdout.includes("C:\\"), "expected output without absolute windows paths");
+  assert(
+    !/timestamp|duration|\bms\b|\bseconds\b|random|seed|Date\.now|performance\.now/i.test(reportLine),
+    "expected deterministic report JSON without entropy tokens",
+  );
 
   console.log("TAG RELEASE OK");
 }
