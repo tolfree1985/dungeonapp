@@ -72,3 +72,9 @@ export function computeDirectoryDigest(dir: string): string {
 
   return hash.digest("hex");
 }
+
+// Back-compat: release scripts expect this named export.
+// Keep it a thin wrapper so the digest definition lives in one place.
+export function computeArtifactDigest(dir: string): string {
+  return computeDirectoryDigest(dir);
+}
