@@ -21,6 +21,7 @@ const SCRIPTS = [
   "scripts/test-scenario-share.ts",
   "scripts/test-release-gate.ts",
   "scripts/test-tag-release.ts",
+  "scripts/test-boundary-lock.ts",
 ];
 
 function runScript(script: string): Promise<void> {
