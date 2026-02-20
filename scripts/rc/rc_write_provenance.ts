@@ -45,6 +45,7 @@ function gitCommitDate(commit: string): string {
 
 async function main(): Promise<void> {
   const artifactDir = mustGetArg("--artifact");
+const tagName = getOptionalArg("--tag") ?? process.env.RELEASE_TAG ?? process.env.TAG_NAME ?? null;
   const commit = mustGetArg("--commit");
   const tag = readOptionalArg("--tag");
 
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
     ? {
         ...existing,
         commitSha: commit,
+    tagName: tagName,
         tag: tag ?? existing.tag,
         rcArtifactDigest: artifactDigest,
       }
