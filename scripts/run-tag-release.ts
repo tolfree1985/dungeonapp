@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
 type TagReleaseReport = {
   tag: string;
@@ -63,6 +65,13 @@ function getLastReleaseTag(): string | null {
   return list.length > 0 ? list[list.length - 1] : null;
 }
 
+function readHeadCommitHash(): string | null {
+  const result = run("git", ["rev-parse", "HEAD"]);
+  if (!result.ok) return null;
+  const value = result.stdout.trim();
+  return /^[a-f0-9]{40}$/.test(value) ? value : null;
+}
+
 function buildNextTag(lastTag: string | null): string {
   if (!lastTag) return "release-1";
   const match = /^release-(\d+)$/.exec(lastTag);
@@ -111,10 +120,21 @@ function main(): void {
     gateReady =
       gate.ok &&
       gate.stdout.includes("RELEASE_TAG_READY") &&
-      gate.stdout.includes("RELEASE_GATE_RC_VERIFICATION_OK");
+      gate.stdout.includes("RELEASE_GATE_RC_VERIFICATION_OK") &&
+      gate.stdout.includes("RC_ARTIFACT_DIGEST=");
   }
   if (!gateReady) {
     emitFailure("TAG_RELEASE_BLOCKED_GATE_NOT_READY", gateOutput);
+  }
+
+  const commitHash = readHeadCommitHash();
+  if (!commitHash) {
+    emitFailure("TAG_RELEASE_BLOCKED_COMMIT_HASH_UNAVAILABLE");
+  }
+
+  const artifactManifestPath = path.join(process.cwd(), ".rc", "artifacts", commitHash, "manifest.json");
+  if (!existsSync(artifactManifestPath)) {
+    emitFailure("TAG_RELEASE_BLOCKED_RC_ARTIFACT_MISSING");
   }
 
   const lastTag = getLastReleaseTag();
