@@ -350,6 +350,9 @@ async function main() {
   console.log("DIFFICULTY_STATE");
   console.log(`momentum: ${guardSummary.difficultyState.momentum}`);
   console.log(`tier: ${guardSummary.difficultyState.tier}`);
+  console.log("DIFFICULTY_CURVE");
+  console.log(`momentumCurve: ${guardSummary.difficultyState.curve.join(",")}`);
+  console.log(`finalTier: ${guardSummary.difficultyState.tier}`);
 
   console.log(`TELEMETRY_VERSION ${TELEMETRY_VERSION}`);
   console.log("TELEMETRY");

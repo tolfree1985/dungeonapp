@@ -166,16 +166,47 @@ async function main() {
   assert.equal(classifyDifficultyTier(10), "CRITICAL", "expected difficulty tier mapping at critical momentum");
   assert.deepEqual(
     deriveDifficultyStateFromTurnSignals([
-      { riskLevel: "MODERATE", escalation: "MINOR", isFailure: false },
-      { riskLevel: "HIGH", escalation: "MAJOR", isFailure: true },
+      { riskLevel: "MODERATE", escalation: "MINOR", isFailure: false, isSuccessBand: false },
+      { riskLevel: "HIGH", escalation: "MINOR", isFailure: true, isSuccessBand: false },
     ]),
-    { momentum: 5, tier: "TENSE" },
+    { momentum: 4, tier: "TENSE", curve: [1, 4] },
     "expected deterministic momentum accumulation from turn signals",
   );
-  assert.equal(
-    applyDifficultyMomentumStep(10, { riskLevel: "HIGH", escalation: "MAJOR", isFailure: true }),
-    12,
+  assert.deepEqual(
+    applyDifficultyMomentumStep(10, {
+      riskLevel: "HIGH",
+      escalation: "MAJOR",
+      isFailure: true,
+      isSuccessBand: false,
+    }),
+    { momentum: 12, lowSuccessStreak: 0, cooldownApplied: false },
     "expected critical-tier high-risk turn momentum capping at 12",
+  );
+  assert.throws(
+    () =>
+      applyDifficultyMomentumStep(0, {
+        riskLevel: "HIGH",
+        escalation: "MAJOR",
+        isFailure: true,
+        isSuccessBand: false,
+      }),
+    /DIFFICULTY_SPIKE_VIOLATION/,
+    "expected difficulty spike guard to fail when per-turn increase exceeds +3",
+  );
+  const cooldownStep = applyDifficultyMomentumStep(
+    3,
+    {
+      riskLevel: "LOW",
+      escalation: "NONE",
+      isFailure: false,
+      isSuccessBand: true,
+    },
+    1,
+  );
+  assert.deepEqual(
+    cooldownStep,
+    { momentum: 2, lowSuccessStreak: 2, cooldownApplied: true },
+    "expected cooldown to apply after two consecutive low-success turns",
   );
   assert.throws(
     () => assertDifficultyMomentumCap(13),
@@ -184,8 +215,13 @@ async function main() {
   );
   assert.throws(
     () => assertDifficultyMomentumProgression(4, 3),
+    /DIFFICULTY_COOLDOWN_INVALID/,
+    "expected cooldown invalid guard to fail on unauthorized decrease",
+  );
+  assert.throws(
+    () => assertDifficultyMomentumProgression(4, 2, true),
     /DIFFICULTY_MOMENTUM_REGRESSION/,
-    "expected difficulty momentum regression guard to fail on decreasing momentum",
+    "expected momentum regression guard to fail when cooldown decreases by more than one",
   );
 
   assert.doesNotThrow(
@@ -892,6 +928,11 @@ async function main() {
   );
   assert.equal(guardSummaryReplay.difficultyState.momentum, 0, "expected default difficulty momentum in guard summary");
   assert.equal(guardSummaryReplay.difficultyState.tier, "CALM", "expected default difficulty tier in guard summary");
+  assert.deepEqual(
+    guardSummaryReplay.difficultyState.curve,
+    [0],
+    "expected deterministic difficulty curve for baseline single-turn replay",
+  );
 
   const styleDriftAllowedSummary = replayStateFromTurnJsonWithGuardSummary(
     [
@@ -1017,12 +1058,20 @@ async function main() {
   assert(out.includes("DIFFICULTY_STATE"), "expected difficulty state marker");
   assert(out.includes("momentum:"), "expected difficulty momentum field");
   assert(out.includes("tier:"), "expected difficulty tier field");
+  assert(out.includes("DIFFICULTY_CURVE"), "expected difficulty curve marker");
+  assert(out.includes("momentumCurve:"), "expected difficulty curve momentum list field");
+  assert(out.includes("finalTier:"), "expected difficulty curve final tier field");
   assert(/cardsTriggered:\s*0/.test(out), "expected cardsTriggered to be zero for deterministic fixture");
   assert(/cardsApplied:\s*0/.test(out), "expected cardsApplied to be zero for deterministic fixture");
   const difficultyTierLine = out.split(/\r?\n/).find((line) => line.startsWith("tier:")) ?? "";
   assert(
     /^tier:\s+(CALM|TENSE|DANGEROUS|CRITICAL)$/.test(difficultyTierLine),
     "expected deterministic difficulty tier label",
+  );
+  const difficultyCurveLine = out.split(/\r?\n/).find((line) => line.startsWith("momentumCurve:")) ?? "";
+  assert(
+    /^momentumCurve:\s*(\d+(,\d+)*)?$/.test(difficultyCurveLine),
+    "expected deterministic momentum curve formatting",
   );
   const memoryHashLine = out.split(/\r?\n/).find((line) => line.startsWith("memoryHash:")) ?? "";
   assert(/memoryHash:\s*[a-f0-9]{64}$/.test(memoryHashLine), "expected deterministic 64-char memory hash");
@@ -1045,6 +1094,9 @@ async function main() {
     "DIFFICULTY_STATE",
     "momentum:",
     "tier:",
+    "DIFFICULTY_CURVE",
+    "momentumCurve:",
+    "finalTier:",
     `TELEMETRY_VERSION ${TELEMETRY_VERSION}`,
   ];
   const styleOrderIndex = styleOrder.map((marker) => lineIndex(marker));

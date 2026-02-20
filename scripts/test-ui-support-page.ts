@@ -117,6 +117,7 @@ function main() {
   assert(dashboardSource.includes("DIFFICULTY"), "Expected difficulty section");
   assert(dashboardSource.includes("Momentum:"), "Expected difficulty momentum row");
   assert(dashboardSource.includes("Tier:"), "Expected difficulty tier row");
+  assert(dashboardSource.includes("Momentum sparkline:"), "Expected difficulty momentum sparkline row");
   assert(dashboardSource.includes("Replay Telemetry (Derived)"), "Expected derived telemetry panel");
   assert(dashboardSource.includes("TELEMETRY_VERSION"), "Expected telemetry version marker in UI panel");
   assert(dashboardSource.includes("TELEMETRY"), "Expected telemetry marker in UI panel");

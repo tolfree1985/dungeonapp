@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildDeltaLedgerExplanationRows,
-  deriveDifficultyStateFromTurnSignals,
+  deriveDifficultyStateFromTurnJson,
   classifyConsequence,
   classifyFailForwardSignal,
   deriveStyleStabilityFromEvents,
@@ -1422,14 +1422,15 @@ export function SupportDashboard({
   }, [turnRows]);
 
   const difficultyState = useMemo(() => {
-    return deriveDifficultyStateFromTurnSignals(
-      perTurnTelemetry.map((row) => ({
-        riskLevel: row.riskLevel,
-        escalation: row.escalation,
-        isFailure: row.failForwardSignal.length > 0,
-      })),
-    );
-  }, [perTurnTelemetry]);
+    const turnJsons = turnRows
+      .map((row, index) => ({
+        turnIndex: parseTurnIndex(row.turnIndex, index),
+        rawTurn: row.rawTurn,
+      }))
+      .sort((a, b) => (a.turnIndex === b.turnIndex ? 0 : a.turnIndex < b.turnIndex ? -1 : 1))
+      .map((row) => row.rawTurn);
+    return deriveDifficultyStateFromTurnJson(turnJsons);
+  }, [turnRows]);
 
   const telemetryReference = useMemo(() => extractTelemetryReference(bundleData), [bundleData]);
   const telemetryReferencePerTurn = useMemo(
@@ -2619,6 +2620,9 @@ export function SupportDashboard({
         <div className="mt-2 text-xs">Momentum: {difficultyState.momentum}</div>
         <div className={`text-xs ${difficultyState.tier === "CRITICAL" ? "text-red-700 font-semibold" : ""}`}>
           Tier: {difficultyState.tier}
+        </div>
+        <div className="text-xs">
+          Momentum sparkline: {difficultyState.curve.length > 0 ? difficultyState.curve.join("-") : "(none)"}
         </div>
       </section>
 

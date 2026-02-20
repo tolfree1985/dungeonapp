@@ -399,6 +399,29 @@ function parseDifficultyState(stdout: string): {
   };
 }
 
+function parseDifficultyCurve(stdout: string): {
+  momentumCurve: string;
+  finalTier: "CALM" | "TENSE" | "DANGEROUS" | "CRITICAL";
+} | null {
+  const lines = stdout.split(/\r?\n/);
+  const markerIndex = lines.findIndex((line) => line.trim() === "DIFFICULTY_CURVE");
+  if (markerIndex < 0) return null;
+  const window = lines.slice(markerIndex, markerIndex + 4);
+  const curveLine = window.find((entry) => entry.trim().startsWith("momentumCurve:"));
+  const finalTierLine = window.find((entry) => entry.trim().startsWith("finalTier:"));
+  const momentumCurve = curveLine ? curveLine.trim().slice("momentumCurve:".length).trim() : "";
+  const finalTier = finalTierLine ? finalTierLine.trim().slice("finalTier:".length).trim() : "";
+  if (finalTier !== "CALM" && finalTier !== "TENSE" && finalTier !== "DANGEROUS" && finalTier !== "CRITICAL") {
+    return null;
+  }
+  const curvePattern = /^$|^\d+(,\d+)*$/;
+  if (!curvePattern.test(momentumCurve)) return null;
+  return {
+    momentumCurve,
+    finalTier,
+  };
+}
+
 function isFailureResolution(source: unknown): boolean {
   if (!isRecord(source)) return false;
   const resolution = isRecord(source.resolution) ? source.resolution : null;
@@ -587,6 +610,12 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   if (combinedOutput.includes("DIFFICULTY_MOMENTUM_REGRESSION")) {
     regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION marker=DIFFICULTY_MOMENTUM_REGRESSION");
   }
+  if (combinedOutput.includes("DIFFICULTY_SPIKE_VIOLATION")) {
+    regressionMarkers.push("GOLDEN_DIFFICULTY_CURVE_REGRESSION marker=DIFFICULTY_SPIKE_VIOLATION");
+  }
+  if (combinedOutput.includes("DIFFICULTY_COOLDOWN_INVALID")) {
+    regressionMarkers.push("GOLDEN_DIFFICULTY_CURVE_REGRESSION marker=DIFFICULTY_COOLDOWN_INVALID");
+  }
   if (combinedOutput.includes("DIFFICULTY_CAP_VIOLATION")) {
     regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION marker=DIFFICULTY_CAP_VIOLATION");
   }
@@ -596,6 +625,13 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
   const difficultyState = parseDifficultyState(stdout);
   if (!difficultyState) {
     regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION missing=DIFFICULTY_FIELDS");
+  }
+  if (!stdout.includes("DIFFICULTY_CURVE")) {
+    regressionMarkers.push("GOLDEN_DIFFICULTY_CURVE_REGRESSION missing=DIFFICULTY_CURVE");
+  }
+  const difficultyCurve = parseDifficultyCurve(stdout);
+  if (!difficultyCurve) {
+    regressionMarkers.push("GOLDEN_DIFFICULTY_CURVE_REGRESSION missing=DIFFICULTY_CURVE_FIELDS");
   }
   if (combinedOutput.includes("DELTA_WITHOUT_LEDGER_EXPLANATION")) {
     regressionMarkers.push("GOLDEN_CAUSAL_REGRESSION marker=DELTA_WITHOUT_LEDGER_EXPLANATION");
@@ -704,7 +740,7 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
     regressionMarkers.push("GOLDEN_GUARD_SUMMARY_MISSING");
   }
 
-  if (regressionMarkers.length === 0 && memoryStability && difficultyState) {
+  if (regressionMarkers.length === 0 && memoryStability && difficultyState && difficultyCurve) {
     const childSecond = spawnSync(
       process.execPath,
       ["--import", "tsx", replayScriptPath, `--support-package-path=${fixturePath}`],
@@ -724,6 +760,14 @@ function runFixture(replayScriptPath: string, fixtureName: string, fixturePath: 
         secondDifficultyState.tier !== difficultyState.tier
       ) {
         regressionMarkers.push("GOLDEN_DIFFICULTY_REGRESSION difficulty_state_unstable");
+      }
+      const secondDifficultyCurve = parseDifficultyCurve(childSecond.stdout ?? "");
+      if (
+        !secondDifficultyCurve ||
+        secondDifficultyCurve.momentumCurve !== difficultyCurve.momentumCurve ||
+        secondDifficultyCurve.finalTier !== difficultyCurve.finalTier
+      ) {
+        regressionMarkers.push("GOLDEN_DIFFICULTY_CURVE_REGRESSION curve_unstable");
       }
     }
   }

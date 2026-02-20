@@ -95,6 +95,20 @@ export type DifficultyTier = "CALM" | "TENSE" | "DANGEROUS" | "CRITICAL";
 export type DifficultyStateSummary = {
   momentum: number;
   tier: DifficultyTier;
+  curve: number[];
+};
+
+export type DifficultyMomentumTurnSignal = {
+  riskLevel: ConsequenceRiskLevel;
+  escalation: ConsequenceEscalation;
+  isFailure: boolean;
+  isSuccessBand: boolean;
+};
+
+export type DifficultyMomentumStepResult = {
+  momentum: number;
+  lowSuccessStreak: number;
+  cooldownApplied: boolean;
 };
 
 export const CONSEQUENCE_RULE_TABLE = {
@@ -389,6 +403,31 @@ function readsFailureBand(turnJson: unknown): boolean {
   return false;
 }
 
+function readsSuccessBand(turnJson: unknown): boolean {
+  if (!isRecord(turnJson)) return false;
+  const resolution = isRecord(turnJson.resolution) ? turnJson.resolution : null;
+
+  if (resolution && typeof resolution.total === "number" && Number.isFinite(resolution.total)) {
+    return resolution.total >= 10 && resolution.total <= 12;
+  }
+
+  const candidates = [
+    resolution?.tier,
+    resolution?.outcome,
+    resolution?.band,
+    turnJson.outcome,
+    turnJson.tier,
+    turnJson.band,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeText(candidate);
+    if (!normalized) continue;
+    if (normalized === "10-12" || normalized === "10–12") return true;
+    if (normalized === "success") return true;
+  }
+  return false;
+}
+
 function hash32Deterministic(input: string): number {
   let hash = 2166136261 >>> 0;
   for (let i = 0; i < input.length; i++) {
@@ -605,20 +644,38 @@ export function assertDifficultyMomentumCap(momentum: number): void {
   }
 }
 
-export function assertDifficultyMomentumProgression(previous: number, next: number): void {
+export function assertDifficultyMomentumProgression(previous: number, next: number, allowCooldownDecrease = false): void {
   if (next < previous) {
-    throw new Error("DIFFICULTY_MOMENTUM_REGRESSION");
+    if (!allowCooldownDecrease) {
+      throw new Error("DIFFICULTY_COOLDOWN_INVALID");
+    }
+    if (previous - next !== 1) {
+      throw new Error("DIFFICULTY_MOMENTUM_REGRESSION");
+    }
+  }
+}
+
+function isDifficultyCooldownEligible(signal: DifficultyMomentumTurnSignal, previousLowSuccessStreak: number): boolean {
+  return (
+    previousLowSuccessStreak >= 1 &&
+    signal.riskLevel === "LOW" &&
+    signal.escalation === "NONE" &&
+    signal.isSuccessBand &&
+    !signal.isFailure
+  );
+}
+
+export function assertDifficultySpike(previous: number, next: number): void {
+  if (next - previous > 3) {
+    throw new Error("DIFFICULTY_SPIKE_VIOLATION");
   }
 }
 
 export function applyDifficultyMomentumStep(
   currentMomentum: number,
-  turn: {
-    riskLevel: ConsequenceRiskLevel;
-    escalation: ConsequenceEscalation;
-    isFailure: boolean;
-  },
-): number {
+  turn: DifficultyMomentumTurnSignal,
+  previousLowSuccessStreak = 0,
+): DifficultyMomentumStepResult {
   let increment = difficultyRiskIncrement(turn.riskLevel);
   if (turn.escalation === "MAJOR") increment += 1;
   if (turn.isFailure) increment += 1;
@@ -627,26 +684,54 @@ export function applyDifficultyMomentumStep(
   if (currentTier === "CRITICAL" && turn.riskLevel === "HIGH" && next > 12) {
     next = 12;
   }
+  const lowSuccessStreak =
+    turn.riskLevel === "LOW" && turn.escalation === "NONE" && turn.isSuccessBand && !turn.isFailure
+      ? previousLowSuccessStreak + 1
+      : 0;
+  const cooldownApplied = isDifficultyCooldownEligible(turn, previousLowSuccessStreak);
+  if (cooldownApplied) {
+    next = Math.max(0, next - 1);
+  }
+  assertDifficultySpike(currentMomentum, next);
   assertDifficultyMomentumCap(next);
-  assertDifficultyMomentumProgression(currentMomentum, next);
-  return next;
+  assertDifficultyMomentumProgression(currentMomentum, next, cooldownApplied);
+  return {
+    momentum: next,
+    lowSuccessStreak,
+    cooldownApplied,
+  };
 }
 
 export function deriveDifficultyStateFromTurnSignals(
-  turns: Array<{
-    riskLevel: ConsequenceRiskLevel;
-    escalation: ConsequenceEscalation;
-    isFailure: boolean;
-  }>,
+  turns: DifficultyMomentumTurnSignal[],
 ): DifficultyStateSummary {
   let momentum = 0;
+  let lowSuccessStreak = 0;
+  const curve: number[] = [];
   for (const turn of turns) {
-    momentum = applyDifficultyMomentumStep(momentum, turn);
+    const next = applyDifficultyMomentumStep(momentum, turn, lowSuccessStreak);
+    momentum = next.momentum;
+    lowSuccessStreak = next.lowSuccessStreak;
+    curve.push(momentum);
   }
   return {
     momentum,
     tier: classifyDifficultyTier(momentum),
+    curve,
   };
+}
+
+export function deriveDifficultyStateFromTurnJson(turns: unknown[]): DifficultyStateSummary {
+  const signals = turns.map((turn) => {
+    const consequence = classifyConsequence(turn);
+    return {
+      riskLevel: consequence.riskLevel,
+      escalation: consequence.escalation,
+      isFailure: readsFailureBand(turn),
+      isSuccessBand: readsSuccessBand(turn),
+    } as DifficultyMomentumTurnSignal;
+  });
+  return deriveDifficultyStateFromTurnSignals(signals);
 }
 
 function asNumber(value: unknown): number | null {
@@ -1651,7 +1736,9 @@ function replayStateFromTurnJsonInternal(
   let difficultyState: DifficultyStateSummary = {
     momentum: 0,
     tier: "CALM",
+    curve: [],
   };
+  let lowSuccessStreak = 0;
   const memoryDigestRows: Array<{ seq: number; triggered: string[]; applied: string[] }> = [];
   let failForwardSignal: FailForwardSignal | "NONE" = "NONE";
   let causalCoverage: CausalCoverageSummary = {
@@ -1726,14 +1813,21 @@ function replayStateFromTurnJsonInternal(
       memoryHash: memoryStability.memoryHash,
     };
     const turnConsequence = classifyConsequence(e.turnJson);
-    const nextDifficultyMomentum = applyDifficultyMomentumStep(difficultyState.momentum, {
-      riskLevel: turnConsequence.riskLevel,
-      escalation: turnConsequence.escalation,
-      isFailure: readsFailureBand(e.turnJson),
-    });
+    const nextDifficulty = applyDifficultyMomentumStep(
+      difficultyState.momentum,
+      {
+        riskLevel: turnConsequence.riskLevel,
+        escalation: turnConsequence.escalation,
+        isFailure: readsFailureBand(e.turnJson),
+        isSuccessBand: readsSuccessBand(e.turnJson),
+      },
+      lowSuccessStreak,
+    );
+    lowSuccessStreak = nextDifficulty.lowSuccessStreak;
     difficultyState = {
-      momentum: nextDifficultyMomentum,
-      tier: classifyDifficultyTier(nextDifficultyMomentum),
+      momentum: nextDifficulty.momentum,
+      tier: classifyDifficultyTier(nextDifficulty.momentum),
+      curve: [...difficultyState.curve, nextDifficulty.momentum],
     };
     mark("MEMORY_STABILITY");
     state = nextState;
