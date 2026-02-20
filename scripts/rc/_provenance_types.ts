@@ -3,12 +3,12 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 
 export type RcProvenance = {
-  commit: string;
-  artifactDigest: string;
+  rcProvenanceVersion: 1;
+  commitSha: string;
+  rcArtifactDigest: string;
   manifestDigest: string;
   supportManifestDigest: string;
-  rcArtifactDigest: string;
-  tag?: string;
+  tag?: string | null;
   createdAtIso: string;
 };
 

@@ -202,6 +202,46 @@ runNode([
     rcArtifactDigest,
   ]);
 
+  const releaseRecordPath = path.join(artifactDir, "release_record.json");
+  runNode([
+    "--import",
+    "tsx",
+    "scripts/rc/rc_generate_release_record.ts",
+    "--artifact",
+    artifactDir,
+    "--commit",
+    commitHash,
+  ]);
+
+  runNode([
+    "--import",
+    "tsx",
+    "scripts/rc/rc_verify_release_record.ts",
+    "--artifact",
+    artifactDir,
+    "--record",
+    releaseRecordPath,
+    "--commit",
+    commitHash,
+  ]);
+
+  console.log("RELEASE_RECORD_OK");
+  console.log("RELEASE_RECORD_STORED");
+
+  runNode([
+    "--import",
+    "tsx",
+    "scripts/build-dist-release.ts",
+    "--artifact",
+    artifactDir,
+    "--tag",
+    tag,
+    "--commit",
+    commitHash,
+  ]);
+
+  console.log("RELEASE_DIST_OK");
+
   console.log("RELEASE_NOTES_BEGIN");
   for (const line of releaseNotes) {
     console.log(`- ${line}`);

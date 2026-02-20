@@ -74,6 +74,7 @@ async function main(): Promise<void> {
   const provenance: RcProvenance = existing
     ? { ...existing, tag: tag ?? existing.tag, rcArtifactDigest: artifactDigest }
     : {
+        rcProvenanceVersion: 1,
         commit,
         artifactDigest,
         manifestDigest,
