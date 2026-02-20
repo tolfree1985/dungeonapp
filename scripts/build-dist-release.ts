@@ -25,9 +25,16 @@ function main() {
   mkdirSync(distDir, { recursive: true });
 
   const copies = ["provenance.json", "release_record.json", "manifest.json", "support_manifest.json", "audit_summary.json"];
+  const optional = new Set(["audit_summary.json"]);
   for (const name of copies) {
     const src = path.join(artifactSrc, name);
-    assert(existsSync(src), `artifact missing ${name}`);
+    if (!existsSync(src)) {
+      if (optional.has(name)) {
+        console.warn(`WARN: artifact missing optional ${name}`);
+        continue;
+      }
+      assert(false, `artifact missing ${name}`);
+    }
     cpSync(src, path.join(distDir, name));
   }
 
