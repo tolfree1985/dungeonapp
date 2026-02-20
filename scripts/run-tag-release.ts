@@ -108,7 +108,10 @@ function main(): void {
     }
     const gate = run("node", gateArgs, gateEnv);
     gateOutput = `${gate.stdout}\n${gate.stderr}`;
-    gateReady = gate.ok && gate.stdout.includes("RELEASE_TAG_READY");
+    gateReady =
+      gate.ok &&
+      gate.stdout.includes("RELEASE_TAG_READY") &&
+      gate.stdout.includes("RELEASE_GATE_RC_VERIFICATION_OK");
   }
   if (!gateReady) {
     emitFailure("TAG_RELEASE_BLOCKED_GATE_NOT_READY", gateOutput);
