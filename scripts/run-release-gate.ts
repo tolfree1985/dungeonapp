@@ -5,6 +5,7 @@ import { SUPPORT_MANIFEST_VERSION, TELEMETRY_VERSION } from "../src/lib/support/
 import { SUPPORT_PACKAGE_VERSION } from "../src/lib/support/supportPackage";
 import { SCENARIO_VERSION } from "../src/lib/scenario/scenarioVersion";
 import { SCENARIO_SHARE_VERSION } from "../src/lib/scenario/scenarioShare";
+import { computeDirectoryDigest } from "./rc/_artifact_digest";
 
 type Step = {
   name: string;
@@ -32,6 +33,7 @@ type ReleaseGateReport = {
 
 const RC_BUNDLE_SOURCE_PATH = "fixtures/rc/canonical_bundle.json";
 const RC_BUNDLE_OUT_DIR = ".rc/latest";
+const RC_ARTIFACT_ROOT_DIR = ".rc/artifacts";
 const RC_BUILD_STEP_NAME = "rc-build";
 const RC_VERIFY_STEP_NAME = "rc-verify";
 const RC_SMOKE_STEP_NAME = "rc-smoke";
@@ -204,6 +206,22 @@ function cleanupRcOutput(): void {
   fs.rmSync(path.join(process.cwd(), RC_BUNDLE_OUT_DIR), { recursive: true, force: true });
 }
 
+function storeRcArtifact(commitHash: string): { artifactPath: string; digest: string } {
+  const cwd = process.cwd();
+  const sourcePath = path.join(cwd, RC_BUNDLE_OUT_DIR);
+  if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isDirectory()) {
+    throw new Error("RELEASE_GATE_RC_ARTIFACT_SOURCE_MISSING");
+  }
+
+  const artifactsRoot = path.join(cwd, RC_ARTIFACT_ROOT_DIR);
+  const artifactPath = path.join(artifactsRoot, commitHash);
+  fs.mkdirSync(artifactsRoot, { recursive: true });
+  fs.rmSync(artifactPath, { recursive: true, force: true });
+  fs.cpSync(sourcePath, artifactPath, { recursive: true });
+  const digest = computeDirectoryDigest(artifactPath);
+  return { artifactPath, digest };
+}
+
 function readFixtureCount(): number {
   const indexPath = path.join(process.cwd(), "fixtures", "golden", "index.json");
   const parsed = JSON.parse(fs.readFileSync(indexPath, "utf8")) as { fixtures?: unknown };
@@ -276,6 +294,21 @@ function buildReport(stepResults: StepResult[]): ReleaseGateReport {
 function main(): void {
   const steps = getSteps();
   const stepResults: StepResult[] = [];
+  const commitHash = readCommitHash();
+  if (!commitHash) {
+    console.log("RELEASE_GATE_FAIL rc-artifactize");
+    console.log("RELEASE_GATE_FAILURE_EXCERPT_BEGIN");
+    console.log("STEP_NAME rc-artifactize");
+    console.log("FIRST_FAIL_MARKER RELEASE_GATE_RC_ARTIFACT_COMMIT_HASH_MISSING");
+    console.log("REPRO_PACK_SUMMARY (missing)");
+    console.log("GOLDEN_SUMMARY (missing)");
+    console.log("STRESS_SUMMARY (missing)");
+    console.log("RELEASE_GATE_FAILURE_EXCERPT_END");
+    const report = buildReport([{ name: "rc-artifactize", status: "fail" }]);
+    console.log(`RELEASE_GATE_REPORT_JSON ${JSON.stringify(report)}`);
+    console.log("RELEASE_GATE_END");
+    process.exit(1);
+  }
 
   console.log("RELEASE_GATE_BEGIN");
   console.log("RELEASE_GATE_RC_VERIFICATION_BEGIN");
@@ -306,7 +339,11 @@ function main(): void {
     stepResults.push({ name: step.name, status: "pass" });
     console.log(`RELEASE_GATE_OK ${step.name}`);
     if (step.name === RC_SMOKE_STEP_NAME) {
+      const { digest } = storeRcArtifact(commitHash);
+      console.log(`RC_ARTIFACT_DIGEST=${digest}`);
+      console.log("RC_ARTIFACT_STORED");
       console.log("RELEASE_GATE_RC_VERIFICATION_OK");
+      cleanupRcOutput();
     }
   }
 

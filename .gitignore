@@ -54,3 +54,6 @@ src/generated/
 
 # local preserved untracked workspace
 _scratch/
+
+# deterministic RC release artifacts
+.rc/
