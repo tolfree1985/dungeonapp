@@ -2,6 +2,7 @@
   "version": 1,
   "fixtures": [
     "golden_seed_c2f9d379.support.json",
-    "golden_seed2_e944b1b6.support.json"
+    "golden_seed2_e944b1b6.support.json",
+    "golden_longrun_bf04d06f.support.json"
   ]
 }
