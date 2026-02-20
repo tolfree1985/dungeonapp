@@ -56,18 +56,20 @@ async function main(): Promise<void> {
   const artifactDigest = computeDirectoryDigest(artifactDir);
 
   const provenancePath = join(artifactDir, "provenance.json");
-  const manifestPath = join(artifactDir, "manifest.json");
 
   let createdAtIso = gitCommitDate(commit);
   let existing: RcProvenance | null = null;
 
-  // Load existing provenance (if present)
+  // Load existing provenance if present
   if (existsSync(provenancePath)) {
     const loaded = JSON.parse(readFileSync(provenancePath, "utf8")) as RcProvenance;
 
     if (loaded.commitSha !== commit && loaded.commit !== commit) {
-      throw new Error(`existing provenance commit mismatch: found=${loaded.commitSha ?? loaded.commit}`);
+      throw new Error(
+        `existing provenance commit mismatch: found=${loaded.commitSha ?? loaded.commit}`
+      );
     }
+
     if (
       loaded.manifestDigest !== manifestDigest ||
       loaded.supportManifestDigest !== supportManifestDigest
@@ -79,7 +81,7 @@ async function main(): Promise<void> {
     createdAtIso = loaded.createdAtIso;
   }
 
-  // FIXED: always include commitSha (required by rc_verify_provenance.ts)
+  // Always use commitSha (required by rc_verify_provenance.ts)
   const provenance: RcProvenance = existing
     ? {
         ...existing,
@@ -89,8 +91,8 @@ async function main(): Promise<void> {
       }
     : {
         rcProvenanceVersion: 1,
-        commit,              // legacy
-        commitSha: commit,   // REQUIRED
+        commit,            // legacy field
+        commitSha: commit, // REQUIRED
         artifactDigest,
         manifestDigest,
         supportManifestDigest,
@@ -106,26 +108,6 @@ async function main(): Promise<void> {
   // Write provenance.json
   writeFileSync(provenancePath, stableStringify(provenance) + "\n", "utf8");
   console.log("RC_PROVENANCE_WRITTEN");
-
-  // Embed provenance inside manifest.json (required for tag-release test stability)
-  if (existsSync(manifestPath)) {
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-
-    manifest.provenance = {
-      commit: provenance.commitSha,
-      commitSha: provenance.commitSha,
-      tag: provenance.tag,
-      manifestDigest: provenance.manifestDigest,
-      supportManifestDigest: provenance.supportManifestDigest,
-      artifactDigest: provenance.artifactDigest,
-      rcArtifactDigest: provenance.rcArtifactDigest,
-      createdAtIso: provenance.createdAtIso,
-      rcProvenanceVersion: provenance.rcProvenanceVersion,
-    };
-
-    writeFileSync(manifestPath, stableStringify(manifest) + "\n", "utf8");
-    console.log("RC_PROVENANCE_EMBEDDED_IN_MANIFEST");
-  }
 }
 
 main().catch((err) => {
