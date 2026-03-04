@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "../../../src/generated/prisma";
 import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimit } from "@/lib/api/readJsonWithLimit";
@@ -89,10 +89,10 @@ async function runModelStub(args: { prompt: string; max_tokens: number }): Promi
 }
 
 type PostHandlerDeps = {
-  runLegacyTurnFlow?: typeof runLegacyTurnFlow;
+  executeTurn?: typeof executeTurn;
 };
 
-async function postHandler(req: Request, deps?: PostHandlerDeps) {
+async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
   let holdKey = "";
   let leaseKeyForCleanup = "";
 
@@ -280,7 +280,7 @@ async function postHandler(req: Request, deps?: PostHandlerDeps) {
       prompt: playerText,
       max_tokens: preflight.perTurnMaxOutputTokens,
     });
-    const executor = deps?.executeTurn ?? executeTurn;
+    const executor = deps.executeTurn ?? executeTurn;
     const finalized = await executor({
       userId,
       adventureId,
@@ -374,5 +374,12 @@ async function postHandler(req: Request, deps?: PostHandlerDeps) {
   }
 }
 
-export { postHandler };
-export const POST = withRouteLogging("POST /api/turn", postHandler);
+function makeDefaultDeps(): PostHandlerDeps {
+  return {
+    executeTurn,
+  };
+}
+
+export const POST = withRouteLogging("POST /api/turn", async (req: NextRequest, _context: { params: Promise<{}> }) => {
+  return postTurn(req, makeDefaultDeps());
+});
