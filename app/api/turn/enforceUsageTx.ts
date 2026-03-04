@@ -91,11 +91,13 @@ export async function enforceUsageTx<T>(
   const got = await deps.reserveUsageDayLock(tx, key, day);
 
   if (got.count !== 1) {
-    const payload = buildBudgetExceeded429Payload({
-      code: "CONCURRENCY_LIMIT_EXCEEDED",
+  const payload = buildBudgetExceeded429Payload({
+    code: "CONCURRENCY_LIMIT_EXCEEDED",
+    extras: {
       idempotencyKey: args.idempotencyKey,
       retryAt: new Date().toISOString(),
-    });
+    },
+  });
     payload.idempotency_key = args.idempotencyKey;
     throw new Usage429Error(payload);
   }
