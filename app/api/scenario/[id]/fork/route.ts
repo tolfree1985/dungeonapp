@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api/errorResponse";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
@@ -6,8 +6,11 @@ import { checkSoftRateLimit, softRateActorKey, softRateLimitForkPerMinute } from
 import { prisma } from "@/lib/prisma";
 import { forkScenario } from "@/lib/scenario/scenarioRepo";
 
-async function postHandler(req: Request, ctx: { params: { id: string } }) {
-  const sourceScenarioId = ctx.params.id;
+async function postHandler(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: sourceScenarioId } = await params;
   let body: any;
   try {
     body = await readJsonWithLimitOrNull(req);

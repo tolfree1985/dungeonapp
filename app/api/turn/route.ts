@@ -14,6 +14,11 @@ import {
 } from "../../../src/lib/billing/enforce";
 import { monthKeyUtc } from "../../../src/lib/billing/monthKey";
 import { coerceTier } from "../../../src/lib/billing/tiers";
+import { runLegacyTurnFlow } from "@/server/turn/runLegacyTurnFlow";
+import { executeTurn } from "@/server/turn/executeTurn";
+import { runTurnPipeline } from "@/server/turn/runTurnPipeline";
+import { reserveUsageDayLock } from "@/server/usage/reserveUsageDayLock";
+import { turnPersistence } from "./turnDb";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -83,7 +88,11 @@ async function runModelStub(args: { prompt: string; max_tokens: number }): Promi
   return { scene, resolution, outputTokens };
 }
 
-async function postHandler(req: Request) {
+type PostHandlerDeps = {
+  runLegacyTurnFlow?: typeof runLegacyTurnFlow;
+};
+
+async function postHandler(req: Request, deps?: PostHandlerDeps) {
   let holdKey = "";
   let leaseKeyForCleanup = "";
 
@@ -106,6 +115,7 @@ async function postHandler(req: Request) {
     // Dev-only bypass for smoke/budget harness traffic.
     const smokeBypassHeader = req.headers.get("x-smoke-bypass-soft-rate-limit");
     const smokeBypassRateLimit = process.env.NODE_ENV !== "production" && smokeBypassHeader === "1";
+    let softRateResult: { allowed: boolean; retryAfterMs?: number; reason?: string } | null = null;
 
     if (!smokeBypassRateLimit) {
       const rateLimit = checkSoftRateLimit({
@@ -113,6 +123,11 @@ async function postHandler(req: Request) {
         actorKey: softRateActorKey(req, userId),
         limitPerMinute: softRateLimitTurnPostPerMinute(),
       });
+      softRateResult = {
+        allowed: rateLimit.allowed,
+        retryAfterMs: Number(rateLimit.retryAfterSeconds) * 1000,
+        reason: "soft limit",
+      };
       if (!rateLimit.allowed) {
         return NextResponse.json(
           safeTurnErrorPayload({
@@ -125,6 +140,8 @@ async function postHandler(req: Request) {
           },
         );
       }
+    } else {
+      softRateResult = { allowed: true };
     }
     const tier = coerceTier(body.tier);
     const monthKey = monthKeyUtc(now);
@@ -263,89 +280,59 @@ async function postHandler(req: Request) {
       prompt: playerText,
       max_tokens: preflight.perTurnMaxOutputTokens,
     });
-
-    const finalized = await prisma.$transaction(async (tx) => {
-      const updatedAdventure = await tx.adventure.update({
-        where: { id: adventureId },
-        data: { latestTurnIndex: { increment: 1 } },
-        select: { id: true, latestTurnIndex: true },
-      });
-
-      const turn = await tx.turn.create({
-        data: {
-          adventureId: updatedAdventure.id,
-          turnIndex: updatedAdventure.latestTurnIndex,
-          playerInput: playerText,
-          scene: model.scene,
-          resolution: model.resolution,
-          stateDeltas: [],
-          ledgerAdds: [],
-        },
-      });
-
-      const prevEvent = await tx.turnEvent.findFirst({
-        where: { adventureId: updatedAdventure.id },
-        orderBy: { seq: "desc" },
-        select: { eventId: true, seq: true },
-      });
-      const seq = (prevEvent?.seq ?? -1) + 1;
-
-      const modelInputHash = hashHex(
-        JSON.stringify({
+    const executor = deps?.executeTurn ?? executeTurn;
+    const finalized = await executor({
+      userId,
+      adventureId,
+      idempotencyKey,
+      normalizedInput: playerText,
+      softRate: softRateResult,
+      adventureLocked: false,
+      usageVerdict: null,
+      legacy: {
+        args: {
+          prisma,
+          userId,
           adventureId,
+          idempotencyKey,
           playerText,
-          max_tokens: preflight.perTurnMaxOutputTokens,
-        })
-      );
-      const stateDeltas = asUnknownArray((turn as any).stateDeltas);
-      const ledgerAdds = asUnknownArray((turn as any).ledgerAdds);
-      const turnPayload = {
-        turnId: turn.id,
-        turnIndex: turn.turnIndex,
-        scene: turn.scene,
-        resolution: turn.resolution,
-        stateDeltas: stateDeltas as any,
-        ledgerAdds: ledgerAdds as any,
-      };
-      const eventHash = hashHex(
-        JSON.stringify({
-          seq,
-          prevEventId: prevEvent?.eventId ?? null,
-          idempotencyKey,
-          modelInputHash,
-          turnPayload,
-        })
-      );
-
-      const committed = await commitUsageAndRelease(tx, {
-        userId,
-        monthKey,
-        holdKey,
-        leaseKey,
-        actualInputTokens: estInputTokens,
-        actualOutputTokens: model.outputTokens,
-        now: new Date(),
-      });
-
-      await tx.turnEvent.create({
-        data: {
-          adventureId: updatedAdventure.id,
-          seq,
-          prevEventId: prevEvent?.eventId ?? null,
-          idempotencyKey,
-          eventHash,
-          engineVersion: "billing-phase-a-b-v1",
-          status: "APPLIED",
-          baseStateHash: hashHex(`base|${updatedAdventure.id}|${turn.turnIndex}`),
-          resultStateHash: hashHex(`result|${updatedAdventure.id}|${turn.turnIndex}`),
-          rngSeed: "0",
-          playerInput: playerText,
-          modelInputHash,
-          turnJson: turnPayload,
+          model,
+          preflightMaxTokens: preflight.perTurnMaxOutputTokens,
+          monthKey,
+          holdKey,
+          leaseKey,
+          estInputTokens,
         },
-      });
-
-      return { turn, billing: committed, idempotencyKey };
+        deps: {
+          hashHex,
+          asUnknownArray,
+          commitUsageAndRelease,
+        },
+      },
+      pipeline: {
+        args: {
+          userId,
+          adventureId,
+          idempotencyKey,
+          normalizedInput: playerText,
+          prisma,
+          model,
+          preflightMaxTokens: preflight.perTurnMaxOutputTokens,
+          monthKey,
+          holdKey,
+          leaseKey,
+          estInputTokens,
+        },
+        deps: {
+          reserveUsageDayLock,
+          hashHex,
+          asUnknownArray,
+          commitUsageAndRelease,
+          generateTurn: async (tx, input) =>
+            runModelStub({ prompt: input.normalizedInput, max_tokens: input.preflightMaxTokens }),
+          persistTurn: async (args, tx) => turnPersistence(args, tx),
+        },
+      },
     });
 
     const turnStateDeltas = asUnknownArray((finalized as any)?.turn?.stateDeltas);
@@ -387,4 +374,5 @@ async function postHandler(req: Request) {
   }
 }
 
+export { postHandler };
 export const POST = withRouteLogging("POST /api/turn", postHandler);

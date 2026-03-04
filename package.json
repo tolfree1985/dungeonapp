@@ -16,9 +16,25 @@
     "ci:creator": "npm run scenario:validate && npm run typecheck",
     "ci:all": "npm run ci:billing && npm run ci:creator",
     "ci:smoke-prod-surface": "bash scripts/with-sqlite-env.sh node --import tsx scripts/smoke-prod-surface.ts",
+    "smoke-prod-surface": "node --import tsx scripts/smoke-prod-surface.ts",
+    "run-release-gate": "node --import tsx scripts/run-release-gate.ts",
+    "test-upgrade-module": "node --import tsx scripts/test-upgrade-module.ts",
+    "test-runtime-contract": "node --import tsx scripts/test-runtime-contract.ts",
+    "test-resolver-golden": "node --import tsx scripts/test-resolver-golden.ts",
+    "test-gate-markers": "node --import tsx scripts/test-gate-markers.ts",
+    "test-turn-idempotency": "node --import tsx scripts/test-turn-idempotency.ts",
+    "replay-turn": "node --import tsx scripts/replay-turn.ts",
+    "test-replay-golden": "node --import tsx scripts/test-replay-golden.ts",
+    "test-process-turn-replay": "node --import tsx scripts/test-process-turn-replay.ts",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "node scripts/seed-dev.js"
+    "db:seed": "node scripts/seed-dev.js",
+    "test-usage-endpoint": "tsx scripts/test-usage-endpoint.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:watch": "vitest",
+    "test:node": "node --import tsx --test",
+    "test:node:turn": "node --import tsx --test src/server/turn/guard/getTurnGuardVerdict.node.test.ts app/api/turn/enforceUsageTx.node.test.ts src/server/turn/executeTurn.node.test.ts src/server/turn/runTurnPipeline.node.test.ts src/server/turn/executeTurn.shapeParity.node.test.ts src/server/turn/executeTurn.percent.node.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
@@ -30,10 +46,13 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^1.5.0",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "prisma": "^6.19.2",
-    "typescript": "^5"
+    "tsx": "^4.21.0",
+    "typescript": "^5",
+    "vitest": "^1.1.1"
   }
 }
