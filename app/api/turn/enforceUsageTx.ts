@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { buildBudgetExceeded429Payload, type BudgetExceeded429Payload } from "./deterministic429";
 import { getTurnGuardVerdict, type TurnGuardInputs } from "@/server/turn/guard/getTurnGuardVerdict";
 import type { TurnGuardDenyCode } from "@/server/turn/guard/types";
