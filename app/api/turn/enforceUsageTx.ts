@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@/generated/prisma";
 import { buildBudgetExceeded429Payload, type BudgetExceeded429Payload } from "./deterministic429";
 import { getTurnGuardVerdict, type TurnGuardInputs } from "@/server/turn/guard/getTurnGuardVerdict";
 import type { TurnGuardDenyCode } from "@/server/turn/guard/types";
@@ -76,8 +76,10 @@ export async function enforceUsageTx<T>(
       : new Date().toISOString();
     const payload = buildBudgetExceeded429Payload({
       code: mapGuardCodeToBudgetCode(guardVerdict.code),
-      idempotencyKey: args.idempotencyKey,
-      retryAt,
+      extras: {
+        idempotencyKey: args.idempotencyKey,
+        retryAt,
+      },
     });
     payload.idempotency_key = args.idempotencyKey;
     throw new Usage429Error(payload);
