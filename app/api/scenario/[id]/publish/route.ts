@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { creatorRouteError } from "@/lib/api/creatorRouteError";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
 import { prisma } from "@/lib/prisma";
 
-async function postHandler(req: Request, ctx: { params: { id: string } }) {
-  const id = ctx.params.id;
+async function postHandler(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
   let body: any;
   try {
     body = await readJsonWithLimitOrNull(req);
