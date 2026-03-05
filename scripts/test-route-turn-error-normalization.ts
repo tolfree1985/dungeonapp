@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { PrismaClient } from "../src/generated/prisma";
+import { NextRequest } from "next/server";
 import { POST as turnPost } from "../app/api/turn/route";
 
 process.env.SOFT_RATE_LIMIT_TURN_POST_PER_MIN ??= "1";
-process.env.NODE_ENV ??= "test";
+(process.env as Record<string, string | undefined>).NODE_ENV ??= "test";
 
 async function callTurn(body: Record<string, unknown>, headers?: Record<string, string>) {
-  const req = new Request("http://local.test/api/turn", {
+  const req = new NextRequest("http://local.test/api/turn", {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -14,7 +15,7 @@ async function callTurn(body: Record<string, unknown>, headers?: Record<string, 
     },
     body: JSON.stringify(body),
   });
-  const res = await turnPost(req);
+  const res = await turnPost(req, { params: Promise.resolve({}) } as any);
   const json = await res.json().catch(() => null);
   return { res, json };
 }
