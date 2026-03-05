@@ -353,6 +353,7 @@ function buildStyleLockSummary(scenario: unknown): StyleLockSummary {
   if (scenario && typeof scenario === "object") {
     const s = scenario as any;
     const rawTurns = Array.isArray(s.turns) ? s.turns : Array.isArray(s.events) ? s.events : [];
+    type TurnLike = { turnIndex: number };
     const turns = rawTurns
       .map((raw: any, index: number) => ({
         turnIndex: toTurnIndex(raw?.turnIndex ?? raw?.seq, index),
@@ -364,7 +365,7 @@ function buildStyleLockSummary(scenario: unknown): StyleLockSummary {
               ? raw.turnJson.deltas
               : [],
       }))
-      .sort((a, b) => a.turnIndex - b.turnIndex);
+      .sort((a: TurnLike, b: TurnLike) => a.turnIndex - b.turnIndex);
 
     for (const turn of turns) {
       for (const delta of turn.deltas) {
