@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -164,4 +164,39 @@ model Scenario {
 
   @@index([visibility])
   @@index([ownerId])
+}
+
+model Save {
+  id             String    @id
+  scenarioId     String
+  nextTurnIndex  Int       @default(0)
+  stateJson      Json
+  ledgerJson     Json
+  styleLockJson  Json?
+  turns          SaveTurn[]
+
+  @@index([scenarioId])
+}
+
+model SaveTurn {
+  id           String   @id
+  saveId       String
+  scenarioId   String
+  artifactPath String?
+  requestHash  String   @default("")
+  createdIndex Int
+  createdAt    DateTime @default(now())
+  save         Save     @relation(fields: [saveId], references: [id], onDelete: Cascade)
+
+  @@unique([saveId, createdIndex])
+  @@index([saveId])
+}
+
+model UsageDay {
+  key        String
+  day        String
+  turns      Int      @default(0)
+  lastTurnAt DateTime?
+
+  @@id([key, day])
 }
