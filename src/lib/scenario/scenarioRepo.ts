@@ -1,6 +1,9 @@
+import { normalizeScenarioContent } from "@/lib/scenario/scenarioValidator";
+
 type TxLike = {
   scenario: {
     create: (args: any) => Promise<any>;
+    update: (args: any) => Promise<any>;
     count: (args: any) => Promise<number>;
     findMany: (args: any) => Promise<any[]>;
     findUnique: (args: any) => Promise<any | null>;
@@ -52,6 +55,35 @@ export async function createScenario(
     sourceScenarioId = null,
   } = input;
 
+  const normalized = normalizeScenarioContent(contentJson, id);
+  const existing = await tx.scenario.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true },
+  });
+
+  if (existing) {
+    if (existing.ownerId && ownerId && existing.ownerId !== ownerId) {
+      const err: any = new Error("SCENARIO_ID_EXISTS");
+      err.code = "SCENARIO_ID_EXISTS";
+      err.status = 409;
+      err.details = { id, ownerId: existing.ownerId };
+      throw err;
+    }
+
+    return tx.scenario.update({
+      where: { id },
+      data: {
+        title,
+        summary,
+        contentJson: normalized as any,
+        visibility,
+        ownerId: existing.ownerId ?? ownerId,
+        sourceScenarioId,
+      },
+      select: { id: true, visibility: true, ownerId: true, sourceScenarioId: true, title: true },
+    });
+  }
+
   await assertOwnerScenarioCapacity(tx, ownerId);
 
   return tx.scenario.create({
@@ -59,7 +91,7 @@ export async function createScenario(
       id,
       title,
       summary,
-      contentJson: contentJson as any,
+      contentJson: normalized as any,
       visibility,
       ownerId,
       sourceScenarioId,
@@ -76,7 +108,15 @@ export async function listPublicScenarios(tx: TxLike, input?: ListPageInput) {
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    select: { id: true, title: true, summary: true, ownerId: true, sourceScenarioId: true, updatedAt: true },
+    select: {
+      id: true,
+      title: true,
+      summary: true,
+      ownerId: true,
+      sourceScenarioId: true,
+      updatedAt: true,
+      visibility: true,
+    },
   });
 }
 

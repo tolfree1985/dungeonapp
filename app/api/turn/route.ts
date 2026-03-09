@@ -2,11 +2,16 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "../../../src/generated/prisma";
 import { errorResponse } from "@/lib/api/errorResponse";
+import { isIdentityError, requireUser, type AuthenticatedUser } from "@/lib/api/identity";
 import { isRequestBodyTooLargeError, readJsonWithLimit } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
 import { checkSoftRateLimit, softRateActorKey, softRateLimitTurnPostPerMinute } from "@/lib/api/softRateLimit";
 import { BillingError } from "../../../src/lib/billing/errors";
 import { estimateTokens } from "../../../src/lib/billing/estimate";
+import {
+  getOrClaimAdventureForUser,
+  isAdventureOwnershipError,
+} from "@/lib/adventure/ownership";
 import {
   commitUsageAndRelease,
   preflightHoldOrThrow,
@@ -19,6 +24,7 @@ import { executeTurn } from "@/server/turn/executeTurn";
 import { runTurnPipeline } from "@/server/turn/runTurnPipeline";
 import { reserveUsageDayLock } from "@/server/usage/reserveUsageDayLock";
 import { turnPersistence } from "./turnDb";
+import { logStructuredFailure } from "@/lib/turn/observability";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -27,7 +33,9 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 type PostBody = {
   adventureId: string;
   playerText: string;
-  userId?: string;
+  action?: string;
+  tags?: string[];
+  rollTotal?: number;
   tier?: string;
   idempotencyKey?: string;
 };
@@ -90,27 +98,76 @@ async function runModelStub(args: { prompt: string; max_tokens: number }): Promi
 
 type PostHandlerDeps = {
   executeTurn?: typeof executeTurn;
+  prismaClient?: PrismaClient;
+  getUser?: (request: Request) => AuthenticatedUser;
+  preflightHold?: typeof preflightHoldOrThrow;
 };
 
-async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
+export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
+  const db = deps.prismaClient ?? prisma;
+  const reserveBudget = deps.preflightHold ?? preflightHoldOrThrow;
   let holdKey = "";
   let leaseKeyForCleanup = "";
+  let requestBody: Partial<PostBody> | null = null;
+  let user: AuthenticatedUser;
+
+  try {
+    user = (deps.getUser ?? requireUser)(req);
+  } catch (error) {
+    if (isIdentityError(error)) {
+      return errorResponse(error.status, error.code);
+    }
+    throw error;
+  }
 
   try {
     const body = (await readJsonWithLimit<Partial<PostBody>>(req)) as Partial<PostBody>;
+    requestBody = body;
 
+    if ("save_id" in (body ?? {}) || "player_input" in (body ?? {})) {
+      return errorResponse(400, "Use adventureId and playerText");
+    }
     if (!body?.adventureId || typeof body.adventureId !== "string") {
       return errorResponse(400, "Missing/invalid adventureId");
     }
     if (!body?.playerText || typeof body.playerText !== "string") {
       return errorResponse(400, "Missing/invalid playerText");
     }
+    if (body.action !== undefined && typeof body.action !== "string") {
+      return errorResponse(400, "Missing/invalid action");
+    }
+    if (body.tags !== undefined && (!Array.isArray(body.tags) || body.tags.some((tag) => typeof tag !== "string"))) {
+      return errorResponse(400, "Missing/invalid tags");
+    }
+    if (body.rollTotal !== undefined && !Number.isFinite(body.rollTotal)) {
+      return errorResponse(400, "Missing/invalid rollTotal");
+    }
 
     const adventureId: string = body.adventureId;
     const playerText: string = body.playerText;
+    const action = typeof body.action === "string" ? body.action : undefined;
+    const tags = Array.isArray(body.tags) ? body.tags : [];
+    const rollTotal = typeof body.rollTotal === "number" ? body.rollTotal : undefined;
 
     const now = new Date();
-    const userId = typeof body.userId === "string" && body.userId.trim() ? body.userId.trim() : "anon";
+    const userId = user.id;
+    let ownership;
+    try {
+      ownership = await getOrClaimAdventureForUser({
+        db,
+        adventureId,
+        userId,
+      });
+    } catch (error) {
+      if (isAdventureOwnershipError(error)) {
+        return errorResponse(error.status, error.code);
+      }
+      throw error;
+    }
+
+    if (!ownership.adventure) {
+      return errorResponse(404, "Adventure not found");
+    }
 
     // Dev-only bypass for smoke/budget harness traffic.
     const smokeBypassHeader = req.headers.get("x-smoke-bypass-soft-rate-limit");
@@ -150,11 +207,11 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     const idempotencyKey =
       typeof body.idempotencyKey === "string" && body.idempotencyKey.trim()
         ? body.idempotencyKey.trim()
-        : hashHex(`${adventureId}|${userId}|${tier}|${monthKey}|${playerText}`);
+        : hashHex(`${adventureId}|${userId}|${tier}|${monthKey}|${playerText}|${action ?? ""}|${tags.join(",")}|${rollTotal ?? ""}`);
 
     // Idempotency replay: if we've already applied this idempotencyKey for this adventure,
     // return the previously persisted payload and do NOT re-run billing or create new Turn/TurnEvent.
-    const prevApplied = await prisma.turnEvent.findFirst({
+    const prevApplied = await db.turnEvent.findFirst({
       where: {
         adventureId,
         idempotencyKey,
@@ -183,6 +240,9 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             ok: true,
             replayed: true,
             ...parsed,
+            action: parsed.action ?? action ?? null,
+            tags: Array.isArray(parsed.tags) ? parsed.tags : tags,
+            rollTotal: parsed.rollTotal ?? rollTotal ?? null,
             ...(parsedTurn ? { turn: parsedTurn } : {}),
             stateDeltas: replayStateDeltas,
             ledgerAdds: replayLedgerAdds,
@@ -197,6 +257,9 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             replayed: true,
             idempotencyKey,
             turnEventId: prevApplied.eventId,
+            action: action ?? null,
+            tags,
+            rollTotal: rollTotal ?? null,
             stateDeltas: [],
             ledgerAdds: [],
           },
@@ -219,8 +282,8 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
 
     let preflight;
     try {
-      preflight = await prisma.$transaction((tx) =>
-        preflightHoldOrThrow(tx, {
+      preflight = await db.$transaction((tx) =>
+        reserveBudget(tx, {
           userId,
           adventureId,
           tier,
@@ -291,7 +354,7 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       usageVerdict: null,
       legacy: {
         args: {
-          prisma,
+          prisma: db,
           userId,
           adventureId,
           idempotencyKey,
@@ -315,7 +378,7 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           adventureId,
           idempotencyKey,
           normalizedInput: playerText,
-          prisma,
+          prisma: db,
           model,
           preflightMaxTokens: preflight.perTurnMaxOutputTokens,
           monthKey,
@@ -341,6 +404,9 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     return NextResponse.json(
       {
         ok: true,
+        action: action ?? null,
+        tags,
+        rollTotal: rollTotal ?? null,
         ...finalized,
         turn: {
           ...(finalized as any).turn,
@@ -358,7 +424,7 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     }
 
     if (holdKey && leaseKeyForCleanup) {
-      await releaseUsageAndLeaseBestEffort(prisma, { holdKey, leaseKey: leaseKeyForCleanup, now: new Date() });
+      await releaseUsageAndLeaseBestEffort(db, { holdKey, leaseKey: leaseKeyForCleanup, now: new Date() });
     }
 
     const e = err as { code?: string; message?: string };
@@ -369,6 +435,13 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       return errorResponse(409, "Duplicate request");
     }
 
+    logStructuredFailure({
+      context: "turn.post",
+      code: e?.code ?? "INTERNAL_ERROR",
+      message: e?.message ?? "Internal error",
+      details: { adventureId: requestBody?.adventureId, userId: user.id },
+    });
+
     console.error(err);
     return errorResponse(500, "Internal error");
   }
@@ -377,6 +450,7 @@ async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
 function makeDefaultDeps(): PostHandlerDeps {
   return {
     executeTurn,
+    prismaClient: prisma,
   };
 }
 

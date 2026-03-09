@@ -1,4 +1,5 @@
 import { POST } from "../app/api/adventure/from-scenario/route";
+import type { NextRequest } from "next/server";
 import { PrismaClient } from "../src/generated/prisma";
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -29,7 +30,7 @@ async function main() {
     }),
   });
 
-  const res = await POST(req);
+  const res = await POST(req as NextRequest);
   const text = await res.text();
   let json: any = {};
   try {

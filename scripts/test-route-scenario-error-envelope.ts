@@ -1,5 +1,6 @@
 import { POST as createPost } from "../app/api/scenario/route";
-import { POST as publishPost } from "../app/api/scenario/[id]/publish/route";
+import { publishPost } from "../app/api/scenario/[id]/publish/route";
+import { NextRequest } from "next/server";
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -19,7 +20,7 @@ async function main() {
   assert(createJson?.code === "BAD_REQUEST", "create code mismatch");
   assert(!("stack" in (createJson ?? {})), "create error leaked stack");
 
-  const publishMissingOwnerReq = new Request("http://local.test/api/scenario/x/publish", {
+  const publishMissingOwnerReq = new NextRequest("http://local.test/api/scenario/x/publish", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({}),
@@ -35,7 +36,7 @@ async function main() {
   assert(publishMissingOwnerJson?.code === "BAD_REQUEST", "publish(400) code mismatch");
   assert(!("stack" in (publishMissingOwnerJson ?? {})), "publish(400) error leaked stack");
 
-  const publishNotFoundReq = new Request("http://local.test/api/scenario/x/publish", {
+  const publishNotFoundReq = new NextRequest("http://local.test/api/scenario/x/publish", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ownerId: "owner_a" }),

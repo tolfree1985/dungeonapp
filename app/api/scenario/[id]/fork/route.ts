@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api/errorResponse";
+import { isIdentityError, requireUser } from "@/lib/api/identity";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
 import { checkSoftRateLimit, softRateActorKey, softRateLimitForkPerMinute } from "@/lib/api/softRateLimit";
@@ -11,6 +12,16 @@ async function postHandler(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: sourceScenarioId } = await params;
+  let user;
+  try {
+    user = requireUser(req);
+  } catch (error) {
+    if (isIdentityError(error)) {
+      return errorResponse(error.status, error.code);
+    }
+    throw error;
+  }
+
   let body: any;
   try {
     body = await readJsonWithLimitOrNull(req);
@@ -23,7 +34,6 @@ async function postHandler(
   }
 
   const newId = body?.newId;
-  const ownerId = body?.ownerId ?? null;
 
   if (typeof newId !== "string") {
     return errorResponse(400, "newId required");
@@ -31,7 +41,7 @@ async function postHandler(
 
   const rateLimit = checkSoftRateLimit({
     action: "scenario_fork",
-    actorKey: softRateActorKey(req, typeof ownerId === "string" ? ownerId : null),
+    actorKey: softRateActorKey(req, user.id),
     limitPerMinute: softRateLimitForkPerMinute(),
   });
   if (!rateLimit.allowed) {
@@ -48,7 +58,7 @@ async function postHandler(
 
   try {
     const forked = await prisma.$transaction(async (tx) => {
-      return forkScenario(tx as any, { sourceScenarioId, newId, ownerId });
+      return forkScenario(tx as any, { sourceScenarioId, newId, ownerId: user.id });
     });
 
     return NextResponse.json({ scenario: forked });

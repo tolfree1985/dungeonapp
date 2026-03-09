@@ -23,13 +23,22 @@ const SCRIPTS = [
   "scripts/test-tag-release.ts",
   "scripts/test-boundary-lock.ts",
   "scripts/test-artifact-manifest.ts",
+  "scripts/test-install-module.ts",
+  "scripts/test-install-tamper.ts",
+  "scripts/test-upgrade-module.ts",
 ];
 
 function runScript(script: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["--import", "tsx", script], {
       stdio: "inherit",
-      env: { ...process.env },
+    env: {
+      ...process.env,
+      DATABASE_URL:
+        process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith("file:")
+          ? process.env.DATABASE_URL
+          : "file:dev.db?connection_limit=1",
+    },
     });
 
     child.on("error", reject);

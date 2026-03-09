@@ -24,3 +24,18 @@ jobs:
 
       - name: Creator CI
         run: npm run ci:creator
+
+      - name: Runtime determinism guards
+        run: |
+          npm run test-runtime-contract
+          npm run test-resolver-golden
+          npm run test-gate-markers
+
+      - name: Replay golden
+        run: npm run test-replay-golden
+
+      - name: Process turn guard
+        run: npm run test-process-turn-replay
+
+      - name: Full release gate
+        run: npm run run-release-gate

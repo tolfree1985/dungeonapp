@@ -1,5 +1,6 @@
 import { createInitialStateV1 } from "./bootstrap";
 import { applyDeltas } from "./state";
+import type { GameStateV1 } from "./types";
 
 const FORBIDDEN_DELTA_KEYS = new Set([
   "seed",
@@ -1570,7 +1571,7 @@ export function assertLedgerConsistency(events: ReplayEvent[]): void {
       throw new Error(`LEDGER_DELTA_COUPLING_VIOLATION seq=${event.seq} reason=ledger_without_delta`);
     }
 
-    ledgerAdds.forEach((entry, idx) => {
+    ledgerAdds.forEach((entry: any, idx: number) => {
       assertLedgerTextDeterminism(entry);
       const refTurnIndex = parseLedgerTurnIndex(entry);
       if (refTurnIndex != null && !turnIndexes.has(refTurnIndex)) {
@@ -1847,7 +1848,7 @@ function assertStyleLockInvariant(
     }
 
     if ((prevValue !== undefined || nextValue !== undefined) && prevValue !== nextValue) {
-      stability[styleStabilityKey(key)] = false;
+      (stability as unknown as Record<string, boolean>)[styleStabilityKey(key)] = false;
       stability.driftCount += 1;
     }
 
@@ -2054,7 +2055,7 @@ export function deriveStyleStabilityFromEvents(
   events: Array<{ seq: number; turnJson: any }>,
   genesisState?: unknown,
 ): StyleStabilitySummary {
-  let state: unknown = genesisState ?? createInitialStateV1();
+  let state: GameStateV1 = (genesisState ?? createInitialStateV1()) as GameStateV1;
   const sortedEvents = [...events].sort((a, b) => a.seq - b.seq);
   const flipCounts = new Map<(typeof STYLE_LOCK_KEYS)[number], number>();
   const stability: StyleStabilitySummary = {

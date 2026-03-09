@@ -42,7 +42,7 @@ async function main() {
   const record = {
     releaseRecordVersion: 1,
     commitSha,
-    tagName: provenance.tagName ?? null,
+    tagName: (provenance as { tagName?: string }).tagName ?? null,
     rcArtifactDigest: artifactDigest,
     manifestSha256: manifestSha,
     supportManifestSha256: supportSha,

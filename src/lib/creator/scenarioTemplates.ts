@@ -6,7 +6,7 @@ type ScenarioTemplate = {
 
 const BASELINE_SCENARIO: Record<string, unknown> = {
   version: "1",
-  id: "deterministic-baseline",
+  id: "deterministic-baseline-smoke-1",
   title: "Deterministic Baseline",
   summary: "Minimal deterministic scenario scaffold.",
   initialState: {
@@ -17,14 +17,30 @@ const BASELINE_SCENARIO: Record<string, unknown> = {
     inventory: [],
     relationships: {},
     quests: {},
-    flags: {},
+    flags: {
+      toneLock: "locked",
+      genreLock: "locked",
+      pacingLock: "locked",
+    },
     memory: [],
   },
   start: {
     sceneId: "scene_start",
     prompt: "You take a breath and begin.",
   },
-  turns: [],
+  turns: [
+    {
+      turnIndex: 0,
+      stateDeltas: [{ op: "flag.set", key: "smokeStarted", value: true }],
+      ledgerAdds: [
+        {
+          message: "You commit to the first move.",
+          kind: "setup",
+          refTurnIndex: 0,
+        },
+      ],
+    },
+  ],
 };
 
 export const SCENARIO_TEMPLATE_LIBRARY: ScenarioTemplate[] = [
@@ -60,10 +76,7 @@ export const SCENARIO_TEMPLATE_LIBRARY: ScenarioTemplate[] = [
       turns: [
         {
           turnIndex: 0,
-          stateDeltas: [
-            { path: "stats.heat", op: "set", value: 1 },
-            { path: "relationships.watchCaptain", op: "set", value: "suspicious" },
-          ],
+          stateDeltas: [{ op: "flag.set", key: "dockAttentionRaised", value: true }],
           ledgerAdds: [
             { message: "The captain demands answers.", kind: "social", refTurnIndex: 0 },
             { message: "Attention rises at the docks.", kind: "pressure", refTurnIndex: 0 },
@@ -104,10 +117,7 @@ export const SCENARIO_TEMPLATE_LIBRARY: ScenarioTemplate[] = [
       turns: [
         {
           turnIndex: 0,
-          stateDeltas: [
-            { path: "relationships.council", op: "set", value: "tense" },
-            { path: "stats.suspicion", op: "set", value: 1 },
-          ],
+          stateDeltas: [{ op: "flag.set", key: "councilTense", value: true }],
           ledgerAdds: [
             { message: "A rival faction questions your loyalty.", kind: "political", refTurnIndex: 0 },
             { message: "The chamber mood shifts to tense.", kind: "social", refTurnIndex: 0 },
@@ -148,10 +158,7 @@ export const SCENARIO_TEMPLATE_LIBRARY: ScenarioTemplate[] = [
       turns: [
         {
           turnIndex: 0,
-          stateDeltas: [
-            { path: "inventory", op: "set", value: ["torch", "rope"] },
-            { path: "stats.danger", op: "set", value: 1 },
-          ],
+          stateDeltas: [{ op: "flag.set", key: "ropeSecured", value: true }],
           ledgerAdds: [
             { message: "You secure extra rope before descent.", kind: "resource", refTurnIndex: 0 },
             { message: "The ruins feel unstable beneath your feet.", kind: "threat", refTurnIndex: 0 },

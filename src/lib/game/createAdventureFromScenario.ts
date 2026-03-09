@@ -1,4 +1,6 @@
-import { buildAdventureStateFromScenario, loadScenarioV1 } from "./adventureFromScenario";
+import { buildAdventureStateFromScenario } from "./adventureFromScenario";
+import type { ScenarioV1 } from "@/lib/scenario/scenarioValidator";
+import { normalizeScenarioContent } from "@/lib/scenario/scenarioValidator";
 
 type TxLike = {
   adventure: {
@@ -7,6 +9,9 @@ type TxLike = {
   };
   turn: {
     create: (args: any) => Promise<any>;
+  };
+  scenario: {
+    findUnique: (args: any) => Promise<{ id: string; contentJson: unknown } | null>;
   };
 };
 
@@ -22,8 +27,15 @@ export async function createAdventureFromScenarioId(args: {
 
   const existing = await tx.adventure.findUnique({
     where: { id: adventureId },
-    select: { state: true },
+    select: { state: true, ownerId: true },
   });
+
+  if (existing?.ownerId && ownerId && existing.ownerId !== ownerId) {
+    const err: any = new Error("ADVENTURE_FORBIDDEN");
+    err.code = "ADVENTURE_FORBIDDEN";
+    err.status = 403;
+    throw err;
+  }
 
   if (existing?.state && !args.overwrite) {
     const existingScenarioId = (existing.state as any)?._meta?.scenarioId;
@@ -44,7 +56,7 @@ export async function createAdventureFromScenarioId(args: {
     };
   }
 
-  const scenario = loadScenarioV1(scenarioId);
+  const scenario = await loadScenarioFromDb(tx, scenarioId);
   const { state, openingPrompt } = buildAdventureStateFromScenario(scenario);
 
   const isFreshCreate = !existing;
@@ -86,4 +98,20 @@ export async function createAdventureFromScenarioId(args: {
   }
 
   return { adventureId: adv.id as string, state: adv.state, openingPrompt, scenarioId };
+}
+
+async function loadScenarioFromDb(tx: TxLike, scenarioId: string) {
+  const row = await tx.scenario.findUnique({
+    where: { id: scenarioId },
+    select: { id: true, contentJson: true },
+  });
+
+  if (!row) {
+    const err: any = new Error(`Scenario not found: ${scenarioId}`);
+    err.code = "SCENARIO_NOT_FOUND";
+    err.status = 404;
+    throw err;
+  }
+
+  return normalizeScenarioContent(row.contentJson, row.id);
 }

@@ -8,18 +8,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Tier {
-  NOMAD
-  TRAILBLAZOR
-  CHRONICLER
-  LOREMASTER
-}
-
-enum ScenarioVisibility {
-  PRIVATE
-  PUBLIC
-}
-
 model Adventure {
   id              String      @id
   latestTurnIndex Int         @default(0)
@@ -110,24 +98,23 @@ model UserUsage {
 }
 
 model TurnBudgetHold {
-  id                   String     @id @default(cuid())
-  holdKey              String
+  id                   String    @id @default(cuid())
+  holdKey              String    @unique
   userId               String
   adventureId          String?
   tier                 Tier
   monthKey             String
-  reservedTurns        Int        @default(1)
-  reservedInputTokens  Int        @default(0)
-  reservedOutputTokens Int        @default(0)
-  reservedTotal        Int        @default(0)
-  status               String     @default("HELD")
+  reservedTurns        Int       @default(1)
+  reservedInputTokens  Int       @default(0)
+  reservedOutputTokens Int       @default(0)
+  reservedTotal        Int       @default(0)
+  status               String    @default("HELD")
   expiresAt            DateTime
   releasedAt           DateTime?
   consumedAt           DateTime?
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  @@unique([holdKey])
   @@index([holdKey])
   @@index([userId, monthKey])
   @@index([adventureId])
@@ -138,14 +125,13 @@ model TurnLease {
   id          String    @id @default(cuid())
   adventureId String    @unique
   userId      String
-  leaseKey    String
+  leaseKey    String    @unique
   expiresAt   DateTime
   acquiredAt  DateTime  @default(now())
   releasedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  @@unique([leaseKey])
   @@index([leaseKey])
   @@index([userId])
   @@index([expiresAt])
@@ -167,13 +153,13 @@ model Scenario {
 }
 
 model Save {
-  id             String    @id
-  scenarioId     String
-  nextTurnIndex  Int       @default(0)
-  stateJson      Json
-  ledgerJson     Json
-  styleLockJson  Json?
-  turns          SaveTurn[]
+  id            String     @id
+  scenarioId    String
+  nextTurnIndex Int        @default(0)
+  stateJson     Json
+  ledgerJson    Json
+  styleLockJson Json?
+  turns         SaveTurn[]
 
   @@index([scenarioId])
 }
@@ -195,8 +181,20 @@ model SaveTurn {
 model UsageDay {
   key        String
   day        String
-  turns      Int      @default(0)
+  turns      Int       @default(0)
   lastTurnAt DateTime?
 
   @@id([key, day])
+}
+
+enum Tier {
+  NOMAD
+  TRAILBLAZOR
+  CHRONICLER
+  LOREMASTER
+}
+
+enum ScenarioVisibility {
+  PRIVATE
+  PUBLIC
 }

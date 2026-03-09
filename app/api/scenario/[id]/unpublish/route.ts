@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api/errorResponse";
+import { isIdentityError, requireUser } from "@/lib/api/identity";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
 import { prisma } from "@/lib/prisma";
@@ -9,6 +10,16 @@ async function postHandler(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  let user;
+  try {
+    user = requireUser(req);
+  } catch (error) {
+    if (isIdentityError(error)) {
+      return errorResponse(error.status, error.code);
+    }
+    throw error;
+  }
+
   let body: any;
   try {
     body = await readJsonWithLimitOrNull(req);
@@ -19,13 +30,6 @@ async function postHandler(
     console.error(error);
     return errorResponse(500, "Internal error");
   }
-
-  const ownerId = body?.ownerId ?? null;
-
-  if (typeof ownerId !== "string") {
-    return errorResponse(400, "ownerId required");
-  }
-
   try {
     const existing = await prisma.scenario.findUnique({
       where: { id },
@@ -36,7 +40,7 @@ async function postHandler(
       return errorResponse(404, "SCENARIO_NOT_FOUND");
     }
 
-    if (existing.ownerId !== ownerId) {
+    if (existing.ownerId !== user.id) {
       return errorResponse(403, "NOT_OWNER");
     }
 
@@ -54,3 +58,10 @@ async function postHandler(
 }
 
 export const POST = withRouteLogging("POST /api/scenario/[id]/unpublish", postHandler);
+
+export async function unpublishPost(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  return postHandler(req, context);
+}

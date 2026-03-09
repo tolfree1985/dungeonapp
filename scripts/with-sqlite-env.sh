@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-unset DATABASE_URL
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+: "${DATABASE_URL:=file:./__migrate_usage_day.db}"
+export DATABASE_URL
+export NODE_ENV="${NODE_ENV:-test}"
+
 mkdir -p prisma
-export DATABASE_URL="file:${PWD}/prisma/dev.db?connection_limit=1"
 npx prisma migrate deploy >/dev/null
 exec "$@"

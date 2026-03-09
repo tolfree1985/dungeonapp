@@ -118,7 +118,7 @@ async function main(): Promise<void> {
   const bundleJson = loadJson<unknown>(bundleJsonPath);
 
   const recordedSupport = loadJson<SupportManifestLike>(supportPath);
-  const rebuiltSupport = (await buildSupportManifestFromBundle(bundleJson)) as SupportManifestLike;
+  const rebuiltSupport = (await buildSupportManifestFromBundle(bundleJson)) as unknown as SupportManifestLike;
 
   const recordedSupportOrdered = JSON.parse(serializeSupportManifest(recordedSupport as any));
   const rebuiltSupportOrdered = JSON.parse(serializeSupportManifest(rebuiltSupport as any));

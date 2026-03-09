@@ -188,7 +188,7 @@ async function main(): Promise<void> {
   }
 
   const { bundleJson, sourceIsJsonFile } = loadBundleJson(bundlePath);
-  const supportManifest = (await buildSupportManifestFromBundle(bundleJson)) as SupportManifestLike;
+  const supportManifest = (await buildSupportManifestFromBundle(bundleJson)) as unknown as SupportManifestLike;
 
   const supportManifestOrdered = JSON.parse(serializeSupportManifest(supportManifest as any));
   writeJsonStable(join(outDir, "support_manifest.json"), supportManifestOrdered);

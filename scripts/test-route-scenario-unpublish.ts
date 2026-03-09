@@ -1,5 +1,6 @@
 import { PrismaClient } from "../src/generated/prisma";
-import { POST as unpublishPost } from "../app/api/scenario/[id]/unpublish/route";
+import { unpublishPost } from "../app/api/scenario/[id]/unpublish/route";
+import { NextRequest } from "next/server";
 
 function assert(cond: any, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -22,13 +23,13 @@ async function main() {
     },
   });
 
-  const req = new Request("http://local.test/api/scenario/" + id + "/unpublish", {
+  const req = new NextRequest("http://local.test/api/scenario/" + id + "/unpublish", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ownerId: "owner_a" }),
   });
 
-  const res = await unpublishPost(req, { params: { id } } as any);
+  const res = await unpublishPost(req, { params: Promise.resolve({ id }) } as any);
   const json = await res.json();
 
   assert(json?.scenario?.id === id, "id mismatch");

@@ -436,7 +436,7 @@ async function main() {
       supportPackage.replay.telemetry.maxLedgerPerTurn === manifest.telemetry.maxLedgerPerTurn;
     const computedDriftSeverity = classifyDriftSeverity(supportPackage.originalBundle, manifest);
     const driftBlockMissing = !supportPackage.drift;
-    const driftParityMismatch = !driftBlockMissing && supportPackage.drift.severity !== computedDriftSeverity;
+    const driftParityMismatch = !driftBlockMissing && supportPackage.drift?.severity !== computedDriftSeverity;
 
     console.log(`REPRO_PACK_SOURCE_HASH ${supportPackageSourceHash}`);
     console.log("REPRO_PACK_VALIDATION");

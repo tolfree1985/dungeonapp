@@ -1,7 +1,7 @@
-type RouteHandler<TArgs extends unknown[]> = (...args: TArgs) => Promise<Response> | Response;
-
-export function withRouteLogging<TArgs extends unknown[]>(route: string, handler: RouteHandler<TArgs>) {
-  return async (...args: TArgs): Promise<Response> => {
+export function withRouteLogging<
+  T extends (...args: any[]) => Promise<Response> | Response,
+>(route: string, handler: T): T {
+  return (async (...args: Parameters<T>): Promise<Response> => {
     const startedAt = Date.now();
     let status = 500;
 
@@ -22,5 +22,5 @@ export function withRouteLogging<TArgs extends unknown[]>(route: string, handler
         }),
       );
     }
-  };
+  }) as T;
 }

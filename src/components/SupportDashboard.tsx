@@ -564,6 +564,8 @@ function readPathPerTurnTelemetry(bundle: unknown, candidates: string[][]): PerT
         costTypes,
         escalation,
         stakesReason: [],
+        capReason: "NONE",
+        capExplanation: "",
       });
     }
 
@@ -1440,13 +1442,15 @@ export function SupportDashboard({
 
   const fallbackSessionMetrics = useMemo<SessionMetricsV1>(() => {
     const turnJsons = sessionMetricEvents.map((entry) => entry.turnJson);
-    return deriveSessionMetrics(sessionMetricEvents, {
-      difficultyState: deriveDifficultyStateFromTurnJson(turnJsons),
-      causalCoverage: {
-        totalDeltas: replayTelemetry.totalStateDeltaCount,
-        unexplainedDeltas: 0,
-      },
-    });
+      return deriveSessionMetrics(sessionMetricEvents, {
+        difficultyState: deriveDifficultyStateFromTurnJson(turnJsons),
+        causalCoverage: {
+          totalDeltas: replayTelemetry.totalStateDeltaCount,
+          unexplainedDeltas: 0,
+          explainedDeltas: 0,
+          coverageRatio: 0,
+        },
+      });
   }, [replayTelemetry.totalStateDeltaCount, sessionMetricEvents]);
 
   const sessionMetrics = useMemo<SessionMetricsV1>(
@@ -1546,6 +1550,8 @@ export function SupportDashboard({
       telemetryReference.turnCount != null &&
       telemetryReference.turnCount !== replayTelemetry.turnCount;
     const perTurnDrift = !!firstPerTurnDrift;
+    const fallbackTelemetryTurnCount = telemetryReference.turnCount ?? replayTelemetry.turnCount ?? 0;
+    const fallbackReplayTurnCount = replayTelemetry.turnCount ?? fallbackTelemetryTurnCount;
 
     if (hashDrift) {
       details.push("FINAL_STATE_HASH mismatch");
@@ -1567,7 +1573,7 @@ export function SupportDashboard({
     if (!firstDrift) {
       if (structuralDrift) {
         firstDrift = {
-          turnIndex: Math.min(telemetryReference.turnCount, replayTelemetry.turnCount),
+          turnIndex: Math.min(fallbackTelemetryTurnCount, fallbackReplayTurnCount),
           metric: "missing_turn",
           derived: null,
           reference: null,

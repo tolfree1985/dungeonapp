@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { creatorRouteError } from "@/lib/api/creatorRouteError";
+import { isIdentityError, requireUser, type AuthenticatedUser } from "@/lib/api/identity";
 import { isRequestBodyTooLargeError, readJsonWithLimitOrNull } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
 import {
@@ -9,8 +10,29 @@ import {
 } from "@/lib/api/softRateLimit";
 import { prisma } from "@/lib/prisma";
 import { createScenario } from "@/lib/scenario/scenarioRepo";
+import {
+  ScenarioInvalidError,
+  normalizeScenarioContent,
+} from "@/lib/scenario/scenarioValidator";
+import { logStructuredFailure } from "@/lib/turn/observability";
 
-async function postHandler(req: Request) {
+type ScenarioRouteDeps = {
+  prismaClient?: typeof prisma;
+  getUser?: (request: Request) => AuthenticatedUser;
+};
+
+export async function postHandler(req: Request, deps: ScenarioRouteDeps = {}) {
+  const db = deps.prismaClient ?? prisma;
+  let user;
+  try {
+    user = (deps.getUser ?? requireUser)(req);
+  } catch (error) {
+    if (isIdentityError(error)) {
+      return creatorRouteError(error.status, error.message, error.code);
+    }
+    throw error;
+  }
+
   let body: any;
   try {
     body = await readJsonWithLimitOrNull(req);
@@ -27,7 +49,6 @@ async function postHandler(req: Request) {
   const summary = body?.summary ?? null;
   const contentJson = body?.contentJson;
   const visibility = body?.visibility ?? "PRIVATE";
-  const ownerId = body?.ownerId ?? null;
 
   if (typeof id !== "string" || typeof title !== "string" || contentJson == null) {
     return creatorRouteError(400, "id, title, contentJson required", "BAD_REQUEST");
@@ -35,7 +56,7 @@ async function postHandler(req: Request) {
 
   const rateLimit = checkSoftRateLimit({
     action: "scenario_create",
-    actorKey: softRateActorKey(req, typeof ownerId === "string" ? ownerId : null),
+    actorKey: softRateActorKey(req, user.id),
     limitPerMinute: softRateLimitCreatePerMinute(),
   });
   if (!rateLimit.allowed) {
@@ -51,8 +72,14 @@ async function postHandler(req: Request) {
   }
 
   try {
-    const created = await prisma.$transaction(async (tx) => {
-      return createScenario(tx as any, { id, title, summary, contentJson, visibility, ownerId });
+    const normalized = normalizeScenarioContent(contentJson, id);
+    const created = await createScenario(db as any, {
+      id,
+      title,
+      summary,
+      contentJson: normalized,
+      visibility,
+      ownerId: user.id,
     });
 
     return NextResponse.json({ scenario: created });
@@ -63,9 +90,27 @@ async function postHandler(req: Request) {
         used: e?.details?.used ?? null,
       });
     }
+    if (e?.code === "SCENARIO_ID_EXISTS") {
+      return creatorRouteError(409, "SCENARIO_ID_EXISTS", "SCENARIO_ID_EXISTS");
+    }
+    if (e instanceof ScenarioInvalidError) {
+      logStructuredFailure({
+        context: "scenario.create",
+        code: e.code,
+        message: e.message,
+        details: { reason: e.reason, scenarioId: id },
+      });
+      return creatorRouteError(400, e.message, e.code, { reason: e.reason });
+    }
     console.error(e);
+    logStructuredFailure({
+      context: "scenario.create.unhandled",
+      code: e?.code ?? "INTERNAL_ERROR",
+      message: e?.message ?? "Internal error",
+      details: { scenarioId: id },
+    });
     return creatorRouteError(500, "Internal error", "INTERNAL_ERROR");
   }
 }
 
-export const POST = withRouteLogging("POST /api/scenario", postHandler);
+export const POST = withRouteLogging("POST /api/scenario", (req: Request) => postHandler(req));

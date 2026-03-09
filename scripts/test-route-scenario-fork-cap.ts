@@ -1,17 +1,18 @@
 import { PrismaClient } from "../src/generated/prisma";
 import { POST as forkPost } from "../app/api/scenario/[id]/fork/route";
+import { NextRequest } from "next/server";
 
 function assert(cond: any, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
 }
 
 async function callFork(args: { sourceScenarioId: string; newId: string; ownerId: string }) {
-  const req = new Request(`http://local.test/api/scenario/${args.sourceScenarioId}/fork`, {
+  const req = new NextRequest(`http://local.test/api/scenario/${args.sourceScenarioId}/fork`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ newId: args.newId, ownerId: args.ownerId }),
   });
-  const res = await forkPost(req, { params: { id: args.sourceScenarioId } } as any);
+  const res = await forkPost(req, { params: Promise.resolve({ id: args.sourceScenarioId }) } as any);
   const json = await res.json().catch(() => ({}));
   return { status: res.status, json };
 }

@@ -1,40 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
-
-type ScenarioV1 = {
-  id: string;
-  initialState: unknown;
-  start?: { prompt?: string };
-  memoryCards?: unknown;
-  locks?: unknown;
-};
-
-function assertSafeScenarioId(s: string) {
-  // keep tight: maps directly to scenarios/<id>.scenario.v1.json
-  if (!/^[a-z0-9][a-z0-9\-]{0,63}$/i.test(s)) {
-    throw new Error(`Invalid scenarioId: ${s}`);
-  }
-}
-
-export function loadScenarioV1(scenarioId: string): ScenarioV1 {
-  assertSafeScenarioId(scenarioId);
-  const file = path.join(process.cwd(), "scenarios", `${scenarioId}.scenario.v1.json`);
-  const raw = fs.readFileSync(file, "utf8");
-  const s = JSON.parse(raw) as ScenarioV1;
-
-  if (!s || typeof s !== "object") throw new Error(`Scenario ${scenarioId} malformed`);
-  if (s.id !== scenarioId) {
-    // optional: allow mismatch, but safer to catch wrong file
-    throw new Error(`Scenario id mismatch: file=${scenarioId} json.id=${(s as any).id}`);
-  }
-  if (s.initialState == null) throw new Error(`Scenario ${scenarioId} missing initialState`);
-  if (typeof s.start?.prompt !== "string") throw new Error(`Scenario ${scenarioId} missing start.prompt`);
-
-  return s;
-}
+import type { ScenarioV1 } from "@/lib/scenario/scenarioValidator";
 
 export function buildAdventureStateFromScenario(s: ScenarioV1) {
   const openingPrompt = s.start!.prompt as string;
+  const title = typeof (s as any).title === "string" ? (s as any).title : undefined;
+  const summary = typeof (s as any).summary === "string" ? (s as any).summary : undefined;
 
   const base = s.initialState;
   const isPlainObject = typeof base === "object" && base !== null && !Array.isArray(base);
@@ -46,6 +15,8 @@ export function buildAdventureStateFromScenario(s: ScenarioV1) {
         _meta: {
           ...(((base as any)._meta as object) ?? {}),
           scenarioId: s.id,
+          scenarioTitle: title,
+          scenarioSummary: summary,
           openingPrompt,
           memoryCards: s.memoryCards ?? undefined,
           locks: s.locks ?? undefined,
@@ -54,6 +25,8 @@ export function buildAdventureStateFromScenario(s: ScenarioV1) {
     : {
         _meta: {
           scenarioId: s.id,
+          scenarioTitle: title,
+          scenarioSummary: summary,
           openingPrompt,
           memoryCards: s.memoryCards ?? undefined,
           locks: s.locks ?? undefined,

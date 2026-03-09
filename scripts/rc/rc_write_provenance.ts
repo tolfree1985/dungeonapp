@@ -65,9 +65,11 @@ const tagName = (() => { const i = process.argv.indexOf("--tag"); const v = i >=
   if (existsSync(provenancePath)) {
     const loaded = JSON.parse(readFileSync(provenancePath, "utf8")) as RcProvenance;
 
-    if (loaded.commitSha !== commit && loaded.commit !== commit) {
+    const loadedCommitSha = (loaded as { commitSha?: string }).commitSha;
+    const loadedCommitLegacy = (loaded as { commit?: string }).commit;
+    if ((loadedCommitSha && loadedCommitSha !== commit) || (loadedCommitLegacy && loadedCommitLegacy !== commit)) {
       throw new Error(
-        `existing provenance commit mismatch: found=${loaded.commitSha ?? loaded.commit}`
+        `existing provenance commit mismatch: found=${loadedCommitSha ?? loadedCommitLegacy}`
       );
     }
 

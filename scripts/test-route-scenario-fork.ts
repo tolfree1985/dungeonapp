@@ -2,6 +2,7 @@ import { PrismaClient } from "../src/generated/prisma";
 
 // Import the route handler directly (no HTTP).
 import { POST as forkPost } from "../app/api/scenario/[id]/fork/route";
+import { NextRequest } from "next/server";
 
 function assert(cond: any, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -27,13 +28,13 @@ async function main() {
     },
   });
 
-  const req = new Request("http://local.test/api/scenario/" + srcId + "/fork", {
+  const req = new NextRequest("http://local.test/api/scenario/" + srcId + "/fork", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ newId, ownerId: "user_b" }),
   });
 
-  const res = await forkPost(req, { params: { id: srcId } } as any);
+  const res = await forkPost(req, { params: Promise.resolve({ id: srcId }) } as any);
   const json = await res.json();
 
   assert(json?.scenario?.id === newId, "fork id mismatch");

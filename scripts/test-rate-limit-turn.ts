@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 
 // IMPORTANT: relative import (no @/ alias at runtime)
-import { POST as TurnPOST } from "../app/api/turn/route";
+import { postTurn as postTurnRoute } from "../app/api/turn/route";
 
 // Ensure env is set BEFORE the module executes its limiter config.
 // (This script is the entrypoint, so we're safe.)
 process.env.SOFT_RATE_LIMIT_TURN_POST_PER_MIN ??= "1";
 // Make sure we are not in production for local deterministic tests.
-process.env.NODE_ENV ??= "test";
+const env = process.env as Record<string, string | undefined>;
+env.NODE_ENV ??= "test";
 
-async function postTurn(userId: string, adventureId: string, playerText: string) {
+async function runPostTurn(userId: string, adventureId: string, playerText: string) {
   const req = new Request("http://local/api/turn", {
     method: "POST",
     headers: {
@@ -25,7 +26,7 @@ async function postTurn(userId: string, adventureId: string, playerText: string)
     }),
   });
 
-  const res = await TurnPOST(req);
+  const res = await postTurnRoute(req);
   const json = await res.json().catch(() => null);
   return { res, json };
 }
@@ -37,11 +38,11 @@ async function main() {
 
   // First request should not be rate limited (it might 200, 400, or 429 due to other guards,
   // but we expect the limiter NOT to trigger on the first request at limit=1/min).
-  const r1 = await postTurn(userId, adventureId, playerText);
+  const r1 = await runPostTurn(userId, adventureId, playerText);
   assert.notEqual(r1.res.status, 429, `first request unexpectedly rate limited: ${JSON.stringify(r1.json)}`);
 
   // Second request should be rate limited at 1/min
-  const r2 = await postTurn(userId, adventureId, playerText);
+  const r2 = await runPostTurn(userId, adventureId, playerText);
   assert.equal(r2.res.status, 429, `second request expected 429, got ${r2.res.status}: ${JSON.stringify(r2.json)}`);
   assert.equal(r2.json?.error, "RATE_LIMITED");
 

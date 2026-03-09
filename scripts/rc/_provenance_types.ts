@@ -4,11 +4,14 @@ import { createHash } from "node:crypto";
 
 export type RcProvenance = {
   rcProvenanceVersion: 1;
+  commit?: string;
   commitSha: string;
+  artifactDigest?: string;
   rcArtifactDigest: string;
   manifestDigest: string;
   supportManifestDigest: string;
   tag?: string | null;
+  tagName?: string | null;
   createdAtIso: string;
 };
 

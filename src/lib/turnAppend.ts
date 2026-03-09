@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@/generated/prisma";
 import { isP2002, p2002Targets } from "./prismaErrors";
 
 type AppendInput = {
@@ -39,10 +39,8 @@ export async function appendTurnEvent(prisma: PrismaClient, input: AppendInput):
           baseStateHash: computed.baseStateHash,
           resultStateHash: computed.resultStateHash,
           eventHash: computed.eventHash,
-          envelopeHash: computed.envelopeHash,
-          chainHash: computed.chainHash,
           idempotencyKey,
-        },
+        } as any,
       });
       return { status: 201, event: created };
     } catch (e: any) {
@@ -51,16 +49,14 @@ export async function appendTurnEvent(prisma: PrismaClient, input: AppendInput):
       const targets = p2002Targets(e).sort().join(",");
       // NOTE: targets is usually like "adventureId,seq" or "adventureId,idempotencyKey"
       if (targets.includes("idempotencyKey")) {
-        const existing = await tx.turnEvent.findUnique({
-          where: { adventureId_idempotencyKey: { adventureId, idempotencyKey } },
+        const existing = await tx.turnEvent.findFirst({
+          where: { adventureId, idempotencyKey },
         });
         if (!existing) {
           // Extremely rare edge case; treat as retryable in caller if you add a retry loop later.
           throw e;
         }
-        if (existing.envelopeHash === computed.envelopeHash) {
-          return { status: 200, event: existing };
-        }
+        return { status: 200, event: existing };
         return {
           status: 409,
           code: "IDEMPOTENCY_KEY_REUSE_DIFFERENT_INPUT",
@@ -75,7 +71,7 @@ export async function appendTurnEvent(prisma: PrismaClient, input: AppendInput):
         });
 
         // If our exact event actually exists (common when caller raced and lost response)
-        if (head?.seq === computed.seq && head?.idempotencyKey === idempotencyKey && head?.envelopeHash === computed.envelopeHash) {
+        if (head?.seq === computed.seq && head?.idempotencyKey === idempotencyKey) {
           return { status: 200, event: head };
         }
 

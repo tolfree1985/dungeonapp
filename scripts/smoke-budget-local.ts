@@ -1,4 +1,4 @@
-import { POST } from "../app/api/turn/route";
+import { postTurn } from "../app/api/turn/route";
 import { prisma } from "../src/lib/prisma";
 import { __debugCaps } from "../src/lib/billing/tiers";
 
@@ -8,6 +8,7 @@ type TurnReq = {
   userId?: string;
   tier?: string;
   idempotencyKey?: string;
+  roll_total?: number;
 };
 
 const SMOKE_DEBUG = process.env.SMOKE_DEBUG === "1";
@@ -17,17 +18,39 @@ const debug = (...args: unknown[]) => {
 
 type BudgetExceededCode = "CONCURRENCY_LIMIT_EXCEEDED" | "MONTHLY_TOKEN_CAP_EXCEEDED";
 
-async function callTurn(body: TurnReq) {
+const SMOKE_SAVE_ID = process.env.SAVE_ID ?? "smoke_budget_save";
+const SMOKE_SCENARIO_ID = process.env.SCENARIO_ID ?? "smoke_budget_scenario";
+const SMOKE_ACTION = (process.env.SMOKE_ACTION as "STEALTH" | "PERSUADE" | "INVESTIGATE" | "FORCE") ?? "STEALTH";
+const SMOKE_TAGS = (process.env.SMOKE_TAGS ?? "smoke").split(",").map((t) => t.trim()).filter(Boolean) as string[];
+const SMOKE_ROLL = Number(process.env.SMOKE_ROLL ?? "8");
+
+type CallOpts = { bypassRateLimit?: boolean; extraHeaders?: Record<string, string> };
+async function callTurn(body: TurnReq, opts: CallOpts = { bypassRateLimit: true }) {
+  const payload = {
+    save_id: SMOKE_SAVE_ID,
+    scenario_id: SMOKE_SCENARIO_ID,
+    player_input: body.playerText,
+    action: SMOKE_ACTION,
+    tags: SMOKE_TAGS,
+    roll_total: body.roll_total ?? SMOKE_ROLL,
+    turn_id: body.idempotencyKey,
+    // keep legacy fields for compatibility
+    adventureId: body.adventureId,
+    userId: body.userId,
+    tier: body.tier,
+  };
+
   const req = new Request("http://local/api/turn", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-smoke-bypass-soft-rate-limit": "1",
+      ...(opts.bypassRateLimit ? { "x-smoke-bypass-soft-rate-limit": "1" } : {}),
+      ...(opts.extraHeaders ?? {}),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
 
-  const res = await POST(req);
+  const res = await postTurn(req);
   const text = await res.text();
   let json: any = {};
   try {
@@ -71,26 +94,44 @@ function assertBudgetExceeded429(
 async function resetTestState(prisma: typeof import("../src/lib/prisma").prisma, args: { adventureId: string; userId: string }) {
   const { adventureId, userId } = args;
 
-  // wipe only what the smoke uses (deterministic)
   await prisma.turnLease.deleteMany({ where: { userId } });
   await prisma.turnBudgetHold.deleteMany({ where: { userId } });
   await prisma.userUsage.deleteMany({ where: { userId } });
 
-  // --- TurnEvent has self-referential prevEventId with onDelete: Restrict
-  // Null out links first, then delete.
-  await prisma.turnEvent.updateMany({
-    where: { adventureId },
-    data: { prevEventId: null },
-  });
+  await prisma.turnEvent.updateMany({ where: { adventureId }, data: { prevEventId: null } });
   await prisma.turnEvent.deleteMany({ where: { adventureId } });
 
   await prisma.turn.deleteMany({ where: { adventureId } });
   await prisma.adventure.deleteMany({ where: { id: adventureId } });
 
-  // recreate the adventure so /api/turn doesn’t 404
+  await prisma.saveTurn.deleteMany({ where: { saveId: SMOKE_SAVE_ID } });
+  await prisma.save.deleteMany({ where: { id: SMOKE_SAVE_ID } });
+
+  await prisma.scenario.upsert({
+    where: { id: SMOKE_SCENARIO_ID },
+    update: {},
+    create: {
+      id: SMOKE_SCENARIO_ID,
+      title: "Smoke Scenario",
+      summary: "scenario for smoke budget",
+      contentJson: { type: "empty" },
+    },
+  });
+
+  await prisma.save.create({
+    data: {
+      id: SMOKE_SAVE_ID,
+      scenarioId: SMOKE_SCENARIO_ID,
+      nextTurnIndex: 1,
+      stateJson: { world: { heat: 0, suspicion: 0, complications: [] } },
+      ledgerJson: [],
+    },
+  });
+
   await prisma.adventure.create({
     data: { id: adventureId, latestTurnIndex: 0 },
   });
+
 }
 
 async function main() {
@@ -142,6 +183,9 @@ async function main() {
 
   delete process.env.BILLING_TEST_LATENCY_MS;
 
+  console.log("c1 body", JSON.stringify(c1.json));
+  console.log("c2 body", JSON.stringify(c2.json));
+
   debug("concurrency", c1.status, c2.status);
   if (!(c1.status === 429 || c2.status === 429)) {
     debug("c1 body", JSON.stringify(c1.json, null, 2));
@@ -166,8 +210,18 @@ async function main() {
     let hit: any = null;
     let capIdempotencyKey: string | null = null;
     for (let i = 0; i < 300; i++) {
-      const idempotencyKey = `smoke-cap-${i}`;
-      const r = await callTurn({ adventureId, playerText: `spam ${i}`, userId, tier, idempotencyKey });
+      const idempotencyKey = `smoke-cap-${String(i).padStart(3, "0")}`;
+      const r = await callTurn(
+        { adventureId, playerText: `spam ${i}`, userId, tier, idempotencyKey },
+        {
+          extraHeaders: {
+            "x-idempotency-key": idempotencyKey,
+            "x-billing-test-cap": "2000",
+            "x-billing-test-units-per-turn": "10",
+            "x-billing-bucket": "cap-loop",
+          },
+        },
+      );
       if (r.status === 429) {
         hit = r;
         capIdempotencyKey = idempotencyKey;
