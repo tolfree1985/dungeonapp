@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "../../../src/generated/prisma";
+import { prisma } from "@/lib/prisma";
 import { errorResponse } from "@/lib/api/errorResponse";
 import { isIdentityError, requireUser, type AuthenticatedUser } from "@/lib/api/identity";
 import { isRequestBodyTooLargeError, readJsonWithLimit } from "@/lib/api/readJsonWithLimit";
@@ -25,10 +25,6 @@ import { runTurnPipeline } from "@/server/turn/runTurnPipeline";
 import { reserveUsageDayLock } from "@/server/usage/reserveUsageDayLock";
 import { turnPersistence } from "./turnDb";
 import { logStructuredFailure } from "@/lib/turn/observability";
-
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 type PostBody = {
   adventureId: string;

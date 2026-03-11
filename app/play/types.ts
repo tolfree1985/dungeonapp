@@ -23,4 +23,8 @@ export type PlayStatePanel = {
   inventory: Array<{ name: string; detail?: string }>;
   quests: Array<{ title: string; status?: string; detail?: string }>;
   relationships: Array<{ name: string; status?: string; detail?: string }>;
+  location?: string;
+  timeOfDay?: string;
+  ambience?: string;
+  contextTags?: string[];
 };

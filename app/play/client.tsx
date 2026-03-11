@@ -3,8 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import AdventureHistoryRow from "@/components/play/AdventureHistoryRow";
 import { formatPlayTimestamp } from "@/components/play/formatTimestamp";
 import LatestTurnCard from "@/components/play/LatestTurnCard";
+import PressureMeter from "@/components/play/PressureMeter";
 import StatePanel from "@/components/play/StatePanel";
 import TurnInput from "@/components/play/TurnInput";
+import { formatLatestTurnDisplay, formatRecentTurnDisplay, RecentTurnDisplay } from "@/components/play/presenters";
+import { ui } from "@/lib/ui/classes";
+import WorldContext from "@/components/play/WorldContext";
+import LedgerPanel from "@/components/play/LedgerPanel";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
 
 function pressureBadgeTone(stage: string | null | undefined) {
@@ -15,18 +20,196 @@ function pressureBadgeTone(stage: string | null | undefined) {
   return "border-slate-300 bg-slate-50 text-slate-700";
 }
 
+const previewLatestTurn: PlayTurn & { rollTotal: number; pressureStage: string } = {
+  id: "chronicle-preview-latest",
+  turnIndex: 1,
+  playerInput: "Do: Inspect the observatory door for signs of forced entry.",
+  scene:
+    "Rain taps against the cracked dome as your lantern catches fresh splinters around the lock.",
+  resolution: "Partial success",
+  stateDeltas: [],
+  ledgerAdds: [
+    "Inspected the observatory door → Revealed fresh tool marks",
+    "Spent time at the entrance → Time advanced",
+  ],
+  createdAt: new Date().toISOString(),
+  rollTotal: 7,
+  pressureStage: "tension",
+};
+
+const previewTurns: Array<PlayTurn & { rollTotal?: number; pressureStage?: string }> = [
+  previewLatestTurn,
+  {
+    id: "chronicle-preview-previous",
+    turnIndex: 0,
+    playerInput: "Say: Approach the observatory quietly.",
+    scene: "",
+    resolution: "Success",
+    stateDeltas: [],
+    ledgerAdds: ["Reached the observatory grounds → New location discovered"],
+    createdAt: new Date(Date.now() - 1000 * 60 * 6).toISOString(),
+    pressureStage: "calm",
+  },
+];
+
+function historyPressureTone(stage: string | undefined) {
+  switch (stage?.toLowerCase()) {
+    case "crisis":
+      return "border-rose-400/30 bg-rose-500/10 text-rose-200";
+    case "danger":
+      return "border-orange-400/30 bg-orange-500/10 text-orange-200";
+    case "tension":
+      return "border-amber-400/30 bg-amber-500/10 text-amber-200";
+    default:
+      return "border-slate-400/30 bg-slate-700/40 text-slate-200";
+  }
+}
+
+function RecentTurnsPanel({ rows }: { rows: RecentTurnDisplay[] }) {
+  if (rows.length === 0) return null;
+
+  return (
+    <div className={`${ui.panel} p-5 space-y-3`}>
+      <div className={ui.sectionLabel}>Recent turns</div>
+      <div className="relative mt-4 space-y-4 pl-6">
+        <div className="absolute left-2 top-0 bottom-0 w-px bg-white/10" />
+        {rows.map((row) => (
+          <article
+            key={`${row.turnIndex}-${row.timestampLabel}`}
+            className="relative rounded-[18px] border border-white/8 bg-black/10 p-4 transition hover:bg-white/5 animate-[ledgerReveal_200ms_ease] will-change-transform"
+          >
+            <div className="absolute -left-[18px] top-5 h-3 w-3 rounded-full border border-amber-300/25 bg-amber-400/70" />
+            <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-[#a59e90]">
+              <div className="flex flex-wrap items-center gap-2 uppercase tracking-[0.3em]">
+                <span>Turn {row.turnIndex}</span>
+                {row.modeLabel ? <span className="text-[10px]">{row.modeLabel}</span> : null}
+              </div>
+              <div className="flex items-center gap-2">
+                {row.outcomeLabel && (
+                  <span className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white">
+                    {row.outcomeLabel}
+                  </span>
+                )}
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.25em] ${historyPressureTone(row.pressureLabel)}`}>
+                  {row.pressureLabel}
+                </span>
+              </div>
+            </div>
+            <div className="mt-1 text-[10px] text-[#7e786d]">{row.timestampLabel}</div>
+            <p
+              className="mt-3 text-sm leading-6 text-[#d8d2c3]"
+              style={{
+                WebkitLineClamp: 3,
+                display: "-webkit-box",
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {row.summary}
+            </p>
+            {row.highlightChips.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {row.highlightChips.map((highlight) => (
+                  <span
+                    key={highlight}
+                    className="hud-chip text-[#d8d2c3] bg-white/5 border-white/10"
+                  >
+                    {highlight}
+                  </span>
+                ))}
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+function EmptyPlayStateCard() {
+  return (
+    <section className="rounded-3xl border-4 border-fuchsia-500 bg-zinc-900/90 p-8 shadow-2xl">
+      <div className="mb-6 h-40 rounded-2xl border-2 border-cyan-400 bg-cyan-400/10" />
+
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-[0.25em] text-fuchsia-300">
+          Chronicle AI
+        </span>
+        <span className="rounded-full border border-amber-400 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">
+          No resolved turn
+        </span>
+      </div>
+
+      <h2 className="text-5xl font-black uppercase text-fuchsia-300">
+        BEGIN YOUR CHRONICLE TEST 999
+      </h2>
+
+      <p className="mt-2 text-lg text-zinc-300">
+        Servants’ Wing • Late Night • Calm
+      </p>
+
+      <p className="mt-6 text-xl leading-8 text-white">
+        The Chronicle awaits. Take your first action to bring the scene,
+        outcome, ledger, and pressure to life.
+      </p>
+
+      <p className="mt-4 text-lg leading-7 text-zinc-300">
+        No turn has been resolved yet. Your first action will establish the
+        opening scene and the world’s first visible consequence.
+      </p>
+
+      <div className="mt-6 flex flex-wrap gap-3">
+        <span className="rounded-full bg-fuchsia-600 px-4 py-2 text-sm font-bold text-white">
+          Scene pending
+        </span>
+        <span className="rounded-full bg-cyan-600 px-4 py-2 text-sm font-bold text-white">
+          Outcome pending
+        </span>
+        <span className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-bold text-white">
+          Ledger empty
+        </span>
+        <span className="rounded-full bg-amber-600 px-4 py-2 text-sm font-bold text-white">
+          Pressure calm
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function TopBar() {
+  return (
+    <header className={ui.topBar}>
+      <div className="min-w-0">
+        <div className={ui.sectionLabel}>Chronicle AI</div>
+        <h1 className="mt-1 font-serif text-2xl font-semibold text-[#f3efe6]">The Ashen Estate</h1>
+        <p className="mt-1 text-sm text-[#a59e90]">Servants’ Wing • Turn 14</p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-200">
+          Tension
+        </span>
+        <button className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-[#d8d2c3] hover:bg-white/10">
+          Settings
+        </button>
+      </div>
+    </header>
+  );
+}
+
 export default function PlayClient({
   adventureId,
   scenarioId,
   turns,
   statePanel,
   currentScenario,
+  dbOffline = false,
 }: {
   adventureId: string | null;
   scenarioId: string | null;
   turns: PlayTurn[];
   statePanel: PlayStatePanel;
   currentScenario: PlayScenarioMeta | null;
+  dbOffline?: boolean;
 }) {
   const HISTORY_KEY = "creator:recentAdventures";
   type HistoryEntry = {
@@ -93,6 +276,24 @@ export default function PlayClient({
   const currentEntry = currentId ? history.find((entry) => entry.adventureId === currentId) ?? null : null;
   const pinnedEntries = history.filter((entry) => entry.pinned && entry.adventureId !== currentId);
   const recentEntries = history.filter((entry) => !entry.pinned && entry.adventureId !== currentId);
+  const hasTurns = turns.length > 0;
+  const showPreview = dbOffline && !hasTurns;
+  const latestDisplayTurn = hasTurns ? latestTurn : showPreview ? previewLatestTurn : null;
+  const recentDisplayTurns = hasTurns ? previousTurns : showPreview ? previewTurns.slice(1) : [];
+  const displayPressureStage = (showPreview ? previewLatestTurn.pressureStage : pressureStage) ?? "calm";
+  const ambienceByPressure: Record<string, string> = {
+    calm: "ambience-calm",
+    tension: "ambience-tension",
+    danger: "ambience-danger",
+    crisis: "ambience-crisis",
+  };
+  const ambienceClass = ambienceByPressure[displayPressureStage] ?? "ambience-calm";
+  const pressureEdge =
+    displayPressureStage === "crisis"
+      ? "pressure-edge-crisis"
+      : displayPressureStage === "danger"
+      ? "pressure-edge-danger"
+      : "";
 
   const handleClearHistory = () => setHistory([]);
   const handleRemoveEntry = (entryId: string) =>
@@ -107,6 +308,19 @@ export default function PlayClient({
       );
       return limitHistory(next);
     });
+
+  const latestTurnModel = useMemo(() => {
+    if (!latestDisplayTurn) return null;
+    return formatLatestTurnDisplay(latestDisplayTurn, displayPressureStage, {
+      location: statePanel.location ?? "Servants’ Wing",
+      timeOfDay: statePanel.timeOfDay ?? "Late Night",
+    });
+  }, [displayPressureStage, latestDisplayTurn, statePanel.location, statePanel.timeOfDay]);
+
+  const recentTurnRows = useMemo(
+    () => recentDisplayTurns.map((turn) => formatRecentTurnDisplay(turn, displayPressureStage)),
+    [displayPressureStage, recentDisplayTurns]
+  );
 
   const hero = useMemo(() => {
     if (!adventureId) return null;
@@ -130,59 +344,47 @@ export default function PlayClient({
           </span>
         </div>
         <div className="text-lg font-semibold text-slate-900">Current adventure</div>
-        <div className="mt-2 space-y-2 text-sm text-slate-700">
-          <div className="flex flex-wrap gap-3">
-            <span>
-              ID: <strong>{adventureId}</strong>
-            </span>
-            <span>
-              Scenario source: <strong>{currentScenario?.title ?? "Unknown scenario"}</strong>
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-3 text-xs text-slate-500">
-            <span>Scenario ID: {currentScenario?.id ?? scenarioId ?? "Unknown scenario"}</span>
-            {currentScenario?.summary ? <span>{currentScenario.summary}</span> : null}
-          </div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-3">
+        <p className="mt-2 text-sm text-slate-600">{currentScenario?.summary ?? "Live adventure streaming"}</p>
+      <div className="mt-4 space-y-2 text-[11px] text-slate-500">
+        <div className="flex flex-wrap gap-2">
           <a
             href={`/play?adventureId=${encodeURIComponent(adventureId)}`}
             target="_blank"
             rel="noreferrer"
-            className="rounded-full border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
+            className="inline-flex items-center rounded-md bg-slate-800/80 px-3 py-1 text-xs font-semibold text-slate-200"
           >
-            Open adventure
+            Resume
           </a>
-          <a
-            href={`/api/turn?adventureId=${encodeURIComponent(adventureId)}`}
-            className="rounded-full border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800"
+          <button
+            type="button"
+            onClick={() => handleTogglePin(adventureId)}
+            className="inline-flex items-center rounded-md bg-slate-800/80 px-3 py-1 text-xs font-semibold text-slate-200"
           >
-            Inspect turns
-          </a>
-          <a
-            href="/"
-            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+            {currentEntry?.pinned ? "Unpin" : "Pin"}
+          </button>
+          <button
+            type="button"
+            onClick={() => copyToClipboard(adventureId)}
+            className="inline-flex items-center rounded-md bg-slate-800/80 px-3 py-1 text-xs font-semibold text-slate-200"
           >
-            Back to creator
-          </a>
-          {linkedScenarioId ? (
-            <a
-              href={`/creator?scenarioId=${encodeURIComponent(linkedScenarioId)}`}
-              className="rounded-full border border-amber-500 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700"
-            >
-              Open scenario in creator
-            </a>
-          ) : null}
-          {currentEntry ? (
-            <button
-              type="button"
-              onClick={() => handleTogglePin(currentEntry.adventureId)}
-              className="rounded-full border border-amber-500 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700"
-            >
-              {currentEntry.pinned ? "Unpin adventure" : "Pin adventure"}
-            </button>
-          ) : null}
+            Copy ID
+          </button>
+          <button
+            type="button"
+            onClick={() => handleRemoveEntry(adventureId)}
+            className="inline-flex items-center rounded-md bg-rose-900/70 px-3 py-1 text-xs font-semibold text-slate-100"
+          >
+            Remove
+          </button>
         </div>
+        <details className="text-[10px] text-slate-400">
+          <summary className="cursor-pointer">Developer tools</summary>
+          <div className="mt-1 space-y-1 text-[9px] text-slate-500">
+            <div>Scenario ID: {currentScenario?.id ?? scenarioId ?? "Unknown"}</div>
+            <div>Scenario: {currentScenario?.title ?? "Untitled"}</div>
+          </div>
+        </details>
+      </div>
       </section>
     );
   }, [adventureId, currentScenario, history, scenarioId]);
@@ -207,134 +409,143 @@ export default function PlayClient({
     );
   }
 
-  return (
-    <>
-      {hero}
-      {adventureId || history.length > 0 ? (
-        <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 text-xs shadow-sm">
-          <div className="mb-4 flex items-center justify-between text-sm">
-            <div>
-              <span className="font-semibold text-slate-900">Adventure slots</span>
-              <p className="mt-1 text-[11px] text-slate-500">Keep the active session visible and park important runs in pinned slots.</p>
-            </div>
-            <button
-              type="button"
-              onClick={handleClearHistory}
-              disabled={history.length === 0}
-              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Clear history
-            </button>
-          </div>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Current adventure
-              </div>
-              {currentEntry ? (
-                renderHistoryRow(currentEntry)
-              ) : adventureId ? (
-                <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-[11px] text-blue-800">
-                  <div className="rounded-full border border-blue-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-700 inline-flex">
-                    Current
-                  </div>
-                  <div className="mt-1">Scenario: {currentScenario?.title ?? "Unknown scenario"}</div>
-                  <div className="mt-1">ID: {adventureId}</div>
-                  <div className="mt-1">Scenario ID: {currentScenario?.id ?? scenarioId ?? "Unknown scenario"}</div>
-                  {currentScenario?.summary ? <div className="mt-1 text-blue-700">{currentScenario.summary}</div> : null}
-                  <div className="mt-2 text-blue-700">Opened directly from a shared or external play link.</div>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-[11px] text-slate-500">
-                  No active adventure yet. Launch one from the creator or resume a recent run.
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-600">Pinned adventures</div>
-              {pinnedEntries.length > 0 ? (
-                pinnedEntries.map((entry) => renderHistoryRow(entry))
-              ) : (
-                <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/40 px-4 py-3 text-[11px] text-slate-500">
-                  No pinned adventures yet. Pin a run to keep it at the top.
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Recent adventures</div>
-              {recentEntries.length > 0 ? (
-                recentEntries.map((entry) => renderHistoryRow(entry))
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-[11px] text-slate-500">
-                  No recent adventures yet. Open or launch a session to start building a history.
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-      ) : null}
-      <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+  const slotsPanel = (adventureId || history.length > 0) ? (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 text-xs shadow-sm">
+      <div className="mb-4 flex items-center justify-between text-sm">
         <div>
-          {latestTurn ? (
-            <section className="space-y-4">
-              <LatestTurnCard turn={latestTurn} pressureStage={pressureStage} />
-              {previousTurns.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Turn history</div>
-                  {previousTurns.map((turn) => (
-                    <div
-                      key={turn.id}
-                      className="rounded-xl border border-slate-200 bg-white p-3 text-[11px] text-slate-700 shadow-sm"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-                        <span>Turn {turn.turnIndex}</span>
-                        <span>{new Date(turn.createdAt).toISOString()}</span>
-                      </div>
-                      <div className="mt-2 text-[11px] font-semibold text-blue-700">{turn.playerInput}</div>
-                      <div className="mt-2 text-[11px] text-slate-800">Scene: {turn.scene}</div>
-                      <div className="mt-1 text-[11px] text-slate-800">Resolution: {turn.resolution}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </section>
+          <span className="font-semibold text-slate-900">Adventure slots</span>
+          <p className="mt-1 text-[11px] text-slate-500">Keep the active session visible and park important runs in pinned slots.</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleClearHistory}
+          disabled={history.length === 0}
+          className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Clear history
+        </button>
+      </div>
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Current adventure
+          </div>
+          {currentEntry ? (
+            renderHistoryRow(currentEntry)
+          ) : adventureId ? (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-[11px] text-blue-800">
+              <div className="rounded-full border border-blue-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-700 inline-flex">
+                Current
+              </div>
+              <div className="mt-1">Scenario: {currentScenario?.title ?? "Unknown scenario"}</div>
+              <div className="mt-1">ID: {adventureId}</div>
+              <div className="mt-1">Scenario ID: {currentScenario?.id ?? scenarioId ?? "Unknown scenario"}</div>
+              {currentScenario?.summary ? <div className="mt-1 text-blue-700">{currentScenario.summary}</div> : null}
+              <div className="mt-2 text-blue-700">Opened directly from a shared or external play link.</div>
+            </div>
           ) : (
-            <section className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-xs text-slate-600">
-              <div className="text-sm font-semibold text-slate-800">No turns yet</div>
-              <p className="mt-2">Run the first turn to unlock the live scene, resolution, state changes, and ledger history.</p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Use the command/input block below, or launch from the creator and return here once the session has moved.
-              </p>
-            </section>
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-[11px] text-slate-500">
+              No active adventure yet. Launch one from the creator or resume a recent run.
+            </div>
           )}
         </div>
-        <StatePanel state={statePanel} />
-      </section>
-      {adventureId ? (
-        <section className="mt-6">
-          <TurnInput adventureId={adventureId} />
-        </section>
-      ) : null}
-      <section className="mt-6 rounded-xl border border-dashed border-slate-300 bg-white p-5">
-        <div className="text-sm text-slate-600">
-          {adventureId
-            ? "Adventure ready. Use the form above to run turns in the browser. The cURL below matches the same API contract if you need a debug repro."
-            : "Paste ?adventureId=... into the URL bar to resume, click Play from the creator to launch a new adventure, and the grid below will show turn results."}
+
+        <div className="space-y-2">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-600">Pinned adventures</div>
+          {pinnedEntries.length > 0 ? (
+            pinnedEntries.map((entry) => renderHistoryRow(entry))
+          ) : (
+            <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/40 px-4 py-3 text-[11px] text-slate-500">
+              No pinned adventures yet. Pin a run to keep it at the top.
+            </div>
+          )}
         </div>
-        <div className="mt-4 text-xs text-slate-800">
-          <p className="font-semibold">Turn example</p>
-          <pre className="mt-2 w-full overflow-x-auto rounded bg-black px-3 py-2 text-[11px] text-gray-100">
-{`curl -s -X POST http://localhost:3000/api/turn \
-  -H 'Content-Type: application/json' \
-  -d '{"adventureId":"adv_123","playerText":"Sneak past the guard","action":"STEALTH","tags":[],"rollTotal":7}' | jq`}
-          </pre>
-          <p className="mt-3 text-[11px] text-slate-500">
-            The browser form sends the same shape: <code>adventureId</code>, <code>playerText</code>, optional <code>action</code>, <code>tags</code>, and optional <code>rollTotal</code>.
-          </p>
+
+        <div className="space-y-2">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Recent adventures</div>
+          {recentEntries.length > 0 ? (
+            recentEntries.map((entry) => renderHistoryRow(entry))
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-[11px] text-slate-500">
+              No recent adventures yet. Open or launch a session to start building a history.
+            </div>
+          )}
         </div>
-      </section>
-    </>
+      </div>
+    </section>
+  ) : null;
+
+  return (
+    <main className={`${ui.shell} ${ambienceClass} ${pressureEdge} relative overflow-hidden`}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(201,163,90,0.08),transparent_30%),radial-gradient(circle_at_bottom,rgba(92,63,31,0.1),transparent_28%)]" />
+      <div className={ui.pageWrap}>
+        <div className={ui.playSurface}>
+          <TopBar />
+
+          {dbOffline ? (
+            <div className="chronicle-card mt-6 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100 shadow-inner">
+              <p className="font-semibold text-amber-100">Database connection unavailable</p>
+              <p className="mt-1 text-sm text-amber-100/80">
+                Chronicle AI could not reach the database, so the play screen is showing cached UI state only.
+              </p>
+            </div>
+          ) : null}
+
+          <div className={ui.pageGrid}>
+          <section className={ui.leftColumn}>
+            {adventureId ? <TurnInput adventureId={adventureId} /> : null}
+
+            {latestTurnModel ? (
+              <>
+                <LatestTurnCard key={latestDisplayTurn?.id ?? "latest"} model={latestTurnModel} />
+                {recentTurnRows.length > 0 ? <RecentTurnsPanel rows={recentTurnRows} /> : null}
+              </>
+            ) : (
+              <EmptyPlayStateCard />
+            )}
+          </section>
+
+            <aside className={ui.rightColumn}>
+              <PressureMeter currentStage={displayPressureStage} />
+              <WorldContext
+                location={statePanel.location ?? "Servants’ Wing"}
+                timeOfDay={statePanel.timeOfDay ?? "Late Night"}
+                ambience={statePanel.ambience ?? "Cold / Quiet"}
+                tags={statePanel.contextTags ?? []}
+              />
+              <LedgerPanel entries={latestTurnModel?.ledgerEntries ?? []} />
+              <StatePanel state={statePanel} />
+            </aside>
+          </div>
+        </div>
+
+        <details className="mt-8 rounded-2xl border border-slate-200 bg-slate-950/60 p-4 text-xs text-slate-300">
+          <summary className="font-semibold uppercase tracking-[0.3em] text-slate-400">Adventure tools</summary>
+          <div className="mt-4 space-y-4">
+            {hero}
+            {slotsPanel}
+          </div>
+        </details>
+
+        <details className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white/5 p-4 text-sm text-slate-400">
+          <summary className="cursor-pointer font-semibold">Developer tools</summary>
+          <div className="mt-3 text-sm text-slate-600">
+            {adventureId
+              ? "Adventure ready. Use the form above to run turns in the browser."
+              : "Paste ?adventureId=... into the URL bar to resume, click Play from the creator to launch a new adventure, and the grid below will show turn results."}
+          </div>
+          <div className="mt-3 text-xs text-slate-500">
+            <p className="font-semibold">Turn example</p>
+            <pre className="mt-2 w-full overflow-x-auto rounded bg-black px-3 py-2 text-[11px] text-gray-100">
+{`curl -s -X POST http://localhost:3000/api/turn   -H 'Content-Type: application/json'   -d '{"adventureId":"adv_123","playerText":"Sneak past the guard","action":"STEALTH","tags":[],"rollTotal":7}' | jq`}
+            </pre>
+            <p className="mt-3 text-[11px] text-slate-500">
+              The browser form sends the same shape: <code>adventureId</code>, <code>playerText</code>, optional <code>action</code>, <code>tags</code>, and optional <code>rollTotal</code>.
+            </p>
+          </div>
+        </details>
+      </div>
+    </main>
   );
+
 }

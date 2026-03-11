@@ -202,85 +202,101 @@ export default async function PlayPage({
     quests: [],
     relationships: [],
   };
+  let dbOffline = false;
   if (adventureId) {
     try {
-      const ownership = await getOrClaimAdventureForUser({
-        db: prisma,
-        adventureId,
-        userId: user.id,
+      try {
+        const ownership = await getOrClaimAdventureForUser({
+          db: prisma,
+          adventureId,
+          userId: user.id,
+        });
+        if (!ownership.adventure) {
+          return (
+            <PlayClient
+              adventure={null}
+              turns={[]}
+              statePanel={statePanel}
+              currentScenario={currentScenario}
+              dbOffline={false}
+              adventureId={adventureId ?? null}
+              scenarioId={scenarioId}
+            />
+          );
+        }
+      } catch (error) {
+        if (isAdventureOwnershipError(error) && error.code === "ADVENTURE_FORBIDDEN") {
+          notFound();
+        }
+        throw error;
+      }
+
+      const adventure = await prisma.adventure.findUnique({
+        where: { id: adventureId },
+        select: { state: true, ownerId: true },
       });
-      if (!ownership.adventure) {
-        notFound();
+
+      if (!adventure) {
+        turns = [];
+      } else {
+        const rows = await prisma.turn.findMany({
+          where: { adventureId },
+          orderBy: { turnIndex: "desc" },
+          take: 3,
+          select: {
+            id: true,
+            turnIndex: true,
+            playerInput: true,
+            scene: true,
+            resolution: true,
+            stateDeltas: true,
+            ledgerAdds: true,
+            createdAt: true,
+          },
+        });
+        statePanel = normalizeStatePanel(adventure?.state);
+        const stateScenarioMeta = readScenarioMetaFromState(adventure?.state);
+        const resolvedScenarioId = stateScenarioMeta?.id ?? scenarioId;
+        if (typeof resolvedScenarioId === "string" && resolvedScenarioId.trim()) {
+          const scenario = await prisma.scenario.findUnique({
+            where: { id: resolvedScenarioId },
+            select: { id: true, title: true, summary: true },
+          });
+          currentScenario = scenario
+            ? {
+                id: scenario.id,
+                title: scenario.title,
+                summary: scenario.summary,
+              }
+            : (stateScenarioMeta ?? {
+                id: resolvedScenarioId,
+                title: "Unknown scenario",
+                summary: null,
+              });
+        }
+        turns = rows.map((row) => ({
+          id: row.id,
+          turnIndex: row.turnIndex,
+          playerInput: row.playerInput,
+          scene: row.scene,
+          resolution:
+            typeof row.resolution === "string"
+              ? row.resolution
+              : JSON.stringify(row.resolution, null, 2),
+          stateDeltas: Array.isArray(row.stateDeltas) ? row.stateDeltas : [],
+          ledgerAdds: Array.isArray(row.ledgerAdds) ? row.ledgerAdds : [],
+          createdAt: row.createdAt.toISOString(),
+        }));
       }
     } catch (error) {
-      if (isAdventureOwnershipError(error) && error.code === "ADVENTURE_FORBIDDEN") {
-        notFound();
-      }
-      throw error;
+      console.error("Play route DB fallback:", error);
+      dbOffline = true;
+      adventure = null;
+      turns = [];
     }
-
-    const adventure = await prisma.adventure.findUnique({
-      where: { id: adventureId },
-      select: { state: true, ownerId: true },
-    });
-
-    if (!adventure) {
-      notFound();
-    }
-
-    const rows = await prisma.turn.findMany({
-      where: { adventureId },
-      orderBy: { turnIndex: "desc" },
-      take: 3,
-      select: {
-        id: true,
-        turnIndex: true,
-        playerInput: true,
-        scene: true,
-        resolution: true,
-        stateDeltas: true,
-        ledgerAdds: true,
-        createdAt: true,
-      },
-    });
-    statePanel = normalizeStatePanel(adventure?.state);
-    const stateScenarioMeta = readScenarioMetaFromState(adventure?.state);
-    const resolvedScenarioId = stateScenarioMeta?.id ?? scenarioId;
-    if (typeof resolvedScenarioId === "string" && resolvedScenarioId.trim()) {
-      const scenario = await prisma.scenario.findUnique({
-        where: { id: resolvedScenarioId },
-        select: { id: true, title: true, summary: true },
-      });
-      currentScenario = scenario
-        ? {
-            id: scenario.id,
-            title: scenario.title,
-            summary: scenario.summary,
-          }
-        : (stateScenarioMeta ?? {
-            id: resolvedScenarioId,
-            title: "Unknown scenario",
-            summary: null,
-          });
-    }
-    turns = rows.map((row) => ({
-      id: row.id,
-      turnIndex: row.turnIndex,
-      playerInput: row.playerInput,
-      scene: row.scene,
-      resolution:
-        typeof row.resolution === "string"
-          ? row.resolution
-          : JSON.stringify(row.resolution, null, 2),
-      stateDeltas: Array.isArray(row.stateDeltas) ? row.stateDeltas : [],
-      ledgerAdds: Array.isArray(row.ledgerAdds) ? row.ledgerAdds : [],
-      createdAt: row.createdAt.toISOString(),
-    }));
   }
   return (
     <main className="mx-auto max-w-6xl p-6">
-      <h1 className="text-2xl font-semibold">Play (Dev Preview)</h1>
-      <p className="text-sm text-gray-600">Launch, resume, and inspect deterministic adventures.</p>
       <Suspense fallback={<div className="mt-6 text-sm text-gray-500">Loading play controls...</div>}>
         <PlayClient
           adventureId={adventureId}
@@ -288,6 +304,7 @@ export default async function PlayPage({
           turns={turns}
           statePanel={statePanel}
           currentScenario={currentScenario}
+          dbOffline={dbOffline}
         />
       </Suspense>
     </main>
