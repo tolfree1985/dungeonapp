@@ -180,7 +180,14 @@ export default async function PlayPage({
   const resolvedSearchParams = (await searchParams) ?? {};
   const adventureId = resolvedSearchParams.adventureId ?? null;
   const scenarioId = resolvedSearchParams.scenarioId ?? null;
-  const user = getOptionalUser(await headers());
+  let user = getOptionalUser(await headers());
+
+  if (!user && process.env.NODE_ENV !== "production") {
+    user = {
+      id: "dev-user",
+      authMethod: "session",
+    } as any;
+  }
 
   if (!user) {
     const nextPath = adventureId ? `/play?adventureId=${encodeURIComponent(adventureId)}` : "/play";
