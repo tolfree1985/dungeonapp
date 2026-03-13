@@ -96,7 +96,12 @@ export default function TurnInput({ adventureId }: TurnInputProps) {
   );
 
   return (
-    <form onSubmit={handleSubmit} className={`${cardShell} ${cardPadding} space-y-4`}>
+    <form
+      onSubmit={handleSubmit}
+      className={`${cardShell} ${cardPadding} space-y-4 transition-opacity duration-200 ${
+        isSubmitting ? "opacity-70 pointer-events-none" : "opacity-100"
+      }`}
+    >
       <div className="space-y-1">
         <div className={sectionHeading}>Mode</div>
         <div className="flex flex-wrap items-center gap-3">
