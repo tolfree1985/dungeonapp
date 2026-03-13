@@ -14,9 +14,10 @@ import {
   buildStatePanelViewModel,
   formatLedgerDisplay,
 } from "@/components/play/presenters";
-import { ui } from "@/lib/ui/classes";
 import WorldContext from "@/components/play/WorldContext";
 import LedgerPanel from "@/components/play/LedgerPanel";
+import { cardPadding, cardShell, sectionHeading } from "@/components/play/cardStyles";
+import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
 
 function pressureBadgeTone(stage: string | null | undefined) {
@@ -63,14 +64,14 @@ function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
   if (rows.length === 0) return null;
 
   return (
-    <div className={`${ui.panel} p-5 space-y-3`}>
-      <div className={ui.sectionLabel}>Recent turns</div>
+    <section className={`${cardShell} ${cardPadding} space-y-4`}>
+      <div className={sectionHeading}>History</div>
       <div className="space-y-3">
         {rows.map((row) => (
           <AdventureHistoryRow key={`${row.turnIndex}-${row.timestampLabel}`} model={row} />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 function TopBar() {
@@ -388,23 +389,22 @@ export default function PlayClient({
           ) : null}
 
           <div className={ui.pageGrid}>
-          <section className={ui.leftColumn}>
-            {adventureId ? <TurnInput adventureId={adventureId} /> : null}
-
-            <LatestTurnCard key={latestDisplayTurn?.id ?? "latest"} model={latestTurnModel} />
-            {recentTurnRows.length > 0 ? <RecentTurnsPanel rows={recentTurnRows} /> : null}
-          </section>
-
-            <aside className={ui.rightColumn}>
-              <PressureMeter currentStage={displayPressureStage} />
+            <section className={ui.leftColumn}>
+              <LatestTurnCard key={latestDisplayTurn?.id ?? "latest"} model={latestTurnModel} />
+              {adventureId ? <TurnInput adventureId={adventureId} /> : null}
               <WorldContext
                 location={statePanel.location ?? "Servants’ Wing"}
                 timeOfDay={statePanel.timeOfDay ?? "Late Night"}
                 ambience={statePanel.ambience ?? "Cold / Quiet"}
                 tags={statePanel.contextTags ?? []}
               />
-              <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
               <StatePanel viewModel={statePanelViewModel} />
+              <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
+              {recentTurnRows.length > 0 ? <RecentTurnsPanel rows={recentTurnRows} /> : null}
+            </section>
+
+            <aside className={ui.rightColumn}>
+              <PressureMeter currentStage={displayPressureStage} />
             </aside>
           </div>
         </div>

@@ -1,93 +1,56 @@
 "use client";
 
-import { ui } from "@/lib/ui/classes";
-import type { StatePanelViewModel } from "@/components/play/presenters";
-
-const rowClass = "flex items-center justify-between text-sm";
-const labelClass = "text-[#a59e90]";
-const valueClass = "font-medium text-[#f3efe6]";
-const categoryLabels: Record<StatePanelViewModel["status"][number]["category"], string> = {
-  world: "World",
-  quest: "Quest",
-  inventory: "Inventory",
-  status: "Status",
-  relation: "Relation",
-};
-
-type SectionProps = {
-  title: string;
-  items: StatePanelViewModel["status"];
-  emptyMessage: string;
-  toneClass: string;
-};
-
-function SectionPanel({ title, items, emptyMessage, toneClass }: SectionProps) {
-  return (
-    <div className={`${ui.panel} p-5${toneClass}`}>
-      <div className={ui.sectionLabel}>{title}</div>
-      <div className="mt-4 space-y-3">
-        {items.length > 0 ? (
-          items.map((item) => (
-            <article key={`${item.label}-${item.category}`} className="rounded-[18px] border border-white/10 bg-black/10 p-3 space-y-1 text-sm">
-              <div className={rowClass}>
-                <span className={labelClass}>{item.label}</span>
-                <span className={`${valueClass} ${item.emphasis === "high" ? "text-white" : ""}`}>{item.value}</span>
-              </div>
-              <div className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
-                {categoryLabels[item.category]}
-              </div>
-            </article>
-          ))
-        ) : (
-          <div className="rounded-md border border-dashed border-white/10 bg-black/10 px-3 py-3 text-xs text-slate-400">
-            {emptyMessage}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+import type { StateItemViewModel, StatePanelViewModel } from "@/components/play/presenters";
+import { cardPadding, cardShell, emptyState, sectionHeading } from "./cardStyles";
 
 type StatePanelProps = {
   viewModel: StatePanelViewModel;
-  panelTone?: string;
 };
 
-export default function StatePanel({ viewModel, panelTone }: StatePanelProps) {
-  const toneClass = panelTone ? ` ${panelTone}` : "";
+const sections: Array<{ label: string; key: keyof StatePanelViewModel; empty: string }> = [
+  { label: "Status", key: "status", empty: "Status data is not available yet." },
+  { label: "World", key: "world", empty: "World conditions are not reported." },
+  { label: "Quests", key: "quests", empty: "No active quests yet." },
+  { label: "Inventory", key: "inventory", empty: "Your pack is empty." },
+  { label: "Relations", key: "relations", empty: "No key relationships yet." },
+];
+
+export default function StatePanel({ viewModel }: StatePanelProps) {
+  const sectionData: Array<{ label: string; items: StateItemViewModel[]; empty: string }> = sections.map((section) => ({
+    label: section.label,
+    items: viewModel[section.key] as StateItemViewModel[],
+    empty: section.empty,
+  }));
 
   return (
-    <aside className="space-y-4">
-      <SectionPanel
-        title="Status"
-        items={viewModel.status}
-        emptyMessage="Status data is not available yet."
-        toneClass={toneClass}
-      />
-      <SectionPanel
-        title="World"
-        items={viewModel.world}
-        emptyMessage="World conditions are not reported."
-        toneClass={toneClass}
-      />
-      <SectionPanel
-        title="Quests"
-        items={viewModel.quests}
-        emptyMessage="No active quests yet."
-        toneClass={toneClass}
-      />
-      <SectionPanel
-        title="Inventory"
-        items={viewModel.inventory}
-        emptyMessage="Your pack is empty."
-        toneClass={toneClass}
-      />
-      <SectionPanel
-        title="Relations"
-        items={viewModel.relations}
-        emptyMessage="No key relationships yet."
-        toneClass={toneClass}
-      />
-    </aside>
+    <section className={`${cardShell} ${cardPadding} space-y-4`}>
+      <div className={sectionHeading}>State</div>
+      <div className="space-y-4">
+        {sectionData.map((section) => (
+          <div key={section.label} className="space-y-3">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">{section.label}</div>
+            {section.items.length === 0 ? (
+              <div className={emptyState}>{section.empty}</div>
+            ) : (
+              <div className="space-y-2">
+                {section.items.map((item) => (
+                  <article
+                    key={`${item.label}-${item.category}`}
+                    className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/70">{item.label}</span>
+                      <span className={`font-semibold text-white ${item.emphasis === "high" ? "text-white" : "text-white"}`}>
+                        {item.value}
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

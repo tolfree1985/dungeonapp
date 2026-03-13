@@ -1,5 +1,7 @@
 "use client";
 
+import { sectionHeading } from "./cardStyles";
+
 type HistorySlotCardProps = {
   adventureId: string;
   resumeHref: string;
@@ -28,16 +30,15 @@ export default function HistorySlotCard({
   onCopyId,
 }: HistorySlotCardProps) {
   const titleLabel = scenarioTitle ?? scenarioId ?? "Unknown scenario";
-
   const containerClasses = [
-    "space-y-3 rounded-2xl border bg-white/80 px-4 py-4 shadow-sm transition hover:shadow-lg",
-    isActive ? "border-emerald-300/60 bg-white ring-1 ring-emerald-300/50" : "border-slate-200",
+    "space-y-3 rounded-xl border border-white/10 bg-white/5 px-4 py-4 shadow-sm transition hover:shadow-lg",
+    isActive ? "ring-1 ring-amber-300/40" : "hover:border-white/30",
   ].join(" ");
 
   return (
     <article className={containerClasses}>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.3em] text-slate-500">
-        <span className="text-[10px] tracking-[0.4em]">{isActive ? "Current" : "Archived"}</span>
+      <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.35em] text-white/60">
+        <span className={sectionHeading}>{isActive ? "Current" : "Archived"}</span>
         <span className="text-[10px] text-slate-400">{updatedAtLabel}</span>
       </div>
 

@@ -1,9 +1,9 @@
 "use client";
 
-import { ui } from "@/lib/ui/classes";
 import type { LatestTurnViewModel } from "./presenters";
+import { cardPadding, cardShell, cardSpacing, emptyState, metadataTag, sectionHeading } from "./cardStyles";
 
-const categoryLabels: Record<string, string> = {
+const consequenceLabel: Record<string, string> = {
   pressure: "Pressure",
   world: "World",
   quest: "Quest",
@@ -21,13 +21,13 @@ export default function LatestTurnCard({ model }: Props) {
 
   if (!hasResolvedTurn) {
     return (
-      <section className={`${ui.panel} space-y-4 p-6`}>
-        <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Awaiting resolved turn</div>
-        <h2 className="text-2xl font-semibold text-white">No scene has been resolved yet</h2>
-        <p className="text-sm leading-6 text-slate-400">
-          Submit a command to resolve the next turn. The scene, outcome, and ledger entries will appear once
-          your action has been processed.
+      <section className={`${cardShell} ${cardPadding} ${cardSpacing}`}>
+        <div className={sectionHeading}>Latest Turn</div>
+        <h2 className="text-2xl font-semibold text-white">No resolved turn yet.</h2>
+        <p className="text-sm text-white/60">
+          Submit a command to record the next turn. The scene, outcome, and consequences appear once the action resolves.
         </p>
+        <div className={emptyState}>Awaiting resolved turn.</div>
       </section>
     );
   }
@@ -37,43 +37,42 @@ export default function LatestTurnCard({ model }: Props) {
   const hasConsequences = ledgerEntries.length > 0 || stateDeltas.length > 0;
 
   return (
-    <section className={`${ui.panel} space-y-6 p-6`}>
-      <header className="flex flex-wrap items-center gap-3 border-b border-white/10 pb-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-          Turn {model?.turnIndex ?? "—"}
+    <section className={`${cardShell} ${cardPadding} ${cardSpacing}`}>
+      <header className="space-y-2">
+        <div className={sectionHeading}>Latest Turn</div>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-3xl font-semibold text-white">Turn {model?.turnIndex ?? "—"}</p>
+          {model?.mode ? (
+            <span className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.35em] text-white/70">
+              {model.mode}
+            </span>
+          ) : null}
+          <span className={`${metadataTag} ml-auto text-white/60`}>Pressure: {model?.pressureLabel ?? "CALM"}</span>
         </div>
-        {model?.mode ? (
-          <span className="rounded-full border border-slate-200/60 px-3 py-1 text-[11px] font-semibold uppercase text-slate-500">
-            {model.mode}
-          </span>
-        ) : null}
-        <span className="ml-auto text-xs font-semibold uppercase tracking-[0.3em] text-amber-200">
-          Pressure: {model?.pressureLabel ?? "CALM"}
-        </span>
       </header>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">Player command</div>
-          <p className="text-lg font-semibold text-white">{model?.playerInput ?? "No command recorded"}</p>
+          <div className={sectionHeading}>Command</div>
+          <p className="text-lg font-semibold text-white">{model?.playerInput ?? "Command missing"}</p>
         </div>
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">Scene</div>
+          <div className={sectionHeading}>Scene</div>
           <p className="text-sm text-slate-300">{model?.sceneText ?? "Scene text unavailable"}</p>
         </div>
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">Outcome</div>
+          <div className={sectionHeading}>Outcome</div>
           <p className="text-sm text-amber-200">{model?.outcomeLabel ?? "Outcome pending"}</p>
         </div>
       </div>
 
       <div>
-        <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">Consequences</div>
+        <div className={sectionHeading}>Consequences</div>
         <ul className="mt-3 space-y-2">
           {ledgerEntries.map((entry) => (
             <li key={entry.id} className="text-sm text-slate-200">
               <span className="font-semibold text-slate-100">
-                {categoryLabels[entry.category] ?? "World"} —
+                {consequenceLabel[entry.category] ?? "World"} —
               </span>{" "}
               {entry.cause}
               {entry.effect ? ` → ${entry.effect}` : ""}
@@ -85,7 +84,7 @@ export default function LatestTurnCard({ model }: Props) {
             </li>
           ))}
           {!hasConsequences && (
-            <li className="text-sm text-slate-400">No consequences were recorded for this turn.</li>
+            <li className={emptyState}>No consequences were recorded for this turn.</li>
           )}
         </ul>
       </div>

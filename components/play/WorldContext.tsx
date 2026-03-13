@@ -1,6 +1,6 @@
 "use client";
 
-import { ui } from "@/lib/ui/classes";
+import { cardPadding, cardShell, sectionHeading } from "./cardStyles";
 
 type WorldContextProps = {
   location?: string;
@@ -15,9 +15,9 @@ export default function WorldContext({ location, timeOfDay, ambience, tags }: Wo
   const fallbackAmbience = ambience ?? "Stillness";
 
   return (
-    <div className={`${ui.panel} p-5 bg-gradient-to-b from-[#11121c]/70 to-[#0c0e16]/80`}>
-      <div className={ui.sectionLabel}>World</div>
-      <div className="mt-4 space-y-3 text-sm text-[#d8d2c3]">
+    <section className={`${cardShell} ${cardPadding} space-y-4`}>
+      <div className={sectionHeading}>World</div>
+      <div className="space-y-3 text-sm text-[#d8d2c3]">
         <div className="flex items-center justify-between text-sm">
           <span className="text-[#a59e90]">Location</span>
           <span className="font-medium text-[#f3efe6]">{fallbackLocation}</span>
@@ -43,6 +43,6 @@ export default function WorldContext({ location, timeOfDay, ambience, tags }: Wo
           </div>
         ) : null}
       </div>
-    </div>
+    </section>
   );
 }

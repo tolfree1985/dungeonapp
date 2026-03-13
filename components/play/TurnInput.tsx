@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { ui } from "@/lib/ui/classes";
+import { cardPadding, cardShell, sectionHeading } from "./cardStyles";
 
 type TurnMode = "DO" | "SAY" | "LOOK";
 
@@ -96,12 +96,12 @@ export default function TurnInput({ adventureId }: TurnInputProps) {
   );
 
   return (
-    <form onSubmit={handleSubmit} className={`${ui.panel} p-5 space-y-4`}>
+    <form onSubmit={handleSubmit} className={`${cardShell} ${cardPadding} space-y-4`}>
       <div className="space-y-1">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.4em] text-slate-500">Mode</div>
+        <div className={sectionHeading}>Mode</div>
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-xs text-slate-400">MODE: {mode}</span>
-          <p className="text-xs text-[#f3efe6]">{modeConfig[mode].description}</p>
+          <span className="text-xs text-white/70">MODE: {mode}</span>
+          <p className="text-xs text-white/60">{modeConfig[mode].description}</p>
         </div>
       </div>
 
@@ -118,7 +118,7 @@ export default function TurnInput({ adventureId }: TurnInputProps) {
         className="mt-2 min-h-[130px] w-full rounded-[18px] border border-white/10 bg-black/20 px-4 py-3 text-base text-[#f3efe6] placeholder:text-[#7e786d] focus:border-amber-300/30 focus:outline-none focus:ring-2 focus:ring-amber-300/15 disabled:cursor-not-allowed disabled:opacity-60"
       />
 
-      <div className="flex flex-col gap-2 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">
         <p className="uppercase tracking-[0.3em] text-[#c9a35a]">
           Describe what you do, say, or examine. One action resolves one turn.
         </p>
@@ -132,11 +132,14 @@ export default function TurnInput({ adventureId }: TurnInputProps) {
               ? "bg-amber-400/10 text-amber-200 hover:bg-amber-400/15"
               : "bg-amber-400/5 text-amber-100/80 cursor-not-allowed"
           }`}
-        >
-          {isSubmitting ? "Resolving..." : "Take Turn"}
-        </button>
-      </div>
+          >
+            {isSubmitting ? "Resolving..." : "Take Turn"}
+          </button>
+        </div>
 
+      {isSubmitting && (
+        <p className="text-xs uppercase tracking-[0.35em] text-white/60">Submitting deterministic turn...</p>
+      )}
       {error ? <p className="text-xs text-rose-300">{error}</p> : null}
     </form>
   );

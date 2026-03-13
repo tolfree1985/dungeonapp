@@ -317,11 +317,11 @@ export default async function PlayPage({
   const isProtectedRun = adventureId ? PROTECTED_ADVENTURE_IDS.has(adventureId) : false;
   const debugStripClasses = isProtectedRun
     ? "border-rose-500/60 bg-rose-500/10 text-rose-100"
-    : "border-white/10 bg-white/5 text-white/70";
+    : "border-white/10 bg-white/5 text-white/60";
   return (
     <main className="mx-auto max-w-6xl p-6">
       <div
-        className={`mb-4 flex flex-wrap items-center gap-4 rounded-xl border px-3 py-2 text-xs ${debugStripClasses}`}
+        className={`mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-1.5 text-[10px] ${debugStripClasses}`}
       >
         <span>Adventure: {debugAdventureId}</span>
         <span className="ml-2">Turn: {latestTurnIndex !== undefined ? latestTurnIndex : "n/a"}</span>
