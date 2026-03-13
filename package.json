@@ -29,6 +29,8 @@
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "node scripts/seed-dev.js",
+    "snapshot:adventure": "tsx scripts/snapshot-adventure.ts",
+    "reset:adventure": "tsx scripts/reset-adventure.ts",
     "test-usage-endpoint": "tsx scripts/test-usage-endpoint.ts",
     "test": "vitest run",
     "test:run": "vitest run",

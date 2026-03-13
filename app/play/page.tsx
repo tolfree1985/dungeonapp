@@ -178,7 +178,12 @@ export default async function PlayPage({
   searchParams?: Promise<{ adventureId?: string; scenarioId?: string }>;
 }) {
   const resolvedSearchParams = (await searchParams) ?? {};
-  const adventureId = resolvedSearchParams.adventureId ?? null;
+  const requestedAdventureId =
+    typeof resolvedSearchParams.adventureId === "string" ? resolvedSearchParams.adventureId : undefined;
+  const adventureId =
+    process.env.NODE_ENV === "development"
+      ? requestedAdventureId ?? "sandbox"
+      : requestedAdventureId ?? null;
   const scenarioId = resolvedSearchParams.scenarioId ?? null;
   const user = getOptionalUser(await headers());
 
@@ -203,6 +208,7 @@ export default async function PlayPage({
     relationships: [],
   };
   let dbOffline = false;
+  let persistedAdventureOwnerId: string | null = null;
   if (adventureId) {
     try {
       try {
@@ -235,6 +241,7 @@ export default async function PlayPage({
         where: { id: adventureId },
         select: { state: true, ownerId: true },
       });
+      persistedAdventureOwnerId = adventure?.ownerId ?? null;
 
       if (!adventure) {
         turns = [];
@@ -291,12 +298,28 @@ export default async function PlayPage({
     } catch (error) {
       console.error("Play route DB fallback:", error);
       dbOffline = true;
-      adventure = null;
+      persistedAdventureOwnerId = null;
       turns = [];
     }
   }
+  const latestTurnIndex = turns[0]?.turnIndex;
+  const pressureValue = statePanel.pressureStage ?? null;
+  const locationStat = statePanel.stats.find((stat) => stat.key.toLowerCase() === "location");
+  const formatStateValue = (value: PlayStateValue | null | undefined) =>
+    value === null || value === undefined ? "n/a" : String(value);
+  const debugAdventureId = adventureId ?? "n/a";
+  const debugOwnerId = persistedAdventureOwnerId ?? "n/a";
+  const debugPressure = formatStateValue(pressureValue);
+  const debugLocation = formatStateValue(locationStat?.value);
   return (
     <main className="mx-auto max-w-6xl p-6">
+      <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/70">
+        <span>Adventure: {debugAdventureId}</span>
+        <span className="ml-2">Turn: {latestTurnIndex !== undefined ? latestTurnIndex : "n/a"}</span>
+        <span className="ml-2">Pressure: {debugPressure}</span>
+        <span className="ml-2">Location: {debugLocation}</span>
+        <span className="ml-2">Owner: {debugOwnerId}</span>
+      </div>
       <Suspense fallback={<div className="mt-6 text-sm text-gray-500">Loading play controls...</div>}>
         <PlayClient
           adventureId={adventureId}
