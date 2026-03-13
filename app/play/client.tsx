@@ -485,6 +485,21 @@ export default function PlayClient({
       <div className={ui.pageWrap}>
         <div className={ui.playSurface}>
           <TopBar />
+          <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-[11px] uppercase tracking-[0.3em] text-white/70">
+            <span className="text-emerald-300">{displayPressureStage?.toUpperCase() ?? "CALM"}</span>
+            <span className="text-white/40">•</span>
+            <span>
+              Alert {statePanel.stats.find((stat) => stat.key.toLowerCase() === "alert")?.value ?? "—"}
+            </span>
+            <span className="text-white/40">•</span>
+            <span>
+              Heat {statePanel.stats.find((stat) => stat.key.toLowerCase() === "heat")?.value ?? "—"}
+            </span>
+            <span className="text-white/40">•</span>
+            <span>
+              Time {statePanel.stats.find((stat) => stat.key.toLowerCase() === "time")?.value ?? "—"}
+            </span>
+          </div>
 
           {dbOffline ? (
             <div className="chronicle-card mt-6 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100 shadow-inner">
