@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../src/generated/prisma";
 
 const prisma = new PrismaClient();
 const protectedAdventures = new Set(["canon_ui", "sandbox", "replay_lab", "dev_run"]);
