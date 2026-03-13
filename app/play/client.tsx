@@ -520,19 +520,31 @@ export default function PlayClient({
                 />
               </div>
               {adventureId ? <TurnInput adventureId={adventureId} /> : null}
-              <WorldContext
-                location={statePanel.location ?? "Servants’ Wing"}
-                timeOfDay={statePanel.timeOfDay ?? "Late Night"}
-                ambience={statePanel.ambience ?? "Cold / Quiet"}
-                tags={statePanel.contextTags ?? []}
-              />
-              <StatePanel viewModel={statePanelViewModel} />
-              <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
-              <RecentTurnsPanel rows={recentTurnRows} />
-            </section>
+            {adventureId ? <TurnInput adventureId={adventureId} /> : null}
+          </section>
 
             <aside className={ui.rightColumn}>
-              <PressureMeter currentStage={displayPressureStage} isPulsing={isPressurePulsing} />
+              <div className="space-y-6">
+                <section className="space-y-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">World</div>
+                  <WorldContext
+                    location={statePanel.location ?? "Servants’ Wing"}
+                    timeOfDay={statePanel.timeOfDay ?? "Late Night"}
+                    ambience={statePanel.ambience ?? "Cold / Quiet"}
+                    tags={statePanel.contextTags ?? []}
+                  />
+                  <StatePanel viewModel={statePanelViewModel} />
+                </section>
+                <section className="space-y-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">System</div>
+                  <PressureMeter currentStage={displayPressureStage} isPulsing={isPressurePulsing} />
+                  <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
+                </section>
+                <section className="space-y-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">History</div>
+                  <RecentTurnsPanel rows={recentTurnRows} />
+                </section>
+              </div>
             </aside>
           </div>
         </div>
