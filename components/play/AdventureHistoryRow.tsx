@@ -1,80 +1,54 @@
 "use client";
 
-type AdventureHistoryRowProps = {
-  adventureId: string;
-  resumeHref: string;
-  scenarioTitle?: string | null;
-  scenarioSummary?: string | null;
-  scenarioId?: string | null;
-  updatedAtLabel: string;
-  isActive: boolean;
-  isPinned: boolean;
-  onPinToggle: () => void;
-  onRemove: () => void;
-  onCopyId: () => void;
+import { ui } from "@/lib/ui/classes";
+import type { AdventureHistoryRowViewModel } from "@/components/play/presenters";
+
+type Props = {
+  model: AdventureHistoryRowViewModel;
 };
 
-export default function AdventureHistoryRow({
-  adventureId,
-  resumeHref,
-  scenarioTitle,
-  scenarioSummary,
-  scenarioId,
-  updatedAtLabel,
-  isActive,
-  isPinned,
-  onPinToggle,
-  onRemove,
-  onCopyId,
-}: AdventureHistoryRowProps) {
-  const titleLabel = scenarioTitle ?? scenarioId ?? "Unknown scenario";
-
-  const containerClasses = [
-    "space-y-3 rounded-2xl border bg-white/80 px-4 py-4 shadow-sm transition hover:shadow-lg",
-    isActive ? "border-emerald-300/60 bg-white ring-1 ring-emerald-300/50" : "border-slate-200",
-  ].join(" ");
-
+export default function AdventureHistoryRow({ model }: Props) {
+  const modeLabel = model.mode ? model.mode : "—";
+  const consequences = model.consequenceSummary;
   return (
-    <article className={containerClasses}>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.3em] text-slate-500">
-        <span className="text-[10px] tracking-[0.4em]">{isActive ? "Current" : "Archived"}</span>
-        <span className="text-[10px] text-slate-400">{updatedAtLabel}</span>
+    <article className={`${ui.panel} rounded-[18px] border border-white/10 bg-black/10 p-4`}>
+      <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.3em] text-slate-500">
+        <span>Turn {model.turnIndex}</span>
+        {model.pressure ? (
+          <span className="text-amber-200">Pressure: {model.pressure}</span>
+        ) : (
+          <span className="text-slate-400">Pressure unknown</span>
+        )}
       </div>
-
-      <div>
-        <p className="text-sm font-semibold text-slate-900">{titleLabel}</p>
-        {scenarioSummary ? <p className="mt-1 text-sm text-slate-600">{scenarioSummary}</p> : null}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.35em] text-slate-500">
+        <span className={`rounded-full border border-white/10 px-3 py-1 ${modeLabel === "LOOK" ? "text-[#d3e1ff]" : modeLabel === "SAY" ? "text-[#f0dfea]" : "text-amber-200"}`}>
+          {modeLabel}
+        </span>
+        <span className="text-[10px] text-[#a59e90]">{model.timestampLabel}</span>
       </div>
-
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <a
-          href={resumeHref}
-          className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white"
-        >
-          Resume
-        </a>
-        <button
-          type="button"
-          onClick={onPinToggle}
-          className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 font-semibold text-amber-700 transition hover:border-amber-400"
-        >
-          {isPinned ? "Unpin" : "Pin"}
-        </button>
-        <button
-          type="button"
-          onClick={onCopyId}
-          className="rounded-full border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700 transition hover:border-slate-500"
-        >
-          Copy ID
-        </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-500 transition hover:border-red-300 hover:text-red-600"
-        >
-          Remove
-        </button>
+      <div className="mt-4 space-y-3 text-sm text-white">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Command</div>
+          <p className="font-semibold">{model.command}</p>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Outcome</div>
+          <p className="text-amber-200">{model.outcome || "Outcome pending"}</p>
+        </div>
       </div>
+      {consequences.length > 0 && (
+        <div className="mt-4 space-y-1">
+          <div className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Consequences</div>
+          <ul className="space-y-1 text-sm text-slate-200">
+            {consequences.map((line, index) => (
+              <li key={`consequence-${index}`} className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </article>
   );
 }

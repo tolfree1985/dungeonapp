@@ -27,16 +27,6 @@ export type LatestTurnViewModel = {
   }>;
 };
 
-export type RecentTurnDisplay = {
-  turnIndex: number;
-  modeLabel?: string;
-  outcomeLabel?: string;
-  pressureLabel: string;
-  timestampLabel: string;
-  summary: string;
-  highlightChips: string[];
-};
-
 export type StateItemCategory = "world" | "quest" | "inventory" | "status" | "relation";
 
 export type StateItemViewModel = {
@@ -52,6 +42,16 @@ export type StatePanelViewModel = {
   quests: StateItemViewModel[];
   inventory: StateItemViewModel[];
   relations: StateItemViewModel[];
+};
+
+export type AdventureHistoryRowViewModel = {
+  turnIndex: number;
+  mode: "DO" | "SAY" | "LOOK" | null;
+  command: string;
+  outcome: string | null;
+  pressure: string;
+  consequenceSummary: string[];
+  timestampLabel: string;
 };
 
 function parseModeLabel(input?: string | null) {
@@ -288,20 +288,29 @@ export function buildLatestTurnViewModel(
   };
 }
 
-export function formatRecentTurnDisplay(turn: PlayTurn, fallbackPressure: string): RecentTurnDisplay {
-  const mode = parseModeLabel(turn.playerInput);
-  const rowPressure = typeof (turn as any).pressureStage === "string" ? (turn as any).pressureStage : fallbackPressure;
-  const highlights = formatLedgerDisplay(turn.ledgerAdds ?? []).flatMap(({ cause, effect }) => [cause, effect]);
+export function buildAdventureHistoryRowViewModel(
+  turn: PlayTurn,
+  pressureStage: string | null | undefined
+): AdventureHistoryRowViewModel {
+  const mode = parseIntentMode(turn.playerInput);
+  const rawText = turn.playerInput?.trim() ?? "";
+  const command =
+    rawText.replace(/^([A-Za-z]+):\s*/, "").trim() || rawText || "Command not recorded";
+  const ledgerEntries = formatLedgerDisplay(turn.ledgerAdds ?? []);
+  const consequenceSummary =
+    ledgerEntries.slice(0, 2).map(({ cause, effect }) => (effect ? `${cause} → ${effect}` : cause)) ?? [];
+  const pressureLabel = (pressureStage ?? "calm").toUpperCase();
   return {
     turnIndex: turn.turnIndex,
-    modeLabel: mode,
-    outcomeLabel: turn.resolution ?? undefined,
-    pressureLabel: rowPressure,
+    mode,
+    command,
+    outcome: turn.resolution ? turn.resolution.trim() : null,
+    pressure: pressureLabel,
+    consequenceSummary: consequenceSummary.length > 0 ? consequenceSummary : ["No consequences recorded."],
     timestampLabel: formatTurnTimestamp(turn.createdAt),
-    summary: turn.scene || turn.playerInput,
-    highlightChips: highlights.slice(0, 2),
   };
 }
+
 
 function buildStateItemsFromQuest(state: PlayStatePanel): StateItemViewModel[] {
   return state.quests.map((quest, index) => {

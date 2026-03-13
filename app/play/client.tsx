@@ -1,17 +1,18 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AdventureHistoryRow from "@/components/play/AdventureHistoryRow";
+import HistorySlotCard from "@/components/play/HistorySlotCard";
 import { formatPlayTimestamp } from "@/components/play/formatTimestamp";
 import LatestTurnCard from "@/components/play/LatestTurnCard";
 import PressureMeter from "@/components/play/PressureMeter";
 import StatePanel from "@/components/play/StatePanel";
 import TurnInput from "@/components/play/TurnInput";
 import {
+  AdventureHistoryRowViewModel,
+  buildAdventureHistoryRowViewModel,
   buildLatestTurnViewModel,
   buildStatePanelViewModel,
   formatLedgerDisplay,
-  formatRecentTurnDisplay,
-  RecentTurnDisplay,
 } from "@/components/play/presenters";
 import { ui } from "@/lib/ui/classes";
 import WorldContext from "@/components/play/WorldContext";
@@ -58,74 +59,15 @@ const previewTurns: Array<PlayTurn & { rollTotal?: number; pressureStage?: strin
   },
 ];
 
-function historyPressureTone(stage: string | undefined) {
-  switch (stage?.toLowerCase()) {
-    case "crisis":
-      return "border-rose-400/30 bg-rose-500/10 text-rose-200";
-    case "danger":
-      return "border-orange-400/30 bg-orange-500/10 text-orange-200";
-    case "tension":
-      return "border-amber-400/30 bg-amber-500/10 text-amber-200";
-    default:
-      return "border-slate-400/30 bg-slate-700/40 text-slate-200";
-  }
-}
-
-function RecentTurnsPanel({ rows }: { rows: RecentTurnDisplay[] }) {
+function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
   if (rows.length === 0) return null;
 
   return (
     <div className={`${ui.panel} p-5 space-y-3`}>
       <div className={ui.sectionLabel}>Recent turns</div>
-      <div className="relative mt-4 space-y-4 pl-6">
-        <div className="absolute left-2 top-0 bottom-0 w-px bg-white/10" />
+      <div className="space-y-3">
         {rows.map((row) => (
-          <article
-            key={`${row.turnIndex}-${row.timestampLabel}`}
-            className="relative rounded-[18px] border border-white/8 bg-black/10 p-4 transition hover:bg-white/5 animate-[ledgerReveal_200ms_ease] will-change-transform"
-          >
-            <div className="absolute -left-[18px] top-5 h-3 w-3 rounded-full border border-amber-300/25 bg-amber-400/70" />
-            <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-[#a59e90]">
-              <div className="flex flex-wrap items-center gap-2 uppercase tracking-[0.3em]">
-                <span>Turn {row.turnIndex}</span>
-                {row.modeLabel ? <span className="text-[10px]">{row.modeLabel}</span> : null}
-              </div>
-              <div className="flex items-center gap-2">
-                {row.outcomeLabel && (
-                  <span className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white">
-                    {row.outcomeLabel}
-                  </span>
-                )}
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.25em] ${historyPressureTone(row.pressureLabel)}`}>
-                  {row.pressureLabel}
-                </span>
-              </div>
-            </div>
-            <div className="mt-1 text-[10px] text-[#7e786d]">{row.timestampLabel}</div>
-            <p
-              className="mt-3 text-sm leading-6 text-[#d8d2c3]"
-              style={{
-                WebkitLineClamp: 3,
-                display: "-webkit-box",
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }}
-            >
-              {row.summary}
-            </p>
-            {row.highlightChips.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {row.highlightChips.map((highlight) => (
-                  <span
-                    key={highlight}
-                    className="hud-chip text-[#d8d2c3] bg-white/5 border-white/10"
-                  >
-                    {highlight}
-                  </span>
-                ))}
-              </div>
-            )}
-          </article>
+          <AdventureHistoryRow key={`${row.turnIndex}-${row.timestampLabel}`} model={row} />
         ))}
       </div>
     </div>
@@ -271,7 +213,7 @@ export default function PlayClient({
   }, [displayPressureStage, latestDisplayTurn]);
 
   const recentTurnRows = useMemo(
-    () => recentDisplayTurns.map((turn) => formatRecentTurnDisplay(turn, displayPressureStage)),
+    () => recentDisplayTurns.map((turn) => buildAdventureHistoryRowViewModel(turn, displayPressureStage)),
     [displayPressureStage, recentDisplayTurns]
   );
   const statePanelViewModel = useMemo(() => buildStatePanelViewModel(statePanel), [statePanel]);
@@ -346,7 +288,7 @@ export default function PlayClient({
   function renderHistoryRow(entry: HistoryEntry) {
     const isActive = entry.adventureId === currentId;
     return (
-      <AdventureHistoryRow
+      <HistorySlotCard
         key={entry.adventureId}
         adventureId={entry.adventureId}
         resumeHref={`/play?adventureId=${encodeURIComponent(entry.adventureId)}`}
