@@ -76,14 +76,23 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
           </div>
         ) : null}
         <div className="space-y-2 border-b border-white/5 pb-4">
-          <div className={sectionHeading}>Outcome</div>
-          <p className="text-sm text-amber-200">{model?.outcomeLabel ?? "Outcome pending"}</p>
-          {showTierLabel ? <p className="text-xs text-white/60">{model.outcomeTierLabel}</p> : null}
-          {model?.intentLabel ? (
-            <p className="text-xs text-white/60">Action: {model.intentLabel}</p>
-          ) : null}
-          {model?.notesLabel ? <p className="text-xs text-white/60">Notes: {model.notesLabel}</p> : null}
+          <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-200">Resolution</div>
+          <div className="flex flex-wrap items-center gap-2 font-semibold text-amber-200">
+            <span>{model?.outcomeTierLabel ?? model?.outcomeLabel ?? "Resolution pending"}</span>
+            {model?.intentLabel ? (
+              <>
+                <span className="opacity-30">•</span>
+                <span className="uppercase tracking-[0.3em] text-white/80">{model.intentLabel}</span>
+              </>
+            ) : null}
+          </div>
         </div>
+        {model?.notesLabel ? (
+          <div className="space-y-2 border-b border-white/5 pb-4">
+            <div className={sectionHeading}>Notes</div>
+            <p className="text-sm text-white/60">{model.notesLabel}</p>
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-6 border-t border-white/5 pt-4">
