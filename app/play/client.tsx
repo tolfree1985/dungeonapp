@@ -118,15 +118,21 @@ function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
 function TopBar() {
   return (
     <header className={ui.topBar}>
-      <div className="min-w-0">
+      <div className="min-w-0 space-y-2">
         <div className={ui.sectionLabel}>Chronicle AI</div>
-        <h1 className="mt-1 font-serif text-2xl font-semibold text-[#f3efe6]">The Ashen Estate</h1>
-        <p className="mt-1 text-sm text-[#a59e90]">Servants’ Wing • Turn 14</p>
+        <h1 className="text-3xl font-serif font-semibold text-[#f3efe6]">The Ashen Estate</h1>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.35em] text-[#a59e90]">
+          <span>Servants’ Wing</span>
+          <span>•</span>
+          <span>Late Night</span>
+          <span>•</span>
+          <span>Turn 14</span>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className="rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-200">
-          Tension
+      <div className="flex items-center gap-3">
+        <span className="inline-flex items-center rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.35em] text-amber-200">
+          TENSION
         </span>
         <button className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-[#d8d2c3] hover:bg-white/10">
           Settings
