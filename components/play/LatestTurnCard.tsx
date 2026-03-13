@@ -78,13 +78,15 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
           <p className="text-sm text-slate-300">{model?.sceneText ?? "Scene text unavailable"}</p>
         </div>
         <div className="space-y-2 border-b border-white/5 pb-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-200">Resolution</div>
-          <div className="rounded-[14px] border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.28em] text-amber-100 shadow-[0_0_25px_rgba(250,204,61,0.15)]">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-amber-200">{model?.rollSummary ?? "Roll pending"}</span>
-              {model?.rollDetail ? (
-                <span className="text-amber-100/70">({model.rollDetail.replace(/^Dice:\s*/i, "")})</span>
-              ) : null}
+        <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-200">Resolution</div>
+        <div className="rounded-[14px] border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.28em] text-amber-100 shadow-[0_0_25px_rgba(250,204,61,0.15)]">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-amber-200">
+              {model?.rollSummary ?? (model?.outcomeLabel ? "NO ROLL" : "Roll pending")}
+            </span>
+            {model?.rollDetail ? (
+              <span className="text-amber-100/70">({model.rollDetail.replace(/^Dice:\s*/i, "")})</span>
+            ) : null}
               <span className="opacity-40">•</span>
               <span className="text-white/80">{(model?.outcomeTierLabel ?? model?.outcomeLabel ?? "Resolution pending").toUpperCase()}</span>
               {model?.intentLabel ? (
