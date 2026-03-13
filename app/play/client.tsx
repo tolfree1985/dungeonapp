@@ -6,7 +6,12 @@ import LatestTurnCard from "@/components/play/LatestTurnCard";
 import PressureMeter from "@/components/play/PressureMeter";
 import StatePanel from "@/components/play/StatePanel";
 import TurnInput from "@/components/play/TurnInput";
-import { formatLatestTurnDisplay, formatRecentTurnDisplay, RecentTurnDisplay } from "@/components/play/presenters";
+import {
+  buildLatestTurnViewModel,
+  formatLedgerDisplay,
+  formatRecentTurnDisplay,
+  RecentTurnDisplay,
+} from "@/components/play/presenters";
 import { ui } from "@/lib/ui/classes";
 import WorldContext from "@/components/play/WorldContext";
 import LedgerPanel from "@/components/play/LedgerPanel";
@@ -125,56 +130,6 @@ function RecentTurnsPanel({ rows }: { rows: RecentTurnDisplay[] }) {
     </div>
   );
 }
-function EmptyPlayStateCard() {
-  return (
-    <section className="rounded-3xl border-4 border-fuchsia-500 bg-zinc-900/90 p-8 shadow-2xl">
-      <div className="mb-6 h-40 rounded-2xl border-2 border-cyan-400 bg-cyan-400/10" />
-
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-[0.25em] text-fuchsia-300">
-          Chronicle AI
-        </span>
-        <span className="rounded-full border border-amber-400 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">
-          No resolved turn
-        </span>
-      </div>
-
-      <h2 className="text-5xl font-black uppercase text-fuchsia-300">
-        BEGIN YOUR CHRONICLE TEST 999
-      </h2>
-
-      <p className="mt-2 text-lg text-zinc-300">
-        Servants’ Wing • Late Night • Calm
-      </p>
-
-      <p className="mt-6 text-xl leading-8 text-white">
-        The Chronicle awaits. Take your first action to bring the scene,
-        outcome, ledger, and pressure to life.
-      </p>
-
-      <p className="mt-4 text-lg leading-7 text-zinc-300">
-        No turn has been resolved yet. Your first action will establish the
-        opening scene and the world’s first visible consequence.
-      </p>
-
-      <div className="mt-6 flex flex-wrap gap-3">
-        <span className="rounded-full bg-fuchsia-600 px-4 py-2 text-sm font-bold text-white">
-          Scene pending
-        </span>
-        <span className="rounded-full bg-cyan-600 px-4 py-2 text-sm font-bold text-white">
-          Outcome pending
-        </span>
-        <span className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-bold text-white">
-          Ledger empty
-        </span>
-        <span className="rounded-full bg-amber-600 px-4 py-2 text-sm font-bold text-white">
-          Pressure calm
-        </span>
-      </div>
-    </section>
-  );
-}
-
 function TopBar() {
   return (
     <header className={ui.topBar}>
@@ -311,11 +266,8 @@ export default function PlayClient({
 
   const latestTurnModel = useMemo(() => {
     if (!latestDisplayTurn) return null;
-    return formatLatestTurnDisplay(latestDisplayTurn, displayPressureStage, {
-      location: statePanel.location ?? "Servants’ Wing",
-      timeOfDay: statePanel.timeOfDay ?? "Late Night",
-    });
-  }, [displayPressureStage, latestDisplayTurn, statePanel.location, statePanel.timeOfDay]);
+    return buildLatestTurnViewModel(latestDisplayTurn, displayPressureStage);
+  }, [displayPressureStage, latestDisplayTurn]);
 
   const recentTurnRows = useMemo(
     () => recentDisplayTurns.map((turn) => formatRecentTurnDisplay(turn, displayPressureStage)),
@@ -495,14 +447,8 @@ export default function PlayClient({
           <section className={ui.leftColumn}>
             {adventureId ? <TurnInput adventureId={adventureId} /> : null}
 
-            {latestTurnModel ? (
-              <>
-                <LatestTurnCard key={latestDisplayTurn?.id ?? "latest"} model={latestTurnModel} />
-                {recentTurnRows.length > 0 ? <RecentTurnsPanel rows={recentTurnRows} /> : null}
-              </>
-            ) : (
-              <EmptyPlayStateCard />
-            )}
+            <LatestTurnCard key={latestDisplayTurn?.id ?? "latest"} model={latestTurnModel} />
+            {recentTurnRows.length > 0 ? <RecentTurnsPanel rows={recentTurnRows} /> : null}
           </section>
 
             <aside className={ui.rightColumn}>
@@ -513,7 +459,7 @@ export default function PlayClient({
                 ambience={statePanel.ambience ?? "Cold / Quiet"}
                 tags={statePanel.contextTags ?? []}
               />
-              <LedgerPanel entries={latestTurnModel?.ledgerEntries ?? []} />
+              <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
               <StatePanel state={statePanel} />
             </aside>
           </div>

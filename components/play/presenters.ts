@@ -3,19 +3,23 @@
 import type { PlayTurn } from "@/app/play/types";
 import { formatTurnTimestamp } from "@/lib/ui/formatters";
 
-export type LatestTurnDisplay = {
-  turnLabel: string;
-  actionLabel?: string;
-  outcomeLabel?: string;
-  timestampLabel: string;
-  sceneTitle: string;
-  subtitle: string;
-  leadText: string;
-  bodyText: string;
-  consequenceChips: string[];
+export type LedgerDisplayEntry = {
+  cause: string;
+  effects: string[];
+};
+
+export type LatestTurnViewModel = {
+  turnIndex: number | null;
+  mode: "DO" | "SAY" | "LOOK" | null;
+  playerInput: string | null;
+  sceneText: string | null;
+  outcomeLabel: string | null;
   pressureLabel: string;
-  pressureStage: string;
-  ledgerEntries: LedgerDisplayEntry[];
+  ledgerEntries: string[];
+  stateDeltas: Array<{
+    key: string;
+    value: string;
+  }>;
 };
 
 export type RecentTurnDisplay = {
@@ -28,14 +32,72 @@ export type RecentTurnDisplay = {
   highlightChips: string[];
 };
 
-export type LedgerDisplayEntry = {
-  cause: string;
-  effects: string[];
-};
-
-function parseModeLabel(input: string) {
+function parseModeLabel(input?: string | null) {
+  if (!input) return undefined;
   const match = input.match(/^([A-Za-z]+):\s*/);
   return match ? match[1].toUpperCase() : undefined;
+}
+
+function parseIntentMode(input?: string | null): "DO" | "SAY" | "LOOK" | null {
+  const label = parseModeLabel(input);
+  if (!label) return null;
+  if (label === "DO" || label === "SAY" || label === "LOOK") {
+    return label;
+  }
+  return null;
+}
+
+function describeValue(value: unknown): string {
+  if (value === null || value === undefined) return "n/a";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function describeStateDelta(delta: unknown): LatestTurnViewModel["stateDeltas"][number] | null {
+  if (!delta) return null;
+  if (typeof delta === "string") {
+    const trimmed = delta.trim();
+    if (!trimmed) return null;
+    return { key: "State change", value: trimmed };
+  }
+  if (typeof delta === "object" && !Array.isArray(delta)) {
+    const record = delta as Record<string, unknown>;
+    const key =
+      typeof record.key === "string"
+        ? record.key
+        : typeof record.name === "string"
+        ? record.name
+        : "State change";
+    const value =
+      record.value !== undefined
+        ? describeValue(record.value)
+        : record.detail !== undefined
+        ? describeValue(record.detail)
+        : record.description !== undefined
+        ? describeValue(record.description)
+        : undefined;
+    if (!value) return null;
+    return { key, value };
+  }
+  if (Array.isArray(delta) && delta.length > 0) {
+    const flattened = delta.map((item) => describeValue(item)).join(", ");
+    if (!flattened) return null;
+    return { key: "State change", value: flattened };
+  }
+  return null;
 }
 
 function normalizeLedger(entry: unknown) {
@@ -77,38 +139,30 @@ export function formatLedgerDisplay(entries: unknown[]): LedgerDisplayEntry[] {
     .filter((entry): entry is { cause: string; effects: string[] } => Boolean(entry));
 }
 
-export function formatLatestTurnDisplay(
+function summarizeLedgerEntries(entries: unknown[]): string[] {
+  return formatLedgerDisplay(entries).map(({ cause, effects }) =>
+    effects.length > 0 ? `${cause} → ${effects.join(", ")}` : cause
+  );
+}
+
+export function buildLatestTurnViewModel(
   turn: PlayTurn,
-  pressureStage: string,
-  options?: { location?: string; timeOfDay?: string }
-): LatestTurnDisplay {
-  const mode = parseModeLabel(turn.playerInput);
-  const ledgerEntries = formatLedgerDisplay(turn.ledgerAdds ?? []);
-  const consequenceChips = ledgerEntries.flatMap(({ cause, effects }) => [cause, ...effects]).filter(Boolean);
+  pressureStage: string | null | undefined
+): LatestTurnViewModel {
+  const pressureLabel = (pressureStage ?? "calm").toUpperCase();
+  const ledgers = summarizeLedgerEntries(turn.ledgerAdds ?? []);
+  const deltas = Array.isArray(turn.stateDeltas)
+    ? turn.stateDeltas.map((delta) => describeStateDelta(delta)).filter(Boolean)
+    : [];
   return {
-    turnLabel: `Turn ${turn.turnIndex}`,
-    actionLabel: mode,
-    outcomeLabel: turn.resolution ?? undefined,
-    timestampLabel: formatTurnTimestamp(turn.createdAt),
-    sceneTitle: turn.scene.split(/\n+/)[0] || "The scene",
-    subtitle: `${options?.location ?? "Unknown location"} • ${options?.timeOfDay ?? "Unknown time"} • ${pressureStage}`,
-    leadText: (() => {
-      if (!turn.scene) return "";
-      const normalized = turn.scene.trim();
-      const sentences = normalized.split(/(?<=[.!?])\s+/);
-      return sentences[0] || normalized;
-    })(),
-    bodyText: (() => {
-      if (!turn.scene) return "";
-      const normalized = turn.scene.trim();
-      const sentences = normalized.split(/(?<=[.!?])\s+/);
-      if (sentences.length <= 1) return normalized;
-      return sentences.slice(1).join(" ").trim();
-    })(),
-    consequenceChips,
-    pressureLabel: pressureStage ?? "calm",
-    pressureStage,
-    ledgerEntries,
+    turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
+    mode: parseIntentMode(turn.playerInput),
+    playerInput: turn.playerInput ? turn.playerInput.trim() || null : null,
+    sceneText: turn.scene ? turn.scene.trim() || null : null,
+    outcomeLabel: turn.resolution ? turn.resolution.trim() || null : null,
+    pressureLabel,
+    ledgerEntries: ledgers,
+    stateDeltas: deltas,
   };
 }
 
