@@ -51,36 +51,36 @@ export default function LatestTurnCard({ model }: Props) {
         </div>
       </header>
 
-      <div className="space-y-4">
-        <div>
+      <div className="space-y-6">
+        <div className="space-y-3 border-b border-white/5 pb-4">
           <div className={sectionHeading}>Command</div>
           <p className="text-lg font-semibold text-white">{model?.playerInput ?? "Command missing"}</p>
         </div>
-        <div>
+        <div className="space-y-3 border-b border-white/5 pb-4">
           <div className={sectionHeading}>Scene</div>
           <p className="text-sm text-slate-300">{model?.sceneText ?? "Scene text unavailable"}</p>
         </div>
-        <div>
-          <div className={sectionHeading}>Roll</div>
-          {model?.rollSummary ? (
-            <>
-              <p className="text-sm text-white/80">{model.rollSummary}</p>
-              {model.rollDetail ? <p className="text-xs text-white/50">{model.rollDetail}</p> : null}
-            </>
-          ) : (
-            <p className="text-sm text-white/50">Roll data unavailable.</p>
-          )}
-        </div>
-        <div>
+        {model?.rollSummary ? (
+          <div className="space-y-2 border-b border-white/5 pb-4">
+            <div className={sectionHeading}>Roll</div>
+            <p className="text-sm text-white/80">{model.rollSummary}</p>
+            {model.rollDetail ? <p className="text-xs text-white/50">{model.rollDetail}</p> : null}
+          </div>
+        ) : null}
+        <div className="space-y-2">
           <div className={sectionHeading}>Outcome</div>
           <p className="text-sm text-amber-200">{model?.outcomeLabel ?? "Outcome pending"}</p>
           {model?.outcomeTierLabel ? (
             <p className="text-xs text-white/60">{model.outcomeTierLabel}</p>
           ) : null}
+          {model?.intentLabel ? (
+            <p className="text-xs text-white/60">Action: {model.intentLabel}</p>
+          ) : null}
+          {model?.notesLabel ? <p className="text-xs text-white/60">Notes: {model.notesLabel}</p> : null}
         </div>
       </div>
 
-      <div>
+      <div className="mt-6 border-t border-white/5 pt-4">
         <div className={sectionHeading}>Consequences</div>
         <ul className="mt-3 space-y-2">
           {ledgerEntries.map((entry) => (

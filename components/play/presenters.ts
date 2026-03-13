@@ -5,20 +5,109 @@ import { formatTurnTimestamp } from "@/lib/ui/formatters";
 
 type ResolvedResolution = Record<string, unknown>;
 
+function tryParseJson(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // ignore invalid JSON
+  }
+  return null;
+}
+
+function splitLabelAndJson(value?: string | null): { label: string; record: Record<string, unknown> | null } {
+  if (!value) return { label: "", record: null };
+  const trimmed = value.trim();
+  const firstBrace = trimmed.indexOf("{");
+  if (firstBrace === -1) {
+    return { label: trimmed, record: null };
+  }
+  const prefix = trimmed.slice(0, firstBrace).trim();
+  const jsonPart = trimmed.slice(firstBrace).trim();
+  const record = tryParseJson(jsonPart);
+  return { label: prefix || trimmed, record };
+}
+
+function buildRecordDetail(record: Record<string, unknown> | null): string | null {
+  if (!record) return null;
+  const pieces: string[] = [];
+  if (record.detail) pieces.push(describeValue(record.detail));
+  if (record.description) pieces.push(describeValue(record.description));
+  if (record.clue) pieces.push(describeValue(record.clue));
+  if (record.stage) pieces.push(`Stage: ${describeValue(record.stage)}`);
+  if (record.status) pieces.push(`Status: ${describeValue(record.status)}`);
+  if (record.qty !== undefined) pieces.push(`Qty: ${record.qty}`);
+  if (record.tags) {
+    if (Array.isArray(record.tags)) {
+      pieces.push(`Tags: ${record.tags.map((tag) => describeValue(tag)).join(", ")}`);
+    } else {
+      pieces.push(`Tags: ${describeValue(record.tags)}`);
+    }
+  }
+  return pieces.filter(Boolean).join(" • ") || null;
+}
+
+function describePlainText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return null;
+  return trimmed;
+}
+
 function normalizeResolutionValue(value: unknown): ResolvedResolution | null {
   if (!value) return null;
-  if (typeof value === "object" && !Array.isArray(value)) {
-    return value as ResolvedResolution;
-  }
+  if (typeof value === "object" && !Array.isArray(value)) return value as ResolvedResolution;
   if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as ResolvedResolution;
-      }
-    } catch {
-      return null;
-    }
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = tryParseJson(trimmed);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function formatTierLabel(tier?: string | null): string | null {
+  if (!tier) return null;
+  return tier
+    .replace(/[\-_]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+function describeResolutionOutcome(resolution: ResolvedResolution | null, fallback?: string | null): string | null {
+  if (typeof resolution?.outcome === "string" && resolution.outcome.trim()) {
+    return resolution.outcome.trim();
+  }
+  const tierValue = formatTierLabel(
+    typeof resolution?.band === "string" && resolution.band.trim()
+      ? resolution.band
+      : typeof resolution?.tier === "string" && resolution.tier.trim()
+      ? resolution.tier
+      : null
+  );
+  if (tierValue) return tierValue;
+  return fallback ?? null;
+}
+
+function describeResolutionAction(resolution: ResolvedResolution | null): string | null {
+  const intent = typeof resolution?.intent === "string" ? resolution.intent.trim() : null;
+  const action = typeof resolution?.action === "string" ? resolution.action.trim() : null;
+  if (intent) return intent;
+  if (action) return action;
+  return null;
+}
+
+function describeResolutionNotes(resolution: ResolvedResolution | null): string | null {
+  if (typeof resolution?.notes === "string" && resolution.notes.trim()) {
+    return resolution.notes.trim();
+  }
+  if (typeof resolution?.description === "string" && resolution.description.trim()) {
+    return resolution.description.trim();
   }
   return null;
 }
@@ -62,16 +151,6 @@ function buildRollDetail(dice?: number[]): string | null {
   return `Dice: ${dice.join(" + ")}`;
 }
 
-function formatTierLabel(tier?: string | null): string | null {
-  if (!tier) return null;
-  return tier
-    .replace(/[-_]+/g, " ")
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`)
-    .join(" ");
-}
-
 export type LedgerCategory = "pressure" | "world" | "quest" | "inventory" | "npc" | "time";
 
 export type LedgerEntryViewModel = {
@@ -97,6 +176,8 @@ export type LatestTurnViewModel = {
   rollSummary?: string | null;
   rollDetail?: string | null;
   outcomeTierLabel?: string | null;
+  intentLabel?: string | null;
+  notesLabel?: string | null;
 };
 
 export type StateItemCategory = "world" | "quest" | "inventory" | "status" | "relation";
@@ -348,22 +429,30 @@ export function buildLatestTurnViewModel(
   const deltas = Array.isArray(turn.stateDeltas)
     ? turn.stateDeltas.map((delta) => describeStateDelta(delta)).filter(Boolean)
     : [];
-  const rollInfo = extractRollInfo(turn.resolutionJson ?? turn.resolution);
+  const resolutionSource = turn.resolutionJson ?? turn.resolution;
+  const normalizedResolution = normalizeResolutionValue(resolutionSource);
+  const rollInfo = extractRollInfo(resolutionSource);
   const rollSummary = buildRollSummary(rollInfo.rollTotal, rollInfo.dice);
   const rollDetail = buildRollDetail(rollInfo.dice);
   const outcomeTierLabel = formatTierLabel(rollInfo.tier ?? null);
+  const fallbackPlainOutcome = describePlainText(turn.resolution ?? null);
+  const outcomeLabel = describeResolutionOutcome(normalizedResolution, fallbackPlainOutcome);
+  const intentLabel = describeResolutionAction(normalizedResolution);
+  const notesLabel = describeResolutionNotes(normalizedResolution);
   return {
     turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
     mode: parseIntentMode(turn.playerInput),
     playerInput: turn.playerInput ? turn.playerInput.trim() || null : null,
     sceneText: turn.scene ? turn.scene.trim() || null : null,
-    outcomeLabel: turn.resolution ? turn.resolution.trim() || null : null,
+    outcomeLabel,
     pressureLabel,
     ledgerEntries,
     stateDeltas: deltas,
     rollSummary,
     rollDetail,
     outcomeTierLabel,
+    intentLabel,
+    notesLabel,
   };
 }
 
@@ -373,17 +462,23 @@ export function buildAdventureHistoryRowViewModel(
 ): AdventureHistoryRowViewModel {
   const mode = parseIntentMode(turn.playerInput);
   const rawText = turn.playerInput?.trim() ?? "";
+  const commandFallback = turn.turnIndex === 0 ? "Initial state" : "Command not recorded";
   const command =
-    rawText.replace(/^([A-Za-z]+):\s*/, "").trim() || rawText || "Command not recorded";
+    rawText.replace(/^([A-Za-z]+):\s*/, "").trim() || rawText || commandFallback;
   const ledgerEntries = formatLedgerDisplay(turn.ledgerAdds ?? []);
   const consequenceSummary =
     ledgerEntries.slice(0, 2).map(({ cause, effect }) => (effect ? `${cause} → ${effect}` : cause)) ?? [];
   const pressureLabel = (pressureStage ?? "calm").toUpperCase();
+  const resolutionSource = turn.resolutionJson ?? turn.resolution;
+  const normalizedResolution = normalizeResolutionValue(resolutionSource);
+  const fallbackOutcome =
+    turn.turnIndex === 0 ? "No resolution recorded" : describePlainText(turn.resolution ?? null);
+  const outcomeLabel = describeResolutionOutcome(normalizedResolution, fallbackOutcome);
   return {
     turnIndex: turn.turnIndex,
     mode,
     command,
-    outcome: turn.resolution ? turn.resolution.trim() : null,
+    outcome: outcomeLabel,
     pressure: pressureLabel,
     consequenceSummary: consequenceSummary.length > 0 ? consequenceSummary : ["No consequences recorded."],
     timestampLabel: formatTurnTimestamp(turn.createdAt),
@@ -393,11 +488,22 @@ export function buildAdventureHistoryRowViewModel(
 
 function buildStateItemsFromQuest(state: PlayStatePanel): StateItemViewModel[] {
   return state.quests.map((quest, index) => {
-    const label = quest.title || `Quest ${index + 1}`;
-    const status = quest.status?.trim() || "In progress";
-    const detail = quest.detail?.trim();
-    const value = detail ? `${status} • ${detail}` : status;
-    const emphasis = status.toLowerCase().includes("urgent") ? "high" : "normal";
+    const rawLabel = quest.title ?? quest.label ?? quest.detail ?? `Quest ${index + 1}`;
+    const { label: prefixLabel, record } = splitLabelAndJson(rawLabel);
+    const label =
+      prefixLabel && prefixLabel !== ""
+        ? prefixLabel
+        : describeValue(record?.label ?? record?.name ?? quest.title ?? quest.label) ?? `Quest ${index + 1}`;
+    const statusValue = quest.status?.trim();
+    const recordStatus = record?.status ? describeValue(record.status) : null;
+    const status = statusValue || recordStatus;
+    const detailSources: string[] = [];
+    if (status) detailSources.push(status);
+    if (quest.detail && quest.detail !== rawLabel) detailSources.push(quest.detail.trim());
+    const recordDetail = buildRecordDetail(record);
+    if (recordDetail) detailSources.push(recordDetail);
+    const value = detailSources.length > 0 ? detailSources.join(" • ") : "In progress";
+    const emphasis = value.toLowerCase().includes("urgent") ? "high" : "normal";
     return {
       label,
       value,
@@ -408,11 +514,27 @@ function buildStateItemsFromQuest(state: PlayStatePanel): StateItemViewModel[] {
 }
 
 function buildInventoryItems(state: PlayStatePanel): StateItemViewModel[] {
-  return state.inventory.map((item) => {
-    const emphasis = item.detail?.toLowerCase().includes("rare") ? "high" : "normal";
-    const value = item.detail ? item.detail : "In pack";
+  return state.inventory.map((item, index) => {
+    const rawName = item.name ?? item.detail ?? `Item ${index + 1}`;
+    const { label: prefixLabel, record } = splitLabelAndJson(rawName);
+    const labelCandidate =
+      prefixLabel && prefixLabel !== ""
+        ? prefixLabel
+        : describeValue(record?.label ?? record?.name ?? item.name) ?? `Item ${index + 1}`;
+    const detailSources: string[] = [];
+    const embeddedDetail = buildRecordDetail(record);
+    if (embeddedDetail) detailSources.push(embeddedDetail);
+    const detailRecord = typeof item.detail === "string" ? tryParseJson(item.detail.trim()) : null;
+    if (detailRecord) {
+      const additional = buildRecordDetail(detailRecord);
+      if (additional) detailSources.push(additional);
+    } else if (typeof item.detail === "string" && item.detail.trim()) {
+      detailSources.push(item.detail.trim());
+    }
+    const value = detailSources.length > 0 ? detailSources.join(" • ") : "In pack";
+    const emphasis = value.toLowerCase().includes("rare") ? "high" : "normal";
     return {
-      label: item.name,
+      label: labelCandidate,
       value,
       category: "inventory",
       emphasis,

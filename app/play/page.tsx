@@ -15,8 +15,23 @@ const PROTECTED_ADVENTURE_IDS = new Set(["canon_ui", "sandbox", "replay_lab", "d
 const DEV_DEFAULT_ADVENTURE = "85e17a2c-c8a9-4c48-9186-2ed7e3e9d983";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        // ignore invalid JSON
+      }
+    }
+  }
+  return null;
 }
 
 function asDisplayValue(value: unknown): PlayStateValue {
