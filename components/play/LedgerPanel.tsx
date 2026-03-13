@@ -1,10 +1,24 @@
 "use client";
 
 import { ui } from "@/lib/ui/classes";
-import type { LedgerDisplayEntry } from "./presenters";
+import type { LedgerEntryViewModel } from "./presenters";
 
 type LedgerPanelProps = {
-  entries?: LedgerDisplayEntry[];
+  entries?: LedgerEntryViewModel[];
+};
+
+const categoryLabels: Record<string, string> = {
+  pressure: "Pressure",
+  world: "World",
+  quest: "Quest",
+  inventory: "Inventory",
+  npc: "NPC",
+  time: "Time",
+};
+
+const emphasisTone: Record<"normal" | "high", string> = {
+  normal: "border-white/10 bg-black/10",
+  high: "border-rose-400/40 bg-rose-500/10",
 };
 
 export default function LedgerPanel({ entries = [] }: LedgerPanelProps) {
@@ -14,27 +28,20 @@ export default function LedgerPanel({ entries = [] }: LedgerPanelProps) {
     <div className={`${ui.panel} p-5`}>
       <div className={ui.sectionLabel}>Ledger</div>
       <div className="mt-4 space-y-3">
-        {entries.map((entry, index) => (
-          <article key={`${entry.cause}-${index}`} className="space-y-2 rounded-[18px] border border-white/10 bg-black/10 p-3">
-            {entry.cause ? (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[#a59e90]">Cause</span>
-                <span className="font-medium text-[#f3efe6]">{entry.cause}</span>
-              </div>
-            ) : null}
-            {entry.effects.length > 0 ? (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[#a59e90]">Effect</span>
-                <span className="font-medium text-[#f3efe6]">{entry.effects.join(", ")}</span>
-              </div>
-            ) : null}
-            {entry.effects.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {entry.effects.map((chip) => (
-                  <span key={chip} className="hud-chip text-[#d8d2c3] bg-white/5 border-white/10">
-                    {chip}
-                  </span>
-                ))}
+        {entries.map((entry) => (
+          <article
+            key={entry.id}
+            className={`space-y-2 rounded-[18px] border px-3 py-2 ${entry.emphasis ? emphasisTone[entry.emphasis] : "border-white/10 bg-black/10"}`}
+          >
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-[#a59e90]">{categoryLabels[entry.category] ?? "World"}</span>
+              <span className="font-medium text-[#f3efe6]">
+                {entry.effect ? `${entry.cause} → ${entry.effect}` : entry.cause}
+              </span>
+            </div>
+            {entry.effect ? (
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                {entry.category}
               </div>
             ) : null}
           </article>

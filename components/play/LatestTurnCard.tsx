@@ -3,15 +3,23 @@
 import { ui } from "@/lib/ui/classes";
 import type { LatestTurnViewModel } from "./presenters";
 
+const categoryLabels: Record<string, string> = {
+  pressure: "Pressure",
+  world: "World",
+  quest: "Quest",
+  inventory: "Inventory",
+  npc: "NPC",
+  time: "Time",
+};
+
 type Props = {
   model: LatestTurnViewModel | null;
 };
 
 export default function LatestTurnCard({ model }: Props) {
   const hasResolvedTurn = Boolean(model && model.turnIndex && model.turnIndex > 0);
-  const isEmpty = !hasResolvedTurn;
 
-  if (isEmpty) {
+  if (!hasResolvedTurn) {
     return (
       <section className={`${ui.panel} space-y-4 p-6`}>
         <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Awaiting resolved turn</div>
@@ -24,9 +32,9 @@ export default function LatestTurnCard({ model }: Props) {
     );
   }
 
-  const legacyLedgerEntries = model?.ledgerEntries ?? [];
+  const ledgerEntries = model?.ledgerEntries ?? [];
   const stateDeltas = model?.stateDeltas ?? [];
-  const hasConsequences = legacyLedgerEntries.length > 0 || stateDeltas.length > 0;
+  const hasConsequences = ledgerEntries.length > 0 || stateDeltas.length > 0;
 
   return (
     <section className={`${ui.panel} space-y-6 p-6`}>
@@ -47,9 +55,7 @@ export default function LatestTurnCard({ model }: Props) {
       <div className="space-y-3">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">Player command</div>
-          <p className="text-lg font-semibold text-white">
-            {model?.playerInput ?? "No command recorded"}
-          </p>
+          <p className="text-lg font-semibold text-white">{model?.playerInput ?? "No command recorded"}</p>
         </div>
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">Scene</div>
@@ -64,9 +70,13 @@ export default function LatestTurnCard({ model }: Props) {
       <div>
         <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">Consequences</div>
         <ul className="mt-3 space-y-2">
-          {legacyLedgerEntries.map((entry, index) => (
-            <li key={`ledger-${index}`} className="text-sm text-slate-200">
-              {entry}
+          {ledgerEntries.map((entry) => (
+            <li key={entry.id} className="text-sm text-slate-200">
+              <span className="font-semibold text-slate-100">
+                {categoryLabels[entry.category] ?? "World"} —
+              </span>{" "}
+              {entry.cause}
+              {entry.effect ? ` → ${entry.effect}` : ""}
             </li>
           ))}
           {stateDeltas.map((delta) => (

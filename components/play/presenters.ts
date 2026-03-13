@@ -3,9 +3,14 @@
 import type { PlayTurn } from "@/app/play/types";
 import { formatTurnTimestamp } from "@/lib/ui/formatters";
 
-export type LedgerDisplayEntry = {
+export type LedgerCategory = "pressure" | "world" | "quest" | "inventory" | "npc" | "time";
+
+export type LedgerEntryViewModel = {
+  id: string;
+  category: LedgerCategory;
   cause: string;
-  effects: string[];
+  effect: string;
+  emphasis?: "normal" | "high";
 };
 
 export type LatestTurnViewModel = {
@@ -15,7 +20,7 @@ export type LatestTurnViewModel = {
   sceneText: string | null;
   outcomeLabel: string | null;
   pressureLabel: string;
-  ledgerEntries: string[];
+  ledgerEntries: LedgerEntryViewModel[];
   stateDeltas: Array<{
     key: string;
     value: string;
@@ -133,16 +138,49 @@ function normalizeLedger(entry: unknown) {
   return { cause, effects };
 }
 
-export function formatLedgerDisplay(entries: unknown[]): LedgerDisplayEntry[] {
-  return entries
-    .map((entry) => normalizeLedger(entry))
-    .filter((entry): entry is { cause: string; effects: string[] } => Boolean(entry));
+function classifyLedgerCategory(text: string): LedgerCategory {
+  const normalized = text.toLowerCase();
+  if (normalized.includes("pressure") || normalized.includes("tension") || normalized.includes("calm")) {
+    return "pressure";
+  }
+  if (normalized.includes("inventory") || normalized.includes("item") || normalized.includes("artifact")) {
+    return "inventory";
+  }
+  if (normalized.includes("quest") || normalized.includes("mission") || normalized.includes("goal")) {
+    return "quest";
+  }
+  if (normalized.includes("npc") || normalized.includes("servant") || normalized.includes("ghost") || normalized.includes("guard")) {
+    return "npc";
+  }
+  if (normalized.includes("time") || normalized.includes("hour") || normalized.includes("night") || normalized.includes("day")) {
+    return "time";
+  }
+  return "world";
 }
 
-function summarizeLedgerEntries(entries: unknown[]): string[] {
-  return formatLedgerDisplay(entries).map(({ cause, effects }) =>
-    effects.length > 0 ? `${cause} → ${effects.join(", ")}` : cause
-  );
+export function formatLedgerDisplay(entries: unknown[]): LedgerEntryViewModel[] {
+  return entries
+    .map((entry, index) => {
+      const normalized = normalizeLedger(entry);
+      if (!normalized) {
+        return null;
+      }
+      const { cause, effects } = normalized;
+      const effect = effects.join(", ");
+      const category = classifyLedgerCategory(`${cause} ${effect}`);
+      const emphasis =
+        category === "pressure" || effect.toLowerCase().includes("increased") || effect.toLowerCase().includes("decreased")
+          ? "high"
+          : "normal";
+      return {
+        id: `${index}-${cause}-${effect}`.replace(/\s+/g, "-").toLowerCase(),
+        category,
+        cause,
+        effect,
+        emphasis,
+      };
+    })
+    .filter((entry): entry is LedgerEntryViewModel => Boolean(entry));
 }
 
 export function buildLatestTurnViewModel(
@@ -150,7 +188,7 @@ export function buildLatestTurnViewModel(
   pressureStage: string | null | undefined
 ): LatestTurnViewModel {
   const pressureLabel = (pressureStage ?? "calm").toUpperCase();
-  const ledgers = summarizeLedgerEntries(turn.ledgerAdds ?? []);
+  const ledgerEntries = formatLedgerDisplay(turn.ledgerAdds ?? []);
   const deltas = Array.isArray(turn.stateDeltas)
     ? turn.stateDeltas.map((delta) => describeStateDelta(delta)).filter(Boolean)
     : [];
@@ -161,7 +199,7 @@ export function buildLatestTurnViewModel(
     sceneText: turn.scene ? turn.scene.trim() || null : null,
     outcomeLabel: turn.resolution ? turn.resolution.trim() || null : null,
     pressureLabel,
-    ledgerEntries: ledgers,
+    ledgerEntries,
     stateDeltas: deltas,
   };
 }
@@ -169,7 +207,7 @@ export function buildLatestTurnViewModel(
 export function formatRecentTurnDisplay(turn: PlayTurn, fallbackPressure: string): RecentTurnDisplay {
   const mode = parseModeLabel(turn.playerInput);
   const rowPressure = typeof (turn as any).pressureStage === "string" ? (turn as any).pressureStage : fallbackPressure;
-  const highlights = formatLedgerDisplay(turn.ledgerAdds ?? []).flatMap(({ cause, effects }) => [cause, ...effects]);
+  const highlights = formatLedgerDisplay(turn.ledgerAdds ?? []).flatMap(({ cause, effect }) => [cause, effect]);
   return {
     turnIndex: turn.turnIndex,
     modeLabel: mode,
