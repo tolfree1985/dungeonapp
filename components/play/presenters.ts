@@ -375,6 +375,49 @@ function normalizeLedger(entry: unknown) {
   return { cause, effects };
 }
 
+type FlagValue = string | number | boolean | null;
+
+function parseStateFlagEntry(value: string): { key: string; value: FlagValue } | null {
+  const trimmed = value.trim();
+  const colonIndex = trimmed.indexOf(":");
+  if (colonIndex === -1) return null;
+  const key = trimmed.slice(0, colonIndex).trim();
+  const rawValue = trimmed.slice(colonIndex + 1).trim();
+  if (!key) return null;
+  if (!rawValue) return null;
+  const lowered = rawValue.toLowerCase();
+  if (lowered === "true") return { key, value: true };
+  if (lowered === "false") return { key, value: false };
+  const numeric = Number(rawValue);
+  if (!Number.isNaN(numeric)) {
+    return { key, value: numeric };
+  }
+  return { key, value: rawValue };
+}
+
+function humanizeStateFlag(key: string, value: unknown): string | null {
+  const normalizedKey = key.toLowerCase();
+  if (normalizedKey === "observed.risk_2" && value === true) {
+    return "Risk increases.";
+  }
+  if (normalizedKey.startsWith("observed.risk_")) {
+    return "Risk rises.";
+  }
+  if (normalizedKey === "observed.partial") {
+    return "Only partial information recovered.";
+  }
+  if (normalizedKey === "observed.noisy") {
+    return "Your investigation creates noise.";
+  }
+  return null;
+}
+
+function tryHumanizeLedgerText(text: string): string | null {
+  const flag = parseStateFlagEntry(text);
+  if (!flag) return null;
+  return humanizeStateFlag(flag.key, flag.value);
+}
+
 function classifyLedgerCategory(text: string): LedgerCategory {
   const normalized = text.toLowerCase();
   if (normalized.includes("pressure") || normalized.includes("tension") || normalized.includes("calm")) {
@@ -403,17 +446,24 @@ export function formatLedgerDisplay(entries: unknown[]): LedgerEntryViewModel[] 
         return null;
       }
       const { cause, effects } = normalized;
-      const effect = effects.join(", ");
-      const category = classifyLedgerCategory(`${cause} ${effect}`);
+      const humanizedCause = tryHumanizeLedgerText(cause);
+      const normalizedEffects = effects
+        .map((effectText) => tryHumanizeLedgerText(effectText) ?? effectText)
+        .map((text) => text.trim())
+        .filter(Boolean);
+      const displayCause = humanizedCause ?? cause;
+      const displayEffect = normalizedEffects.join(", ");
+      const category = classifyLedgerCategory(`${displayCause} ${displayEffect}`);
+      const effectLower = displayEffect.toLowerCase();
       const emphasis =
-        category === "pressure" || effect.toLowerCase().includes("increased") || effect.toLowerCase().includes("decreased")
+        category === "pressure" || effectLower.includes("increased") || effectLower.includes("decreased")
           ? "high"
           : "normal";
       return {
-        id: `${index}-${cause}-${effect}`.replace(/\s+/g, "-").toLowerCase(),
+        id: `${index}-${displayCause}-${displayEffect}`.replace(/\s+/g, "-").toLowerCase(),
         category,
-        cause,
-        effect,
+        cause: displayCause,
+        effect: displayEffect,
         emphasis,
       };
     })
