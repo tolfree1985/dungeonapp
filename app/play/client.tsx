@@ -8,6 +8,7 @@ import StatePanel from "@/components/play/StatePanel";
 import TurnInput from "@/components/play/TurnInput";
 import {
   buildLatestTurnViewModel,
+  buildStatePanelViewModel,
   formatLedgerDisplay,
   formatRecentTurnDisplay,
   RecentTurnDisplay,
@@ -273,6 +274,7 @@ export default function PlayClient({
     () => recentDisplayTurns.map((turn) => formatRecentTurnDisplay(turn, displayPressureStage)),
     [displayPressureStage, recentDisplayTurns]
   );
+  const statePanelViewModel = useMemo(() => buildStatePanelViewModel(statePanel), [statePanel]);
 
   const hero = useMemo(() => {
     if (!adventureId) return null;
@@ -460,7 +462,7 @@ export default function PlayClient({
                 tags={statePanel.contextTags ?? []}
               />
               <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
-              <StatePanel state={statePanel} />
+              <StatePanel viewModel={statePanelViewModel} />
             </aside>
           </div>
         </div>
