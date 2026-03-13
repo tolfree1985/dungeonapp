@@ -493,7 +493,12 @@ function buildStateItemsFromQuest(state: PlayStatePanel): StateItemViewModel[] {
     const recordName = record?.name ? describeValue(record.name) : null;
     const recordLabel = record?.label ? describeValue(record.label) : null;
     const recordId = record?.id ? describeValue(record.id) : null;
-    const label = recordName ?? recordLabel ?? prefixLabel || recordId || `Quest ${index + 1}`;
+    const label =
+      recordName ??
+      recordLabel ??
+      prefixLabel ??
+      recordId ??
+      `Quest ${index + 1}`;
     const detailSources: string[] = [];
     const recordDetail = buildRecordDetail(record);
     if (recordDetail) detailSources.push(recordDetail);
