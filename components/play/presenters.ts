@@ -535,7 +535,12 @@ function buildInventoryItems(state: PlayStatePanel): StateItemViewModel[] {
     const recordName = record?.name ? describeValue(record.name) : null;
     const recordLabel = record?.label ? describeValue(record.label) : null;
     const recordId = describeValue(record?.id);
-    const label = recordName ?? recordLabel ?? prefixLabel || recordId || `Item ${index + 1}`;
+    const label =
+      recordName ??
+      recordLabel ??
+      prefixLabel ??
+      recordId ??
+      `Item ${index + 1}`;
     const detailSources: string[] = [];
     const recordDetail = buildRecordDetail(record);
     if (recordDetail) detailSources.push(recordDetail);
