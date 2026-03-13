@@ -11,6 +11,8 @@ import {
 import { getOptionalUser } from "@/lib/api/identity";
 import { prisma } from "@/lib/prisma";
 
+const PROTECTED_ADVENTURE_IDS = new Set(["canon_ui", "sandbox", "replay_lab", "dev_run"]);
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -311,14 +313,23 @@ export default async function PlayPage({
   const debugOwnerId = persistedAdventureOwnerId ?? "n/a";
   const debugPressure = formatStateValue(pressureValue);
   const debugLocation = formatStateValue(locationStat?.value);
+  const isProtectedRun = adventureId ? PROTECTED_ADVENTURE_IDS.has(adventureId) : false;
+  const debugStripClasses = isProtectedRun
+    ? "border-rose-500/60 bg-rose-500/10 text-rose-100"
+    : "border-white/10 bg-white/5 text-white/70";
   return (
     <main className="mx-auto max-w-6xl p-6">
-      <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/70">
+      <div
+        className={`mb-4 flex flex-wrap items-center gap-4 rounded-xl border px-3 py-2 text-xs ${debugStripClasses}`}
+      >
         <span>Adventure: {debugAdventureId}</span>
         <span className="ml-2">Turn: {latestTurnIndex !== undefined ? latestTurnIndex : "n/a"}</span>
         <span className="ml-2">Pressure: {debugPressure}</span>
         <span className="ml-2">Location: {debugLocation}</span>
         <span className="ml-2">Owner: {debugOwnerId}</span>
+        <span className={`ml-2 font-semibold ${isProtectedRun ? "text-rose-200" : "text-emerald-200"}`}>
+          {isProtectedRun ? "Protected run" : "Sandbox run"}
+        </span>
       </div>
       <Suspense fallback={<div className="mt-6 text-sm text-gray-500">Loading play controls...</div>}>
         <PlayClient
