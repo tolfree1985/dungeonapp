@@ -43,6 +43,14 @@ export default function PressureMeter({ currentStage, panelTone, isPulsing }: Pr
   const pulseClass = isPulsing
     ? "animate-[pressurePulse_450ms_ease] scale-[1.01] ring-1 ring-amber-300/60 shadow-[0_0_32px_rgba(201,163,90,0.45)]"
     : "transition duration-300";
+  const stageTone: Record<PressureStage, string> = {
+    calm: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
+    tension: "border-amber-500/40 bg-amber-500/10 text-amber-100",
+    danger: "border-orange-500/40 bg-orange-500/10 text-orange-100",
+    crisis: "border-rose-500/40 bg-rose-500/10 text-rose-100",
+  };
+  const stageStyle = (stage: PressureStage) =>
+    stage === activeStage ? `${stageTone[stage]} border` : "text-white/40";
 
   return (
     <div className={`${ui.panel} p-5${toneClass} transform-gpu ${pulseClass}`}>
@@ -67,6 +75,16 @@ export default function PressureMeter({ currentStage, panelTone, isPulsing }: Pr
             </div>
           );
         })}
+      </div>
+      <div className="mt-4 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.25em]">
+        {pressureOrder.map((stage) => (
+          <span
+            key={`${stage}-label`}
+            className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] ${stageStyle(stage)}`}
+          >
+            {stage.toUpperCase()}
+          </span>
+        ))}
       </div>
     </div>
   );
