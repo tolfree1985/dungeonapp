@@ -12,6 +12,7 @@ import { getOptionalUser } from "@/lib/api/identity";
 import { prisma } from "@/lib/prisma";
 
 const PROTECTED_ADVENTURE_IDS = new Set(["canon_ui", "sandbox", "replay_lab", "dev_run"]);
+const DEV_DEFAULT_ADVENTURE = "85e17a2c-c8a9-4c48-9186-2ed7e3e9d983";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -184,7 +185,7 @@ export default async function PlayPage({
     typeof resolvedSearchParams.adventureId === "string" ? resolvedSearchParams.adventureId : undefined;
   const adventureId =
     process.env.NODE_ENV === "development"
-      ? requestedAdventureId ?? "sandbox"
+      ? requestedAdventureId ?? DEV_DEFAULT_ADVENTURE
       : requestedAdventureId ?? null;
   const scenarioId = resolvedSearchParams.scenarioId ?? null;
   const user = getOptionalUser(await headers());
