@@ -232,10 +232,12 @@ export default function PlayClient({
     [displayPressureStage, statePanel.stats]
   );
   const [highlightLatestTurn, setHighlightLatestTurn] = useState(false);
+  const [showTurnDivider, setShowTurnDivider] = useState(false);
   const [isPressurePulsing, setIsPressurePulsing] = useState(false);
   const latestTurnRef = useRef<HTMLDivElement | null>(null);
   const prevLatestTurnIndexRef = useRef<number | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const turnDividerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressurePulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevPressureSnapshotRef = useRef<PressureSnapshot | null>(null);
   const ambienceByPressure: Record<string, string> = {
@@ -285,6 +287,7 @@ export default function PlayClient({
     const prevIndex = prevLatestTurnIndexRef.current;
     if (currentIndex !== null && prevIndex !== null && currentIndex > prevIndex) {
       setHighlightLatestTurn(true);
+      setShowTurnDivider(true);
       latestTurnRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       if (highlightTimeoutRef.current) {
         clearTimeout(highlightTimeoutRef.current);
@@ -293,6 +296,13 @@ export default function PlayClient({
         setHighlightLatestTurn(false);
         highlightTimeoutRef.current = null;
       }, 600);
+      if (turnDividerTimeoutRef.current) {
+        clearTimeout(turnDividerTimeoutRef.current);
+      }
+      turnDividerTimeoutRef.current = setTimeout(() => {
+        setShowTurnDivider(false);
+        turnDividerTimeoutRef.current = null;
+      }, 1200);
     }
     prevLatestTurnIndexRef.current = currentIndex;
   }, [latestDisplayTurn?.turnIndex, hasTurns]);
@@ -323,6 +333,12 @@ export default function PlayClient({
     if (pressurePulseTimeoutRef.current) {
       clearTimeout(pressurePulseTimeoutRef.current);
       pressurePulseTimeoutRef.current = null;
+    }
+  }, []);
+  useEffect(() => () => {
+    if (turnDividerTimeoutRef.current) {
+      clearTimeout(turnDividerTimeoutRef.current);
+      turnDividerTimeoutRef.current = null;
     }
   }, []);
 
@@ -484,8 +500,8 @@ export default function PlayClient({
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(201,163,90,0.08),transparent_30%),radial-gradient(circle_at_bottom,rgba(92,63,31,0.1),transparent_28%)]" />
       <div className={ui.pageWrap}>
         <div className={ui.playSurface}>
-          <TopBar />
-          <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-[11px] uppercase tracking-[0.3em] text-white/70">
+            <TopBar />
+            <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-[11px] uppercase tracking-[0.3em] text-white/70">
             <span className="text-emerald-300">{displayPressureStage?.toUpperCase() ?? "CALM"}</span>
             <span className="text-white/40">•</span>
             <span>
@@ -512,6 +528,13 @@ export default function PlayClient({
 
           <div className={ui.pageGrid}>
             <section className={ui.leftColumn}>
+              {showTurnDivider && latestDisplayTurn ? (
+                <div className="text-[11px] font-semibold uppercase tracking-[0.5em] text-amber-300">
+                  <span className="block rounded-full border border-amber-400/40 bg-black/40 px-4 py-2 text-center text-xs">
+                    ─── TURN {latestDisplayTurn.turnIndex} RESOLVED ───
+                  </span>
+                </div>
+              ) : null}
               <div ref={latestTurnRef}>
                 <LatestTurnCard
                   key={latestDisplayTurn?.id ?? "latest"}
