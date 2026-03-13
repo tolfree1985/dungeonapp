@@ -12,20 +12,29 @@ const modeTone: Record<"DO" | "SAY" | "LOOK", string> = {
   LOOK: "text-sky-200 border border-sky-500/40 bg-sky-500/10",
 };
 
-const outcomeTone = (label?: string | null) => {
-  const normalized = (label ?? "").toLowerCase();
-  if (normalized.includes("fail")) return "text-rose-300";
-  if (normalized.includes("cost") || normalized.includes("mixed")) return "text-amber-300";
-  if (normalized.includes("success")) return "text-emerald-300";
-  return "text-white/70";
+const tierBadgeClass = (label?: string | null) => {
+  const tier = (label ?? "").toLowerCase();
+  if (tier.includes("success with cost")) {
+    return "bg-amber-500/20 text-amber-300 border border-amber-500/30";
+  }
+  if (tier.includes("success")) {
+    return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+  }
+  if (tier.includes("fail forward")) {
+    return "bg-orange-500/20 text-orange-300 border border-orange-500/30";
+  }
+  if (tier.includes("fail")) {
+    return "bg-rose-500/20 text-rose-300 border border-rose-500/30";
+  }
+  return "bg-neutral-700 text-neutral-200 border border-white/10";
 };
 
 export default function AdventureHistoryRow({ model }: Props) {
   const modeClass = modeTone[model.mode ?? "DO"] ?? modeTone.DO;
-  const outcomeClass = outcomeTone(model.outcome);
   const isSessionStart = model.turnIndex === 0;
   const headlineLabel = isSessionStart ? "Session start" : `Turn ${model.turnIndex}`;
   const outcomeText = model.outcome ?? (isSessionStart ? "Initial state recorded" : "Outcome pending");
+  const outcomeBadgeLabel = (model.tierLabel ?? outcomeText).toUpperCase();
 
   return (
     <div className="border-b border-white/5 py-3 last:border-b-0">
@@ -34,7 +43,9 @@ export default function AdventureHistoryRow({ model }: Props) {
           {model.mode ?? "—"}
         </span>
         <span>{headlineLabel}</span>
-        <span className={`ml-auto ${outcomeClass}`}>{outcomeText}</span>
+        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] ${tierBadgeClass(model.tierLabel ?? model.outcome)}`}>
+          {outcomeBadgeLabel}
+        </span>
       </div>
       <p className="mt-1 text-sm font-semibold text-white leading-snug">{model.command}</p>
       {model.consequenceSummary.length > 0 && (

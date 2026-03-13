@@ -205,6 +205,7 @@ export type AdventureHistoryRowViewModel = {
   pressure: string;
   consequenceSummary: string[];
   timestampLabel: string;
+  tierLabel?: string | null;
 };
 
 function parseModeLabel(input?: string | null) {
@@ -524,12 +525,22 @@ export function buildAdventureHistoryRowViewModel(
   const fallbackOutcome =
     turn.turnIndex === 0 ? "Initial state recorded" : describePlainText(turn.resolution ?? null);
   const outcomeLabel = describeResolutionOutcome(normalizedResolution, fallbackOutcome);
+  const tierCandidate =
+    typeof normalizedResolution?.band === "string" && normalizedResolution.band.trim()
+      ? normalizedResolution.band
+      : typeof normalizedResolution?.tier === "string" && normalizedResolution.tier.trim()
+      ? normalizedResolution.tier
+      : typeof normalizedResolution?.outcome === "string" && normalizedResolution.outcome.trim()
+      ? normalizedResolution.outcome
+      : null;
+  const outcomeTierLabel = formatTierLabel(tierCandidate);
   return {
     turnIndex: turn.turnIndex,
     mode,
     command,
     outcome: outcomeLabel,
     pressure: pressureLabel,
+    tierLabel: outcomeTierLabel,
     consequenceSummary: consequenceSummary.length > 0 ? consequenceSummary : ["No consequences recorded."],
     timestampLabel: formatTurnTimestamp(turn.createdAt),
   };
