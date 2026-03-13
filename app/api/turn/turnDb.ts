@@ -69,7 +69,6 @@ export type TurnPersistenceResult = {
   turn: unknown;
   billing: unknown;
   idempotencyKey: string;
-  state: Record<string, unknown>;
 };
 
 export async function turnPersistence(
@@ -179,10 +178,5 @@ export async function turnPersistence(
     },
   });
 
-  return {
-    turn,
-    billing: committed,
-    idempotencyKey: args.idempotencyKey,
-    state: resolvedTurn.nextState,
-  };
+  return { turn, billing: committed, idempotencyKey: args.idempotencyKey };
 }

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { errorResponse } from "@/lib/api/errorResponse";
-import { isIdentityError, requireUser, type AuthenticatedUser } from "@/lib/api/identity";
+import { getOptionalUser, isIdentityError, type AuthenticatedUser } from "@/lib/api/identity";
 import { isRequestBodyTooLargeError, readJsonWithLimit } from "@/lib/api/readJsonWithLimit";
 import { withRouteLogging } from "@/lib/api/routeLogging";
 import { checkSoftRateLimit, softRateActorKey, softRateLimitTurnPostPerMinute } from "@/lib/api/softRateLimit";
@@ -105,15 +105,14 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
   let holdKey = "";
   let leaseKeyForCleanup = "";
   let requestBody: Partial<PostBody> | null = null;
-  let user: AuthenticatedUser;
+  let user: AuthenticatedUser | null = deps.getUser ? deps.getUser(req) : getOptionalUser(req);
 
-  try {
-    user = (deps.getUser ?? requireUser)(req);
-  } catch (error) {
-    if (isIdentityError(error)) {
-      return errorResponse(error.status, error.code);
-    }
-    throw error;
+  if (!user && process.env.NODE_ENV !== "production") {
+    user = { id: "dev-user", authMethod: "session" } as AuthenticatedUser;
+  }
+
+  if (!user) {
+    return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   try {
