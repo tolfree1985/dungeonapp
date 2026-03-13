@@ -14,10 +14,14 @@ const consequenceLabel: Record<string, string> = {
 
 type Props = {
   model: LatestTurnViewModel | null;
+  isHighlighted?: boolean;
 };
 
-export default function LatestTurnCard({ model }: Props) {
+export default function LatestTurnCard({ model, isHighlighted }: Props) {
   const hasResolvedTurn = Boolean(model && model.turnIndex && model.turnIndex > 0);
+  const highlightClass = isHighlighted
+    ? "ring-1 ring-amber-400/60 shadow-[0_0_35px_rgba(250,204,61,0.45)]"
+    : "";
   const showTierLabel =
     Boolean(model?.outcomeTierLabel) &&
     Boolean(model?.outcomeLabel) &&
@@ -25,7 +29,7 @@ export default function LatestTurnCard({ model }: Props) {
 
   if (!hasResolvedTurn) {
     return (
-      <section className={`${cardShell} ${cardPadding} ${cardSpacing}`}>
+      <section className={`${cardShell} ${cardPadding} ${cardSpacing} ${highlightClass}`}>
         <div className={sectionHeading}>Latest Turn</div>
         <h2 className="text-2xl font-semibold text-white">No resolved turn yet.</h2>
         <p className="text-sm text-white/60">
@@ -41,7 +45,7 @@ export default function LatestTurnCard({ model }: Props) {
   const hasConsequences = ledgerEntries.length > 0 || stateDeltas.length > 0;
 
   return (
-    <section className={`${cardShell} ${cardPadding} ${cardSpacing}`}>
+    <section className={`${cardShell} ${cardPadding} ${cardSpacing} ${highlightClass}`}> 
       <header className="space-y-2">
         <div className={sectionHeading}>Latest Turn</div>
         <div className="flex flex-wrap items-center gap-3">

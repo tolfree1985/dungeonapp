@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AdventureHistoryRow from "@/components/play/AdventureHistoryRow";
 import HistorySlotCard from "@/components/play/HistorySlotCard";
 import { formatPlayTimestamp } from "@/components/play/formatTimestamp";
@@ -182,6 +182,10 @@ export default function PlayClient({
   const latestDisplayTurn = hasTurns ? latestTurn : showPreview ? previewLatestTurn : null;
   const recentDisplayTurns = hasTurns ? previousTurns : showPreview ? previewTurns.slice(1) : [];
   const displayPressureStage = (showPreview ? previewLatestTurn.pressureStage : pressureStage) ?? "calm";
+  const [highlightLatestTurn, setHighlightLatestTurn] = useState(false);
+  const latestTurnRef = useRef<HTMLDivElement | null>(null);
+  const prevLatestTurnIndexRef = useRef<number | null>(null);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ambienceByPressure: Record<string, string> = {
     calm: "ambience-calm",
     tension: "ambience-tension",
@@ -220,6 +224,31 @@ export default function PlayClient({
     [displayPressureStage, recentDisplayTurns]
   );
   const statePanelViewModel = useMemo(() => buildStatePanelViewModel(statePanel), [statePanel]);
+  useEffect(() => {
+    if (!hasTurns) {
+      prevLatestTurnIndexRef.current = null;
+      return;
+    }
+    const currentIndex = latestDisplayTurn?.turnIndex ?? null;
+    const prevIndex = prevLatestTurnIndexRef.current;
+    if (currentIndex !== null && prevIndex !== null && currentIndex > prevIndex) {
+      setHighlightLatestTurn(true);
+      latestTurnRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
+      }
+      highlightTimeoutRef.current = setTimeout(() => {
+        setHighlightLatestTurn(false);
+        highlightTimeoutRef.current = null;
+      }, 600);
+    }
+    prevLatestTurnIndexRef.current = currentIndex;
+  }, [latestDisplayTurn?.turnIndex, hasTurns]);
+  useEffect(() => () => {
+    if (highlightTimeoutRef.current) {
+      clearTimeout(highlightTimeoutRef.current);
+    }
+  }, []);
 
   const hero = useMemo(() => {
     if (!adventureId) return null;
@@ -392,7 +421,13 @@ export default function PlayClient({
 
           <div className={ui.pageGrid}>
             <section className={ui.leftColumn}>
-              <LatestTurnCard key={latestDisplayTurn?.id ?? "latest"} model={latestTurnModel} />
+              <div ref={latestTurnRef}>
+                <LatestTurnCard
+                  key={latestDisplayTurn?.id ?? "latest"}
+                  model={latestTurnModel}
+                  isHighlighted={highlightLatestTurn}
+                />
+              </div>
               {adventureId ? <TurnInput adventureId={adventureId} /> : null}
               <WorldContext
                 location={statePanel.location ?? "Servants’ Wing"}
