@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import type { LatestTurnViewModel } from "./presenters";
 import { cardPadding, cardShell, cardSpacing, emptyState, metadataTag, sectionHeading } from "./cardStyles";
 
@@ -42,7 +43,20 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
 
   const ledgerEntries = model?.ledgerEntries ?? [];
   const stateDeltas = model?.stateDeltas ?? [];
-  const hasConsequences = ledgerEntries.length > 0 || stateDeltas.length > 0;
+  const [showAllConsequences, setShowAllConsequences] = useState(false);
+  const consequences = useMemo(() => {
+    const entries = ledgerEntries.map((entry) => ({
+      id: entry.id,
+      text: `${consequenceLabel[entry.category] ?? "World"} — ${entry.cause}${entry.effect ? ` → ${entry.effect}` : ""}`,
+    }));
+    const deltas = stateDeltas.map((delta, index) => ({
+      id: `${delta.key}-${delta.value}-${index}`,
+      text: `${delta.key}: ${delta.value}`,
+    }));
+    return [...entries, ...deltas];
+  }, [ledgerEntries, stateDeltas]);
+  const hasConsequences = consequences.length > 0;
+  const visibleConsequences = showAllConsequences ? consequences : consequences.slice(0, 2);
 
   return (
     <section className={`${cardShell} ${cardPadding} ${cardSpacing} ${highlightClass}`}> 
@@ -98,24 +112,26 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
       <div className="mt-6 border-t border-white/5 pt-4">
         <div className={sectionHeading}>Consequences</div>
         <ul className="mt-3 space-y-2">
-          {ledgerEntries.map((entry) => (
+          {visibleConsequences.map((entry) => (
             <li key={entry.id} className="text-sm text-slate-200">
-              <span className="font-semibold text-slate-100">
-                {consequenceLabel[entry.category] ?? "World"} —
-              </span>{" "}
-              {entry.cause}
-              {entry.effect ? ` → ${entry.effect}` : ""}
-            </li>
-          ))}
-          {stateDeltas.map((delta) => (
-            <li key={`${delta.key}-${delta.value}`} className="text-sm text-slate-200">
-              <span className="font-semibold text-slate-100">{delta.key}:</span> {delta.value}
+              {entry.text}
             </li>
           ))}
           {!hasConsequences && (
             <li className={emptyState}>No consequences were recorded for this turn.</li>
           )}
         </ul>
+        {consequences.length > 2 ? (
+          <button
+            type="button"
+            onClick={() => setShowAllConsequences((prev) => !prev)}
+            className="mt-2 text-xs font-semibold uppercase tracking-[0.3em] text-amber-300"
+          >
+            {showAllConsequences
+              ? "Show fewer consequences"
+              : `+${consequences.length - 2} more consequences`}
+          </button>
+        ) : null}
       </div>
     </section>
   );
