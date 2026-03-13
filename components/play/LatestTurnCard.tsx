@@ -23,11 +23,6 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
   const highlightClass = isHighlighted
     ? "ring-1 ring-amber-400/60 shadow-[0_0_35px_rgba(250,204,61,0.45)]"
     : "";
-  const showTierLabel =
-    Boolean(model?.outcomeTierLabel) &&
-    Boolean(model?.outcomeLabel) &&
-    model.outcomeTierLabel.toLowerCase() !== model.outcomeLabel.toLowerCase();
-
   if (!hasResolvedTurn) {
     return (
       <section className={`${cardShell} ${cardPadding} ${cardSpacing} ${highlightClass}`}>
@@ -82,23 +77,20 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
           <div className={sectionHeading}>Scene</div>
           <p className="text-sm text-slate-300">{model?.sceneText ?? "Scene text unavailable"}</p>
         </div>
-        {model?.rollSummary ? (
-          <div className="space-y-2 border-b border-white/5 pb-4">
-            <div className={sectionHeading}>Roll</div>
-            <p className="text-sm text-white/80">{model.rollSummary}</p>
-            {model.rollDetail ? <p className="text-xs text-white/50">{model.rollDetail}</p> : null}
-          </div>
-        ) : null}
         <div className="space-y-2 border-b border-white/5 pb-4">
           <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-200">Resolution</div>
-          <div className="flex flex-wrap items-center gap-2 font-semibold text-amber-200">
-            <span>{model?.outcomeTierLabel ?? model?.outcomeLabel ?? "Resolution pending"}</span>
-            {model?.intentLabel ? (
-              <>
-                <span className="opacity-30">•</span>
-                <span className="uppercase tracking-[0.3em] text-white/80">{model.intentLabel}</span>
-              </>
-            ) : null}
+          <div className="rounded-[14px] border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.28em] text-amber-100 shadow-[0_0_25px_rgba(250,204,61,0.15)]">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-amber-200">{model?.rollSummary ?? "Roll pending"}</span>
+              <span className="opacity-40">•</span>
+              <span className="text-white/80">{(model?.outcomeTierLabel ?? model?.outcomeLabel ?? "Resolution pending").toUpperCase()}</span>
+              {model?.intentLabel ? (
+                <>
+                  <span className="opacity-40">•</span>
+                  <span className="text-white/70">{model.intentLabel.toUpperCase()}</span>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
         {model?.notesLabel ? (
