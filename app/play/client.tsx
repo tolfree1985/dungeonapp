@@ -16,7 +16,7 @@ import {
 } from "@/components/play/presenters";
 import WorldContext from "@/components/play/WorldContext";
 import LedgerPanel from "@/components/play/LedgerPanel";
-import { cardPadding, cardShell, sectionHeading } from "@/components/play/cardStyles";
+import { cardPadding, cardShell, emptyState, sectionHeading } from "@/components/play/cardStyles";
 import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
 
@@ -61,16 +61,18 @@ const previewTurns: Array<PlayTurn & { rollTotal?: number; pressureStage?: strin
 ];
 
 function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
-  if (rows.length === 0) return null;
-
   return (
     <section className={`${cardShell} ${cardPadding} space-y-4`}>
-      <div className={sectionHeading}>History</div>
-      <div className="space-y-3">
-        {rows.map((row) => (
-          <AdventureHistoryRow key={`${row.turnIndex}-${row.timestampLabel}`} model={row} />
-        ))}
-      </div>
+      <div className={sectionHeading}>Resolution Log</div>
+      {rows.length === 0 ? (
+        <div className={emptyState}>No resolution entries recorded yet.</div>
+      ) : (
+        <div className="space-y-0">
+          {rows.map((row) => (
+            <AdventureHistoryRow key={`${row.turnIndex}-${row.timestampLabel}`} model={row} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -400,7 +402,7 @@ export default function PlayClient({
               />
               <StatePanel viewModel={statePanelViewModel} />
               <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
-              {recentTurnRows.length > 0 ? <RecentTurnsPanel rows={recentTurnRows} /> : null}
+              <RecentTurnsPanel rows={recentTurnRows} />
             </section>
 
             <aside className={ui.rightColumn}>
