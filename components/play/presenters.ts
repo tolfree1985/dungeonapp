@@ -462,7 +462,7 @@ export function buildAdventureHistoryRowViewModel(
 ): AdventureHistoryRowViewModel {
   const mode = parseIntentMode(turn.playerInput);
   const rawText = turn.playerInput?.trim() ?? "";
-  const commandFallback = turn.turnIndex === 0 ? "Initial state" : "Command not recorded";
+  const commandFallback = turn.turnIndex === 0 ? "Session start" : "Command not recorded";
   const command =
     rawText.replace(/^([A-Za-z]+):\s*/, "").trim() || rawText || commandFallback;
   const ledgerEntries = formatLedgerDisplay(turn.ledgerAdds ?? []);
@@ -472,7 +472,7 @@ export function buildAdventureHistoryRowViewModel(
   const resolutionSource = turn.resolutionJson ?? turn.resolution;
   const normalizedResolution = normalizeResolutionValue(resolutionSource);
   const fallbackOutcome =
-    turn.turnIndex === 0 ? "No resolution recorded" : describePlainText(turn.resolution ?? null);
+    turn.turnIndex === 0 ? "Initial state recorded" : describePlainText(turn.resolution ?? null);
   const outcomeLabel = describeResolutionOutcome(normalizedResolution, fallbackOutcome);
   return {
     turnIndex: turn.turnIndex,
@@ -490,18 +490,33 @@ function buildStateItemsFromQuest(state: PlayStatePanel): StateItemViewModel[] {
   return state.quests.map((quest, index) => {
     const rawLabel = quest.title ?? quest.label ?? quest.detail ?? `Quest ${index + 1}`;
     const { label: prefixLabel, record } = splitLabelAndJson(rawLabel);
-    const label =
-      prefixLabel && prefixLabel !== ""
-        ? prefixLabel
-        : describeValue(record?.label ?? record?.name ?? quest.title ?? quest.label) ?? `Quest ${index + 1}`;
-    const statusValue = quest.status?.trim();
-    const recordStatus = record?.status ? describeValue(record.status) : null;
-    const status = statusValue || recordStatus;
+    const recordName = record?.name ? describeValue(record.name) : null;
+    const recordLabel = record?.label ? describeValue(record.label) : null;
+    const recordId = record?.id ? describeValue(record.id) : null;
+    const label = recordName ?? recordLabel ?? prefixLabel || recordId || `Quest ${index + 1}`;
     const detailSources: string[] = [];
-    if (status) detailSources.push(status);
-    if (quest.detail && quest.detail !== rawLabel) detailSources.push(quest.detail.trim());
     const recordDetail = buildRecordDetail(record);
     if (recordDetail) detailSources.push(recordDetail);
+    if (quest.status && quest.status.trim()) {
+      const statusValue = quest.status.trim();
+      if (record?.status ? statusValue !== describeValue(record.status) : true) {
+        detailSources.push(statusValue);
+      }
+    }
+    if (typeof quest.detail === "string" && quest.detail.trim()) {
+      const detailCandidate = quest.detail.trim();
+      if (detailCandidate !== rawLabel) {
+        const { label: detailLabel, record: detailRecord } = splitLabelAndJson(detailCandidate);
+        const detailFromRecord = buildRecordDetail(detailRecord);
+        if (detailFromRecord) {
+          detailSources.push(detailFromRecord);
+        } else if (detailLabel && detailLabel !== rawLabel) {
+          detailSources.push(detailLabel);
+        } else {
+          detailSources.push(detailCandidate);
+        }
+      }
+    }
     const value = detailSources.length > 0 ? detailSources.join(" • ") : "In progress";
     const emphasis = value.toLowerCase().includes("urgent") ? "high" : "normal";
     return {
@@ -517,24 +532,31 @@ function buildInventoryItems(state: PlayStatePanel): StateItemViewModel[] {
   return state.inventory.map((item, index) => {
     const rawName = item.name ?? item.detail ?? `Item ${index + 1}`;
     const { label: prefixLabel, record } = splitLabelAndJson(rawName);
-    const labelCandidate =
-      prefixLabel && prefixLabel !== ""
-        ? prefixLabel
-        : describeValue(record?.label ?? record?.name ?? item.name) ?? `Item ${index + 1}`;
+    const recordName = record?.name ? describeValue(record.name) : null;
+    const recordLabel = record?.label ? describeValue(record.label) : null;
+    const recordId = describeValue(record?.id);
+    const label = recordName ?? recordLabel ?? prefixLabel || recordId || `Item ${index + 1}`;
     const detailSources: string[] = [];
-    const embeddedDetail = buildRecordDetail(record);
-    if (embeddedDetail) detailSources.push(embeddedDetail);
-    const detailRecord = typeof item.detail === "string" ? tryParseJson(item.detail.trim()) : null;
-    if (detailRecord) {
-      const additional = buildRecordDetail(detailRecord);
-      if (additional) detailSources.push(additional);
-    } else if (typeof item.detail === "string" && item.detail.trim()) {
-      detailSources.push(item.detail.trim());
+    const recordDetail = buildRecordDetail(record);
+    if (recordDetail) detailSources.push(recordDetail);
+    if (typeof item.detail === "string" && item.detail.trim()) {
+      const detailCandidate = item.detail.trim();
+      if (detailCandidate !== rawName) {
+        const { label: detailLabel, record: detailRecord } = splitLabelAndJson(detailCandidate);
+        const detailFromRecord = buildRecordDetail(detailRecord);
+        if (detailFromRecord) {
+          detailSources.push(detailFromRecord);
+        } else if (detailLabel && detailLabel !== rawName) {
+          detailSources.push(detailLabel);
+        } else {
+          detailSources.push(detailCandidate);
+        }
+      }
     }
     const value = detailSources.length > 0 ? detailSources.join(" • ") : "In pack";
     const emphasis = value.toLowerCase().includes("rare") ? "high" : "normal";
     return {
-      label: labelCandidate,
+      label,
       value,
       category: "inventory",
       emphasis,

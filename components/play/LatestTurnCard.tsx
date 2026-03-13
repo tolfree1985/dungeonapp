@@ -18,6 +18,10 @@ type Props = {
 
 export default function LatestTurnCard({ model }: Props) {
   const hasResolvedTurn = Boolean(model && model.turnIndex && model.turnIndex > 0);
+  const showTierLabel =
+    Boolean(model?.outcomeTierLabel) &&
+    Boolean(model?.outcomeLabel) &&
+    model.outcomeTierLabel.toLowerCase() !== model.outcomeLabel.toLowerCase();
 
   if (!hasResolvedTurn) {
     return (
@@ -67,12 +71,10 @@ export default function LatestTurnCard({ model }: Props) {
             {model.rollDetail ? <p className="text-xs text-white/50">{model.rollDetail}</p> : null}
           </div>
         ) : null}
-        <div className="space-y-2">
+        <div className="space-y-2 border-b border-white/5 pb-4">
           <div className={sectionHeading}>Outcome</div>
           <p className="text-sm text-amber-200">{model?.outcomeLabel ?? "Outcome pending"}</p>
-          {model?.outcomeTierLabel ? (
-            <p className="text-xs text-white/60">{model.outcomeTierLabel}</p>
-          ) : null}
+          {showTierLabel ? <p className="text-xs text-white/60">{model.outcomeTierLabel}</p> : null}
           {model?.intentLabel ? (
             <p className="text-xs text-white/60">Action: {model.intentLabel}</p>
           ) : null}

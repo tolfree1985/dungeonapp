@@ -23,6 +23,9 @@ const outcomeTone = (label?: string | null) => {
 export default function AdventureHistoryRow({ model }: Props) {
   const modeClass = modeTone[model.mode ?? "DO"] ?? modeTone.DO;
   const outcomeClass = outcomeTone(model.outcome);
+  const isSessionStart = model.turnIndex === 0;
+  const headlineLabel = isSessionStart ? "Session start" : `Turn ${model.turnIndex}`;
+  const outcomeText = model.outcome ?? (isSessionStart ? "Initial state recorded" : "Outcome pending");
 
   return (
     <div className="border-b border-white/5 py-3 last:border-b-0">
@@ -30,8 +33,8 @@ export default function AdventureHistoryRow({ model }: Props) {
         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] ${modeClass}`}>
           {model.mode ?? "—"}
         </span>
-        <span>Turn {model.turnIndex}</span>
-        <span className={`ml-auto ${outcomeClass}`}>{model.outcome ?? "Outcome pending"}</span>
+        <span>{headlineLabel}</span>
+        <span className={`ml-auto ${outcomeClass}`}>{outcomeText}</span>
       </div>
       <p className="mt-1 text-sm font-semibold text-white leading-snug">{model.command}</p>
       {model.consequenceSummary.length > 0 && (
