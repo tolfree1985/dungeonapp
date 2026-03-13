@@ -284,19 +284,24 @@ export default async function PlayPage({
                 summary: null,
               });
         }
-        turns = rows.map((row) => ({
-          id: row.id,
-          turnIndex: row.turnIndex,
-          playerInput: row.playerInput,
-          scene: row.scene,
-          resolution:
-            typeof row.resolution === "string"
-              ? row.resolution
-              : JSON.stringify(row.resolution, null, 2),
-          stateDeltas: Array.isArray(row.stateDeltas) ? row.stateDeltas : [],
-          ledgerAdds: Array.isArray(row.ledgerAdds) ? row.ledgerAdds : [],
-          createdAt: row.createdAt.toISOString(),
-        }));
+        turns = rows.map((row) => {
+          const resolutionRaw = row.resolution;
+          const resolutionText =
+            typeof resolutionRaw === "string"
+              ? resolutionRaw
+              : JSON.stringify(resolutionRaw, null, 2);
+          return {
+            id: row.id,
+            turnIndex: row.turnIndex,
+            playerInput: row.playerInput,
+            scene: row.scene,
+            resolution: resolutionText,
+            resolutionJson: resolutionRaw,
+            stateDeltas: Array.isArray(row.stateDeltas) ? row.stateDeltas : [],
+            ledgerAdds: Array.isArray(row.ledgerAdds) ? row.ledgerAdds : [],
+            createdAt: row.createdAt.toISOString(),
+          };
+        });
       }
     } catch (error) {
       console.error("Play route DB fallback:", error);

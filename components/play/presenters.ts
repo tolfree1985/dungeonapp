@@ -3,6 +3,75 @@
 import type { PlayTurn, PlayStatePanel } from "@/app/play/types";
 import { formatTurnTimestamp } from "@/lib/ui/formatters";
 
+type ResolvedResolution = Record<string, unknown>;
+
+function normalizeResolutionValue(value: unknown): ResolvedResolution | null {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as ResolvedResolution;
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as ResolvedResolution;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+type RollInfo = {
+  rollTotal?: number;
+  dice?: number[];
+  tier?: string;
+};
+
+function extractRollInfo(value: unknown): RollInfo {
+  const normalized = normalizeResolutionValue(value);
+  if (!normalized) return {};
+  const rollTotal = typeof normalized.rollTotal === "number" ? normalized.rollTotal : undefined;
+  const dice = Array.isArray(normalized.dice)
+    ? (normalized.dice.filter((entry) => typeof entry === "number") as number[])
+    : undefined;
+  const tierField =
+    typeof normalized.band === "string"
+      ? normalized.band
+      : typeof normalized.tier === "string"
+      ? normalized.tier
+      : typeof normalized.outcome === "string"
+      ? normalized.outcome
+      : undefined;
+  return {
+    rollTotal,
+    dice: dice && dice.length > 0 ? dice : undefined,
+    tier: tierField,
+  };
+}
+
+function buildRollSummary(rollTotal?: number, dice?: number[]): string | null {
+  if (rollTotal === undefined) return null;
+  const diceLabel = dice && dice.length > 0 ? `${dice.length}d6` : "Roll";
+  return `${diceLabel} → ${rollTotal}`;
+}
+
+function buildRollDetail(dice?: number[]): string | null {
+  if (!dice || dice.length === 0) return null;
+  return `Dice: ${dice.join(" + ")}`;
+}
+
+function formatTierLabel(tier?: string | null): string | null {
+  if (!tier) return null;
+  return tier
+    .replace(/[-_]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
 export type LedgerCategory = "pressure" | "world" | "quest" | "inventory" | "npc" | "time";
 
 export type LedgerEntryViewModel = {
@@ -25,6 +94,9 @@ export type LatestTurnViewModel = {
     key: string;
     value: string;
   }>;
+  rollSummary?: string | null;
+  rollDetail?: string | null;
+  outcomeTierLabel?: string | null;
 };
 
 export type StateItemCategory = "world" | "quest" | "inventory" | "status" | "relation";
@@ -276,6 +348,10 @@ export function buildLatestTurnViewModel(
   const deltas = Array.isArray(turn.stateDeltas)
     ? turn.stateDeltas.map((delta) => describeStateDelta(delta)).filter(Boolean)
     : [];
+  const rollInfo = extractRollInfo(turn.resolutionJson ?? turn.resolution);
+  const rollSummary = buildRollSummary(rollInfo.rollTotal, rollInfo.dice);
+  const rollDetail = buildRollDetail(rollInfo.dice);
+  const outcomeTierLabel = formatTierLabel(rollInfo.tier ?? null);
   return {
     turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
     mode: parseIntentMode(turn.playerInput),
@@ -285,6 +361,9 @@ export function buildLatestTurnViewModel(
     pressureLabel,
     ledgerEntries,
     stateDeltas: deltas,
+    rollSummary,
+    rollDetail,
+    outcomeTierLabel,
   };
 }
 

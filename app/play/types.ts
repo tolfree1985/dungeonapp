@@ -7,6 +7,7 @@ export type PlayTurn = {
   stateDeltas: unknown[];
   ledgerAdds: unknown[];
   createdAt: string;
+  resolutionJson?: unknown;
 };
 
 export type PlayStateValue = string | number | boolean | null;
