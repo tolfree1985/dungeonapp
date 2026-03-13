@@ -28,6 +28,45 @@ function pressureBadgeTone(stage: string | null | undefined) {
   return "border-slate-300 bg-slate-50 text-slate-700";
 }
 
+const pressureStatKeys = ["alert", "heat", "noise", "time"] as const;
+type PressureStatKey = (typeof pressureStatKeys)[number];
+
+type PressureSnapshot = {
+  stage: string;
+  alert: string;
+  heat: string;
+  noise: string;
+  time: string;
+};
+
+const formatPressureValue = (value: unknown) => {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+};
+
+function findPressureStatValue(stats: PlayStatePanel["stats"], key: PressureStatKey) {
+  const normalizedKey = key.toLowerCase();
+  const entry = stats.find((stat) => stat.key.toLowerCase() === normalizedKey);
+  return formatPressureValue(entry?.value);
+}
+
+function buildPressureSnapshot(stage: string, stats: PlayStatePanel["stats"]): PressureSnapshot {
+  return {
+    stage,
+    alert: findPressureStatValue(stats, "alert"),
+    heat: findPressureStatValue(stats, "heat"),
+    noise: findPressureStatValue(stats, "noise"),
+    time: findPressureStatValue(stats, "time"),
+  };
+}
+
 const previewLatestTurn: PlayTurn & { rollTotal: number; pressureStage: string } = {
   id: "chronicle-preview-latest",
   turnIndex: 1,
@@ -182,10 +221,17 @@ export default function PlayClient({
   const latestDisplayTurn = hasTurns ? latestTurn : showPreview ? previewLatestTurn : null;
   const recentDisplayTurns = hasTurns ? previousTurns : showPreview ? previewTurns.slice(1) : [];
   const displayPressureStage = (showPreview ? previewLatestTurn.pressureStage : pressureStage) ?? "calm";
+  const pressureSnapshot = useMemo(
+    () => buildPressureSnapshot(displayPressureStage, statePanel.stats),
+    [displayPressureStage, statePanel.stats]
+  );
   const [highlightLatestTurn, setHighlightLatestTurn] = useState(false);
+  const [isPressurePulsing, setIsPressurePulsing] = useState(false);
   const latestTurnRef = useRef<HTMLDivElement | null>(null);
   const prevLatestTurnIndexRef = useRef<number | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressurePulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevPressureSnapshotRef = useRef<PressureSnapshot | null>(null);
   const ambienceByPressure: Record<string, string> = {
     calm: "ambience-calm",
     tension: "ambience-tension",
@@ -244,9 +290,33 @@ export default function PlayClient({
     }
     prevLatestTurnIndexRef.current = currentIndex;
   }, [latestDisplayTurn?.turnIndex, hasTurns]);
+
+  useEffect(() => {
+    const prevSnapshot = prevPressureSnapshotRef.current;
+    if (prevSnapshot) {
+      const statsChanged = pressureStatKeys.some((key) => prevSnapshot[key] !== pressureSnapshot[key]);
+      if (prevSnapshot.stage !== pressureSnapshot.stage || statsChanged) {
+        setIsPressurePulsing(true);
+        if (pressurePulseTimeoutRef.current) {
+          clearTimeout(pressurePulseTimeoutRef.current);
+        }
+        pressurePulseTimeoutRef.current = setTimeout(() => {
+          setIsPressurePulsing(false);
+          pressurePulseTimeoutRef.current = null;
+        }, 450);
+      }
+    }
+    prevPressureSnapshotRef.current = pressureSnapshot;
+  }, [pressureSnapshot]);
   useEffect(() => () => {
     if (highlightTimeoutRef.current) {
       clearTimeout(highlightTimeoutRef.current);
+    }
+  }, []);
+  useEffect(() => () => {
+    if (pressurePulseTimeoutRef.current) {
+      clearTimeout(pressurePulseTimeoutRef.current);
+      pressurePulseTimeoutRef.current = null;
     }
   }, []);
 
@@ -441,7 +511,7 @@ export default function PlayClient({
             </section>
 
             <aside className={ui.rightColumn}>
-              <PressureMeter currentStage={displayPressureStage} />
+              <PressureMeter currentStage={displayPressureStage} isPulsing={isPressurePulsing} />
             </aside>
           </div>
         </div>

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { ui } from "@/lib/ui/classes";
 
 type PressureStage = "calm" | "tension" | "danger" | "crisis";
@@ -31,35 +30,22 @@ function pressureLabelTone(stage: PressureStage) {
 type PressureMeterProps = {
   currentStage?: string | null;
   panelTone?: string;
+  isPulsing?: boolean;
 };
 
-export default function PressureMeter({ currentStage, panelTone }: PressureMeterProps) {
+export default function PressureMeter({ currentStage, panelTone, isPulsing }: PressureMeterProps) {
   const normalized = (currentStage ?? "calm").toLowerCase();
   const activeStage: PressureStage = pressureOrder.includes(normalized as PressureStage)
     ? (normalized as PressureStage)
     : "calm";
   const activeIndex = pressureOrder.indexOf(activeStage);
-  const [pulse, setPulse] = useState(false);
-  const prevStageRef = useRef<PressureStage>(activeStage);
-
-  useEffect(() => {
-    const prevStage = prevStageRef.current;
-    const prevIndex = pressureOrder.indexOf(prevStage);
-    if (activeStage !== prevStage) {
-      prevStageRef.current = activeStage;
-      if (activeIndex > prevIndex) {
-        setPulse(true);
-        const timer = setTimeout(() => setPulse(false), 420);
-        return () => clearTimeout(timer);
-      }
-    }
-    prevStageRef.current = activeStage;
-    return undefined;
-  }, [activeStage, activeIndex]);
   const toneClass = panelTone ? ` ${panelTone}` : "";
+  const pulseClass = isPulsing
+    ? "animate-[pressurePulse_450ms_ease] scale-[1.01] ring-1 ring-amber-300/60 shadow-[0_0_32px_rgba(201,163,90,0.45)]"
+    : "transition duration-300";
 
   return (
-    <div className={`${ui.panel} p-5${toneClass} ${pulse ? "animate-[pressurePulse_420ms_ease]" : ""}`}>
+    <div className={`${ui.panel} p-5${toneClass} transform-gpu ${pulseClass}`}>
       <div className="flex items-center justify-between">
         <div className={ui.sectionLabel}>Pressure</div>
         <span className={`hud-chip text-[11px] ${pressureLabelTone(activeStage)}`}>{activeStage}</span>
