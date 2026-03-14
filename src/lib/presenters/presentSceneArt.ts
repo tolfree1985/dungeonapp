@@ -7,59 +7,60 @@ import {
   type SceneArtPayload,
   type STYLE_PRESETS,
 } from "@/lib/sceneArt";
+import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 
-type PresentSceneArtArgs = {
+export type PresentSceneArtInput = {
   title?: string;
   stylePreset?: keyof typeof STYLE_PRESETS;
-
-  locationId: string;
-  locationText: string;
-
-  timeBucket: string;
-  timeText: string;
-
-  pressureStage: string;
-  pressureText: string;
-
-  npcState: string[];
-  npcCues: string[];
-  majorTags: string[];
-
-  appearanceCues?: string[];
+  visualState: SceneVisualState;
+  visualTags?: string[];
+  npcState?: string[];
+  npcCues?: string[];
+  majorTags?: string[];
 };
 
-export function presentSceneArt(args: PresentSceneArtArgs): SceneArtPayload {
-  const stylePreset = args.stylePreset ?? DEFAULT_STYLE_PRESET;
+export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
+  const stylePreset = input.stylePreset ?? DEFAULT_STYLE_PRESET;
+  const visualTags = input.visualTags ?? [];
+  const npcState = input.npcState ?? [];
+  const majorTags = input.majorTags ?? [];
+
+  const locationId = input.visualState.locationId;
+  const pressureStage = input.visualState.pressureStage;
+  const timeText = input.visualState.timeValue;
+  const timeBucket = input.visualState.timeValue;
 
   const sceneKey = buildSceneKey({
-    locationId: args.locationId,
-    timeBucket: args.timeBucket,
-    pressureStage: args.pressureStage,
-    npcState: args.npcState,
-    majorTags: args.majorTags,
+    locationId,
+    timeBucket,
+    pressureStage,
+    npcState,
+    majorTags,
   });
 
   const basePrompt = buildBaseScenePrompt({
-    locationText: args.locationText,
-    timeText: args.timeText,
-    pressureText: args.pressureText,
-    eventTags: args.majorTags,
-    npcCues: args.npcCues,
+    locationText: locationId,
+    timeText,
+    pressureText: pressureStage,
+    eventTags: majorTags,
+    npcCues: input.npcCues ?? [],
   });
 
   const renderPrompt = buildRenderScenePrompt({
     basePrompt,
     stylePreset,
-    appearanceCues: args.appearanceCues,
+    appearanceCues: visualTags.map((tag) => tag.replace(":", " ")),
   });
+
+  const tags = Array.from(new Set([...majorTags, ...visualTags]));
 
   return {
     sceneKey,
-    title: args.title,
+    title: input.title,
     basePrompt,
     renderPrompt,
     stylePreset,
-    tags: args.majorTags,
+    tags,
   };
 }
 

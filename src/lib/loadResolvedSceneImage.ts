@@ -31,7 +31,9 @@ export async function loadResolvedSceneImage({
     currentScene,
   });
 
-  if (currentScene?.status === "ready" && currentScene.imageUrl) {
+  const currentReady = currentScene?.status === "ready" && currentScene.imageUrl;
+  const previousReady = previousScene?.status === "ready" && previousScene.imageUrl;
+  if (currentReady) {
     return {
       imageUrl: currentScene.imageUrl,
       source: "scene",
@@ -39,10 +41,18 @@ export async function loadResolvedSceneImage({
     };
   }
 
+  if (previousReady) {
+    return {
+      imageUrl: previousScene.imageUrl,
+      source: "scene",
+      pending: currentScene?.status === "queued",
+    };
+  }
+
   return resolveDisplayedSceneImage({
-    currentSceneImageUrl: currentScene?.status === "ready" ? currentScene.imageUrl : null,
-    currentScenePending: currentScene?.status === "queued",
-    previousSceneImageUrl: previousScene?.status === "ready" ? previousScene.imageUrl : null,
+    currentSceneImageUrl: null,
+    currentScenePending: !!currentScene && currentScene.status === "queued",
+    previousSceneImageUrl: null,
     locationBackdropUrl,
     defaultImageUrl,
   });

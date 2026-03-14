@@ -10,8 +10,9 @@ import {
 } from "@/lib/adventure/ownership";
 import { getOptionalUser } from "@/lib/api/identity";
 import { prisma } from "@/lib/prisma";
-import { SceneArtPayload } from "@/lib/sceneArt";
+import { getSceneImageUpdateCaption } from "@/lib/sceneImageCaption";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
+import { resolveSceneVisualState, type VisualStateDelta } from "@/lib/resolveSceneVisualState";
 import { ResolvedSceneImage } from "@/lib/sceneArt";
 import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
 
@@ -59,6 +60,37 @@ function describeValue(value: unknown): string | undefined {
   } catch {
     return String(value);
   }
+}
+
+function buildVisualDeltasFromLedger(ledgerAdds: unknown[]): VisualStateDelta[] {
+  if (!Array.isArray(ledgerAdds)) return [];
+  const deltas: VisualStateDelta[] = [];
+  const fallbackMessages: Record<VisualStateDelta["key"], string> = {
+    lighting: "Lighting flickers.",
+    atmosphere: "Atmosphere grows tense.",
+    wear: "The room shows fresh strain.",
+    threat: "Threat draws near.",
+  };
+  for (const entry of ledgerAdds) {
+    const record = asRecord(entry);
+    if (!record) continue;
+    if (record.kind !== "visual_state") continue;
+    const cause = typeof record.cause === "string" ? record.cause.toLowerCase() : "";
+    let key: VisualStateDelta["key"] | null = null;
+    if (cause.includes("threat")) key = "threat";
+    else if (cause.includes("lighting")) key = "lighting";
+    else if (cause.includes("atmosphere")) key = "atmosphere";
+    else if (cause.includes("wear")) key = "wear";
+    if (!key) continue;
+    const effect = typeof record.effect === "string" ? record.effect.trim() : "";
+    deltas.push({
+      key,
+      from: "",
+      to: "",
+      message: effect || fallbackMessages[key],
+    });
+  }
+  return deltas;
 }
 
 function readSection(state: Record<string, unknown> | null, key: string): unknown {
@@ -346,6 +378,7 @@ let persistedAdventureOwnerId: string | null = null;
     turn: latestTurn,
     state: rawState,
   });
+  const visualState = resolveSceneVisualState(rawState ?? undefined);
   const resolvedSceneImage = await loadResolvedSceneImage({
     sceneKey: sceneArt?.sceneKey ?? null,
     previousSceneKey: null,
@@ -358,6 +391,14 @@ let persistedAdventureOwnerId: string | null = null;
     sceneKey: sceneArt?.sceneKey,
     basePrompt: sceneArt?.basePrompt,
   });
+  const visualDeltas = buildVisualDeltasFromLedger(latestTurn?.ledgerAdds ?? []);
+  const sceneImageCaption =
+    resolvedSceneImage.source === "scene" &&
+    resolvedSceneImage.imageUrl &&
+    !resolvedSceneImage.pending &&
+    visualDeltas.length > 0
+      ? getSceneImageUpdateCaption(visualDeltas)
+      : null;
 
   return (
     <main className="mx-auto max-w-6xl p-6">
@@ -382,6 +423,8 @@ let persistedAdventureOwnerId: string | null = null;
           currentScenario={currentScenario}
           dbOffline={dbOffline}
           sceneImage={resolvedSceneImage}
+          sceneImageCaption={sceneImageCaption}
+          visualState={visualState}
         />
       </Suspense>
     </main>

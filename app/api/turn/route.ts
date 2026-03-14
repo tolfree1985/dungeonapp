@@ -25,6 +25,7 @@ import { runTurnPipeline } from "@/server/turn/runTurnPipeline";
 import { reserveUsageDayLock } from "@/server/usage/reserveUsageDayLock";
 import { turnPersistence } from "./turnDb";
 import { logStructuredFailure } from "@/lib/turn/observability";
+import { diffSceneVisualState, resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
 import { findSceneArt, queueSceneArt } from "@/lib/sceneArtRepo";
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
@@ -351,6 +352,14 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     const capOverrideTokens =
       process.env.NODE_ENV !== "production" && capOverrideHeader ? Number(capOverrideHeader) : undefined;
 
+    const previousAdventureStateRow = await db.adventure.findUnique({
+      where: { id: adventureId },
+      select: { state: true },
+    });
+    const previousStateRecord = asRecord(previousAdventureStateRow?.state ?? null);
+    const previousVisualState = previousStateRecord
+      ? resolveSceneVisualState(previousStateRecord)
+      : null;
     let preflight;
     try {
       preflight = await db.$transaction((tx) =>
@@ -478,6 +487,15 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       select: { state: true },
     });
     const stateRecord = asRecord(updatedAdventureState?.state ?? null);
+    const nextVisualState = resolveSceneVisualState(stateRecord);
+    const visualStateDeltas = diffSceneVisualState(previousVisualState, nextVisualState);
+    const visualLedgerEntries = visualStateDeltas.map((delta) => ({
+      kind: "visual_state",
+      domain: "visual",
+      cause: `Visual ${delta.key}`,
+      effect: delta.message,
+    }));
+    const ledgerAddsWithVisual = [...turnLedgerAdds, ...visualLedgerEntries];
     const latestTurn = await db.turn.findFirst({
       where: { adventureId },
       orderBy: { turnIndex: "desc" },
@@ -549,10 +567,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         turn: {
           ...(finalized as any).turn,
           stateDeltas: turnStateDeltas,
-          ledgerAdds: turnLedgerAdds,
+          ledgerAdds: ledgerAddsWithVisual,
         },
         stateDeltas: turnStateDeltas,
-        ledgerAdds: turnLedgerAdds,
+        ledgerAdds: ledgerAddsWithVisual,
         sceneArt,
       },
       { status: 200 }

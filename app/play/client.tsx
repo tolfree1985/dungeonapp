@@ -21,7 +21,7 @@ import { cardPadding, cardShell, emptyState, sectionHeading } from "@/components
 import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
-import type { SceneArtPayload } from "@/lib/sceneArt";
+import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 
 function pressureBadgeTone(stage: string | null | undefined) {
   const normalized = typeof stage === "string" ? stage.toLowerCase() : "calm";
@@ -118,6 +118,33 @@ function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
     </section>
   );
 }
+
+function VisualStatePanel({ visualState }: { visualState: SceneVisualState }) {
+  const details = [
+    { label: "Lighting", value: visualState.lightingState },
+    { label: "Atmosphere", value: visualState.atmosphereState },
+    { label: "Wear", value: visualState.environmentWear },
+    { label: "Threat", value: visualState.threatPresence },
+  ];
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">Visual State</div>
+      <div className="mt-2 space-y-1">
+        {details.map((detail) => (
+          <div key={detail.label} className="flex justify-between text-xs text-white/60">
+            <span>{detail.label}</span>
+            <span className="font-semibold text-white">{detail.value}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.35em] text-white/60">
+        <span className="rounded-full border border-white/20 px-2 py-0.5">{visualState.locationId}</span>
+        <span className="rounded-full border border-white/20 px-2 py-0.5">{visualState.timeValue}</span>
+        <span className="rounded-full border border-white/20 px-2 py-0.5">{visualState.pressureStage}</span>
+      </div>
+    </div>
+  );
+}
 function TopBar() {
   return (
     <header className={ui.topBar}>
@@ -153,6 +180,8 @@ export default function PlayClient({
   currentScenario,
   dbOffline = false,
   sceneImage,
+  sceneImageCaption,
+  visualState,
 }: {
   adventureId: string | null;
   scenarioId: string | null;
@@ -161,6 +190,8 @@ export default function PlayClient({
   currentScenario: PlayScenarioMeta | null;
   dbOffline?: boolean;
   sceneImage?: ResolvedSceneImage | null;
+  sceneImageCaption?: string | null;
+  visualState: SceneVisualState;
 }) {
   const HISTORY_KEY = "creator:recentAdventures";
   type HistoryEntry = {
@@ -553,7 +584,6 @@ export default function PlayClient({
                   isHighlighted={highlightLatestTurn}
                 />
               </div>
-              {console.log("sceneImage runtime", sceneImage)}
               <div className="mt-4">
                 <SceneImagePanel
                   {...
@@ -563,6 +593,7 @@ export default function PlayClient({
                       pending: false,
                     }
                   }
+                  caption={sceneImageCaption ?? undefined}
                 />
               </div>
               {adventureId ? <TurnInput adventureId={adventureId} /> : null}
@@ -578,6 +609,7 @@ export default function PlayClient({
                     ambience={statePanel.ambience ?? "Cold / Quiet"}
                     tags={statePanel.contextTags ?? []}
                   />
+                  <VisualStatePanel visualState={visualState} />
                   <StatePanel viewModel={statePanelViewModel} />
                 </section>
                 <section className="space-y-4">

@@ -1,6 +1,11 @@
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
 
-export function SceneImagePanel({ imageUrl, source, pending }: ResolvedSceneImage) {
+export function SceneImagePanel({
+  imageUrl,
+  source,
+  pending,
+  caption,
+}: ResolvedSceneImage & { caption?: string | null }) {
   const sourceLabel = () => {
     switch (source) {
       case "scene":
@@ -34,6 +39,11 @@ export function SceneImagePanel({ imageUrl, source, pending }: ResolvedSceneImag
             </span>
           )}
         </div>
+        {caption ? (
+          <div className="absolute bottom-3 left-3 rounded-md border border-white/10 bg-black/60 px-3 py-1 text-xs uppercase tracking-[0.3em] text-white/80 backdrop-blur-sm">
+            {caption}
+          </div>
+        ) : null}
       </div>
     </div>
   );

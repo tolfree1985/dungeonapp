@@ -1,4 +1,6 @@
+import type { PlayTurn } from "@/app/play/types";
 import { SceneArtPayload } from "@/lib/sceneArt";
+import { resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
 import {
   presentMajorSceneTags,
   presentNpcCuesForPrompt,
@@ -7,58 +9,39 @@ import {
 } from "@/lib/presenters/presentSceneArt";
 
 type CanonicalSceneArtParams = {
-  turn: { scene?: string | null } | null;
+  turn: PlayTurn | null;
   state: Record<string, unknown> | null;
 };
 
 export function buildCanonicalSceneArtPayload({ turn, state }: CanonicalSceneArtParams): SceneArtPayload | null {
-  if (!turn) return null;
+  if (!turn?.scene) return null;
 
+  const visualState = resolveSceneVisualState(state ?? undefined);
   console.log("sceneArt canonical inputs", {
     latestTurnScene: turn.scene,
-    stateLocation: state?.location,
-    statePressure: state?.pressure,
-    stats: state?.stats,
+    visualState,
   });
 
   const stateRecord = asRecord(state);
-  const stats = (stateRecord?.stats as Record<string, unknown>) ?? (state?.stats as Record<string, unknown>) ?? {};
 
-  const locationId = asString(stateRecord?.location ?? stats.location) ?? "Unknown location";
-  const locationText = asString(stateRecord?.location ?? stats.location) ?? "Unknown location";
-
-  const timeValue = stateRecord?.time ?? stats.time ?? null;
-  const timeBucket = asString((timeValue as Record<string, unknown>)?.bucket ?? timeValue) ?? "unknown-time";
-  const timeText = asString((timeValue as Record<string, unknown>)?.label ?? timeValue) ?? "Unknown time";
-
-  const pressureStageValue =
-    asString(stateRecord?.pressure ?? stateRecord?.pressureStage ?? stats.pressureStage) ?? "calm";
-  const pressureText = asString(stateRecord?.pressure?.label ?? stateRecord?.pressure?.status) ?? pressureStageValue;
-
-  const basePrompt = `${locationId}, ${timeText}, ${pressureStageValue}`;
+  const visualTags = [
+    `lighting:${visualState.lightingState}`,
+    `atmosphere:${visualState.atmosphereState}`,
+    `wear:${visualState.environmentWear}`,
+    `threat:${visualState.threatPresence}`,
+  ];
 
   return presentSceneArt({
-    title: turn.scene ?? undefined,
-    locationId,
-    locationText,
-    timeBucket,
-    timeText,
-    pressureStage: pressureStageValue,
-    pressureText,
+    title: turn.scene,
+    visualState,
+    visualTags,
     npcState: presentNpcStateForSceneKey(stateRecord),
     npcCues: presentNpcCuesForPrompt(stateRecord),
-    majorTags: presentMajorSceneTags(turn as any, stateRecord),
-    appearanceCues: [],
+    majorTags: presentMajorSceneTags(turn, stateRecord),
   });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
-}
-
-function asString(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return null;
 }
