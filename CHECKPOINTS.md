@@ -42,3 +42,10 @@
 - Clear recent adventure history when no adventureId is active
 - Remove temporary route/client diagnostics
 - Keep scene image panel stable with default fallback
+
+## Checkpoint: Dev SceneArt Worker
+
+- Added sceneArt worker that processes queued rows only from persisted renderPrompt
+- Added dev trigger route for manual processing
+- Added worker tests for ready/failed transitions
+- No scheduler or provider integration yet
