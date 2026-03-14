@@ -17,9 +17,12 @@ import {
   presentNpcStateForSceneKey,
   presentSceneArt,
 } from "@/lib/presenters/presentSceneArt";
+import { ResolvedSceneImage } from "@/lib/sceneArt";
+import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
 
 const PROTECTED_ADVENTURE_IDS = new Set(["canon_ui", "sandbox", "replay_lab", "dev_run"]);
 const DEV_DEFAULT_ADVENTURE = "85e17a2c-c8a9-4c48-9186-2ed7e3e9d983";
+const DEFAULT_SCENE_FALLBACK_URL = "/default-scene.svg";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value) return null;
@@ -378,6 +381,13 @@ let persistedAdventureOwnerId: string | null = null;
         appearanceCues: [],
       })
     : null;
+  const resolvedSceneImage = await loadResolvedSceneImage({
+    sceneKey: sceneArtPayload?.sceneKey ?? null,
+    previousSceneKey: null,
+    locationBackdropUrl: null,
+    defaultImageUrl: DEFAULT_SCENE_FALLBACK_URL,
+  });
+
   return (
     <main className="mx-auto max-w-6xl p-6">
       <div
@@ -400,7 +410,7 @@ let persistedAdventureOwnerId: string | null = null;
           statePanel={statePanel}
           currentScenario={currentScenario}
           dbOffline={dbOffline}
-          sceneArt={sceneArtPayload}
+          sceneImage={resolvedSceneImage}
         />
       </Suspense>
     </main>

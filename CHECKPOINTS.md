@@ -19,6 +19,11 @@
 - The turn response now returns `sceneArt` status and cached URL to the client.
 - Generation remains decoupled from `/api/turn`.
 
+### Scene Image Display
+- Added loadResolvedSceneImage to resolve the current/previous/location/default chain.
+- Created SceneImagePanel to render the resolved asset with status chips.
+- Play page now feeds the resolved image to `PlayClient`, so the UI never shows blank space.
+
 ### Scene Art Contract
 - Added SceneArt schema + SceneArtStatus.
 - Implemented src/lib/sceneArt.ts with presets, sceneKey, and prompt builders.

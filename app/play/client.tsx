@@ -7,6 +7,7 @@ import LatestTurnCard from "@/components/play/LatestTurnCard";
 import PressureMeter from "@/components/play/PressureMeter";
 import StatePanel from "@/components/play/StatePanel";
 import TurnInput from "@/components/play/TurnInput";
+import { SceneImagePanel } from "@/components/play/SceneImagePanel";
 import {
   AdventureHistoryRowViewModel,
   buildAdventureHistoryRowViewModel,
@@ -19,6 +20,7 @@ import LedgerPanel from "@/components/play/LedgerPanel";
 import { cardPadding, cardShell, emptyState, sectionHeading } from "@/components/play/cardStyles";
 import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
+import type { ResolvedSceneImage } from "@/lib/sceneArt";
 import type { SceneArtPayload } from "@/lib/sceneArt";
 
 function pressureBadgeTone(stage: string | null | undefined) {
@@ -150,7 +152,7 @@ export default function PlayClient({
   statePanel,
   currentScenario,
   dbOffline = false,
-  sceneArt,
+  sceneImage,
 }: {
   adventureId: string | null;
   scenarioId: string | null;
@@ -158,7 +160,7 @@ export default function PlayClient({
   statePanel: PlayStatePanel;
   currentScenario: PlayScenarioMeta | null;
   dbOffline?: boolean;
-  sceneArt?: SceneArtPayload | null;
+  sceneImage?: ResolvedSceneImage | null;
 }) {
   void sceneArt;
   const HISTORY_KEY = "creator:recentAdventures";
@@ -546,8 +548,12 @@ export default function PlayClient({
                   isHighlighted={highlightLatestTurn}
                 />
               </div>
+              {sceneImage ? (
+                <div className="mt-4">
+                  <SceneImagePanel {...sceneImage} />
+                </div>
+              ) : null}
               {adventureId ? <TurnInput adventureId={adventureId} /> : null}
-            {adventureId ? <TurnInput adventureId={adventureId} /> : null}
           </section>
 
             <aside className={ui.rightColumn}>
