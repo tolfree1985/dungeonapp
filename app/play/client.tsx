@@ -23,6 +23,8 @@ import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
+import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
+import type { SceneActorState } from "@/lib/resolveSceneActorState";
 
 function pressureBadgeTone(stage: string | null | undefined) {
   const normalized = typeof stage === "string" ? stage.toLowerCase() : "calm";
@@ -121,17 +123,21 @@ function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
 }
 
 function VisualStatePanel({
-  visualState,
+  sceneVisualState,
   framingState,
+  subjectState,
+  sceneActorState,
 }: {
-  visualState: SceneVisualState;
+  sceneVisualState: SceneVisualState;
   framingState: SceneFramingState;
+  subjectState: SceneSubjectState;
+  sceneActorState: SceneActorState;
 }) {
   const details = [
-    { label: "Lighting", value: visualState.lightingState },
-    { label: "Atmosphere", value: visualState.atmosphereState },
-    { label: "Wear", value: visualState.environmentWear },
-    { label: "Threat", value: visualState.threatPresence },
+    { label: "Lighting", value: sceneVisualState.lightingState },
+    { label: "Atmosphere", value: sceneVisualState.atmosphereState },
+    { label: "Wear", value: sceneVisualState.environmentWear },
+    { label: "Threat", value: sceneVisualState.threatPresence },
   ];
   const framingDetails = [
     { label: "Frame", value: framingState.frameKind.replace(/_/g, " ") },
@@ -139,7 +145,7 @@ function VisualStatePanel({
     { label: "Focus", value: framingState.subjectFocus },
     { label: "Angle", value: framingState.cameraAngle },
   ];
-  const framing = visualState.frame ? { } : null;
+  const subjectLabel = subjectState.primarySubjectLabel ?? subjectState.primarySubjectKind;
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
       <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">Visual State</div>
@@ -152,9 +158,9 @@ function VisualStatePanel({
         ))}
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.35em] text-white/60">
-        <span className="rounded-full border border-white/20 px-2 py-0.5">{visualState.locationId}</span>
-        <span className="rounded-full border border-white/20 px-2 py-0.5">{visualState.timeValue}</span>
-        <span className="rounded-full border border-white/20 px-2 py-0.5">{visualState.pressureStage}</span>
+        <span className="rounded-full border border-white/20 px-2 py-0.5">{sceneVisualState.locationId}</span>
+        <span className="rounded-full border border-white/20 px-2 py-0.5">{sceneVisualState.timeValue}</span>
+        <span className="rounded-full border border-white/20 px-2 py-0.5">{sceneVisualState.pressureStage}</span>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
         {framingDetails.map((detail) => (
@@ -162,6 +168,26 @@ function VisualStatePanel({
             {detail.label}: {detail.value}
           </div>
         ))}
+      </div>
+    <div className="mt-3 text-[11px] uppercase tracking-[0.3em] text-white/60">
+        <div className="text-xs text-white/40">Subject kind</div>
+        <div className="text-sm font-semibold text-white">{subjectState.primarySubjectKind}</div>
+        <div className="text-xs text-white/40">Subject</div>
+        <div className="text-sm font-semibold text-white">
+          {subjectState.primarySubjectLabel ?? "(unknown)"}
+        </div>
+        <div className="text-xs text-white/40">Actor role</div>
+        <div className="text-sm font-semibold text-white">
+          {sceneActorState.primaryActorRole ?? "none"}
+        </div>
+        <div className="text-xs text-white/40">Actor</div>
+        <div className="text-sm font-semibold text-white">
+          {sceneActorState.primaryActorLabel ?? "(none visible)"}
+        </div>
+        <div className="text-xs text-white/40">Visible</div>
+        <div className="text-sm font-semibold text-white">
+          {sceneActorState.actorVisible ? "yes" : "no"}
+        </div>
       </div>
     </div>
   );
@@ -202,8 +228,10 @@ export default function PlayClient({
   dbOffline = false,
   sceneImage,
   sceneImageCaption,
-  visualState,
+  sceneVisualState,
   sceneFramingState,
+  sceneSubjectState,
+  sceneActorState,
 }: {
   adventureId: string | null;
   scenarioId: string | null;
@@ -213,8 +241,10 @@ export default function PlayClient({
   dbOffline?: boolean;
   sceneImage?: ResolvedSceneImage | null;
   sceneImageCaption?: string | null;
-  visualState: SceneVisualState;
+  sceneVisualState: SceneVisualState;
   sceneFramingState: SceneFramingState;
+  sceneSubjectState: SceneSubjectState;
+  sceneActorState: SceneActorState;
 }) {
   const HISTORY_KEY = "creator:recentAdventures";
   type HistoryEntry = {
@@ -632,7 +662,12 @@ export default function PlayClient({
                     ambience={statePanel.ambience ?? "Cold / Quiet"}
                     tags={statePanel.contextTags ?? []}
                   />
-                  <VisualStatePanel visualState={visualState} framingState={sceneFramingState} />
+                  <VisualStatePanel
+                    sceneVisualState={sceneVisualState}
+                    framingState={sceneFramingState}
+                    subjectState={sceneSubjectState}
+                    sceneActorState={sceneActorState}
+                  />
                   <StatePanel viewModel={statePanelViewModel} />
                 </section>
                 <section className="space-y-4">

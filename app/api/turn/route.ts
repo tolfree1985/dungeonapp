@@ -26,6 +26,9 @@ import { reserveUsageDayLock } from "@/server/usage/reserveUsageDayLock";
 import { turnPersistence } from "./turnDb";
 import { logStructuredFailure } from "@/lib/turn/observability";
 import { diffSceneVisualState, resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
+import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
+import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
+import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { findSceneArt, queueSceneArt } from "@/lib/sceneArtRepo";
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
@@ -280,9 +283,24 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           where: { adventureId },
           orderBy: { turnIndex: "desc" },
         });
+        const persistedStateRecord = asRecord(persistedAdventureState?.state ?? null);
+        const persistedVisualState = resolveSceneVisualState(persistedStateRecord);
+        const persistedFramingState = resolveSceneFramingState({
+          turn: persistedLatestTurn,
+          visual: persistedVisualState,
+          locationChanged: false,
+        });
+        const persistedSubjectState = resolveSceneSubjectState({
+          state: persistedStateRecord,
+          framing: persistedFramingState,
+        });
+        const persistedActorState = resolveSceneActorState({
+          state: persistedStateRecord,
+          subject: persistedSubjectState,
+        });
         const canonicalPayload = buildCanonicalSceneArtPayload({
           turn: persistedLatestTurn,
-          state: asRecord(persistedAdventureState?.state ?? null),
+          state: persistedStateRecord,
         });
         if (canonicalPayload) {
           console.log("sceneArt route before queue", {
@@ -488,6 +506,19 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     });
     const stateRecord = asRecord(updatedAdventureState?.state ?? null);
     const nextVisualState = resolveSceneVisualState(stateRecord);
+    const nextFramingState = resolveSceneFramingState({
+      turn: latestTurn,
+      visual: nextVisualState,
+      locationChanged: false,
+    });
+    const nextSubjectState = resolveSceneSubjectState({
+      state: stateRecord,
+      framing: nextFramingState,
+    });
+    const nextActorState = resolveSceneActorState({
+      state: stateRecord,
+      subject: nextSubjectState,
+    });
     const visualStateDeltas = diffSceneVisualState(previousVisualState, nextVisualState);
     const visualLedgerEntries = visualStateDeltas.map((delta) => ({
       kind: "visual_state",

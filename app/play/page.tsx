@@ -13,6 +13,8 @@ import { prisma } from "@/lib/prisma";
 import { getSceneImageUpdateCaption } from "@/lib/sceneImageCaption";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
 import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
+import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
+import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneVisualState, type VisualStateDelta } from "@/lib/resolveSceneVisualState";
 import { ResolvedSceneImage } from "@/lib/sceneArt";
 import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
@@ -375,14 +377,22 @@ let persistedAdventureOwnerId: string | null = null;
     const match = statePanel.stats.find((stat) => stat.key.toLowerCase() === key.toLowerCase());
     return match ? match.value : null;
   };
+  const sceneVisualState = resolveSceneVisualState(rawState ?? undefined);
+  const sceneFramingState = resolveSceneFramingState({
+    turn: latestTurn,
+    visual: sceneVisualState,
+  });
+  const sceneSubjectState = resolveSceneSubjectState({
+    state: rawState,
+    framing: sceneFramingState,
+  });
+  const sceneActorState = resolveSceneActorState({
+    state: rawState,
+    subject: sceneSubjectState,
+  });
   const sceneArt = buildCanonicalSceneArtPayload({
     turn: latestTurn,
     state: rawState,
-  });
-  const visualState = resolveSceneVisualState(rawState ?? undefined);
-  const framingState = resolveSceneFramingState({
-    turn: latestTurn,
-    visual: visualState,
   });
   const resolvedSceneImage = await loadResolvedSceneImage({
     sceneKey: sceneArt?.sceneKey ?? null,
@@ -429,8 +439,10 @@ let persistedAdventureOwnerId: string | null = null;
           dbOffline={dbOffline}
           sceneImage={resolvedSceneImage}
           sceneImageCaption={sceneImageCaption}
-          visualState={visualState}
-          sceneFramingState={framingState}
+          sceneVisualState={sceneVisualState}
+          sceneFramingState={sceneFramingState}
+          sceneSubjectState={sceneSubjectState}
+          sceneActorState={sceneActorState}
         />
       </Suspense>
     </main>

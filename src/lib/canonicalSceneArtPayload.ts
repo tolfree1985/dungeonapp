@@ -2,6 +2,8 @@ import type { PlayTurn } from "@/app/play/types";
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
 import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
+import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
+import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import {
   presentMajorSceneTags,
   presentNpcCuesForPrompt,
@@ -14,22 +16,34 @@ type CanonicalSceneArtParams = {
   state: Record<string, unknown> | null;
 };
 
-export function buildCanonicalSceneArtPayload({ turn, state }: CanonicalSceneArtParams): SceneArtPayload | null {
+export function buildCanonicalSceneArtPayload({
+  turn,
+  state,
+}: CanonicalSceneArtParams): SceneArtPayload | null {
   if (!turn?.scene) return null;
 
-  const visualState = resolveSceneVisualState(state ?? undefined);
+  const stateRecord = asRecord(state);
+  const visualState = resolveSceneVisualState(stateRecord);
   const framingState = resolveSceneFramingState({
     turn,
     visual: visualState,
     locationChanged: false,
   });
+  const subjectState = resolveSceneSubjectState({
+    state: stateRecord,
+    framing: framingState,
+  });
+  const actorState = resolveSceneActorState({
+    state: stateRecord,
+    subject: subjectState,
+  });
   console.log("sceneArt canonical inputs", {
     latestTurnScene: turn.scene,
     visualState,
     framing: framingState,
+    subject: subjectState,
+    actor: actorState,
   });
-
-  const stateRecord = asRecord(state);
 
   const visualTags = [
     `lighting:${visualState.lightingState}`,
@@ -43,9 +57,11 @@ export function buildCanonicalSceneArtPayload({ turn, state }: CanonicalSceneArt
     visualState,
     visualTags,
     framingState,
+    subjectState,
     npcState: presentNpcStateForSceneKey(stateRecord),
     npcCues: presentNpcCuesForPrompt(stateRecord),
     majorTags: presentMajorSceneTags(turn, stateRecord),
+    actorState,
   });
 }
 

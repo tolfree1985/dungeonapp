@@ -9,6 +9,8 @@ import {
 } from "@/lib/sceneArt";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
+import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
+import type { SceneActorState } from "@/lib/resolveSceneActorState";
 
 export type PresentSceneArtInput = {
   title?: string;
@@ -19,6 +21,8 @@ export type PresentSceneArtInput = {
   npcCues?: string[];
   majorTags?: string[];
   framingState: SceneFramingState;
+  subjectState: SceneSubjectState;
+  actorState: SceneActorState;
 };
 
 export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
@@ -32,6 +36,7 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const timeText = input.visualState.timeValue;
   const timeBucket = input.visualState.timeValue;
   const framing = input.framingState;
+  const subject = input.subjectState;
 
   const sceneKey = buildSceneKey({
     locationId,
@@ -49,16 +54,41 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
     npcCues: input.npcCues ?? [],
   });
 
+  const subjectText = subject.primarySubjectLabel
+    ? `${subject.primarySubjectKind} ${subject.primarySubjectLabel}`
+    : subject.primarySubjectKind;
+  const actor = input.actorState;
+  const actorLabel = actor.actorVisible && actor.primaryActorLabel ? actor.primaryActorLabel : null;
   const renderPrompt = buildRenderScenePrompt({
     basePrompt,
     stylePreset,
-    appearanceCues: [...visualTags, `framing ${framing.frameKind}`, `shot ${framing.shotScale}`, `focus ${framing.subjectFocus}`, `angle ${framing.cameraAngle}`].map((tag) => tag.replace(":", " ")),
+    appearanceCues: [
+      ...visualTags,
+      `framing ${framing.frameKind}`,
+      `shot ${framing.shotScale}`,
+      `focus ${framing.subjectFocus}`,
+      `angle ${framing.cameraAngle}`,
+      `subject ${subjectText}`,
+      actorLabel ? `actor ${actorLabel}` : null,
+    ]
+      .filter(Boolean)
+      .map((tag) => tag.replace(":", " ")),
   });
 
   visualTags.push(`framing:${framing.frameKind}`);
   visualTags.push(`shot:${framing.shotScale}`);
   visualTags.push(`focus:${framing.subjectFocus}`);
   visualTags.push(`angle:${framing.cameraAngle}`);
+  visualTags.push(`subject:${subject.primarySubjectKind}`);
+  if (subject.primarySubjectLabel) {
+    visualTags.push(`subject-label:${subject.primarySubjectLabel}`);
+  }
+  if (actor.actorVisible && actor.primaryActorRole) {
+    visualTags.push(`actor-role:${actor.primaryActorRole}`);
+  }
+  if (actor.actorVisible && actor.primaryActorLabel) {
+    visualTags.push(`actor-label:${actor.primaryActorLabel}`);
+  }
   const tags = Array.from(new Set([...majorTags, ...visualTags]));
 
   return {
