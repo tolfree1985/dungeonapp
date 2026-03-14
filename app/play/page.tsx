@@ -10,6 +10,13 @@ import {
 } from "@/lib/adventure/ownership";
 import { getOptionalUser } from "@/lib/api/identity";
 import { prisma } from "@/lib/prisma";
+import { SceneArtPayload } from "@/lib/sceneArt";
+import {
+  presentMajorSceneTags,
+  presentNpcCuesForPrompt,
+  presentNpcStateForSceneKey,
+  presentSceneArt,
+} from "@/lib/presenters/presentSceneArt";
 
 const PROTECTED_ADVENTURE_IDS = new Set(["canon_ui", "sandbox", "replay_lab", "dev_run"]);
 const DEV_DEFAULT_ADVENTURE = "85e17a2c-c8a9-4c48-9186-2ed7e3e9d983";
@@ -216,17 +223,18 @@ export default async function PlayPage({
     );
   }
 
-  let turns: PlayTurn[] = [];
-  let currentScenario: PlayScenarioMeta | null = null;
-  let statePanel: PlayStatePanel = {
-    pressureStage: null,
-    stats: [],
-    inventory: [],
-    quests: [],
-    relationships: [],
-  };
-  let dbOffline = false;
-  let persistedAdventureOwnerId: string | null = null;
+let turns: PlayTurn[] = [];
+let currentScenario: PlayScenarioMeta | null = null;
+let statePanel: PlayStatePanel = {
+  pressureStage: null,
+  stats: [],
+  inventory: [],
+  quests: [],
+  relationships: [],
+};
+let dbOffline = false;
+let persistedAdventureOwnerId: string | null = null;
+  let rawState: Record<string, unknown> | null = null;
   if (adventureId) {
     try {
       try {
@@ -263,6 +271,7 @@ export default async function PlayPage({
 
       if (!adventure) {
         turns = [];
+        rawState = null;
       } else {
         const rows = await prisma.turn.findMany({
           where: { adventureId },
@@ -280,6 +289,7 @@ export default async function PlayPage({
           },
         });
         statePanel = normalizeStatePanel(adventure?.state);
+        rawState = adventure?.state ?? null;
         const stateScenarioMeta = readScenarioMetaFromState(adventure?.state);
         const resolvedScenarioId = stateScenarioMeta?.id ?? scenarioId;
         if (typeof resolvedScenarioId === "string" && resolvedScenarioId.trim()) {
@@ -326,6 +336,7 @@ export default async function PlayPage({
     }
   }
   const latestTurnIndex = turns[0]?.turnIndex;
+  const latestTurn = turns[0] ?? null;
   const pressureValue = statePanel.pressureStage ?? null;
   const locationStat = statePanel.stats.find((stat) => stat.key.toLowerCase() === "location");
   const formatStateValue = (value: PlayStateValue | null | undefined) =>
@@ -338,6 +349,35 @@ export default async function PlayPage({
   const debugStripClasses = isProtectedRun
     ? "border-rose-500/60 bg-rose-500/10 text-rose-100"
     : "border-white/10 bg-white/5 text-white/60";
+
+  const getStatValue = (key: string): PlayStateValue | null => {
+    const match = statePanel.stats.find((stat) => stat.key.toLowerCase() === key.toLowerCase());
+    return match ? match.value : null;
+  };
+  const locationValue = getStatValue("location");
+  const timeValue = getStatValue("time");
+  const locationId = typeof locationValue === "string" ? locationValue : "unknown-location";
+  const locationText = typeof locationValue === "string" ? locationValue : "Unknown location";
+  const timeBucket = typeof timeValue === "string" ? timeValue : "unknown-time";
+  const timeText = typeof timeValue === "string" ? timeValue : "Unknown time";
+  const pressureStageValue = (statePanel.pressureStage ?? "calm").toLowerCase();
+  const pressureTextValue = getStatValue("pressure stage") ?? pressureStageValue;
+
+  const sceneArtPayload: SceneArtPayload | null = latestTurn
+    ? presentSceneArt({
+        title: latestTurn.scene,
+        locationId,
+        locationText,
+        timeBucket,
+        timeText,
+        pressureStage: pressureStageValue,
+        pressureText: typeof pressureTextValue === "string" ? pressureTextValue : String(pressureTextValue ?? pressureStageValue),
+        npcState: presentNpcStateForSceneKey(rawState),
+        npcCues: presentNpcCuesForPrompt(rawState),
+        majorTags: presentMajorSceneTags(latestTurn, rawState),
+        appearanceCues: [],
+      })
+    : null;
   return (
     <main className="mx-auto max-w-6xl p-6">
       <div
@@ -360,6 +400,7 @@ export default async function PlayPage({
           statePanel={statePanel}
           currentScenario={currentScenario}
           dbOffline={dbOffline}
+          sceneArt={sceneArtPayload}
         />
       </Suspense>
     </main>

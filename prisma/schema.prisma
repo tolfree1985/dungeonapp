@@ -187,6 +187,29 @@ model UsageDay {
   @@id([key, day])
 }
 
+enum SceneArtStatus {
+  queued
+  ready
+  failed
+}
+
+model SceneArt {
+  id            String         @id @default(cuid())
+  sceneKey      String         @unique
+  title         String?
+  basePrompt    String
+  renderPrompt  String
+  stylePreset   String?
+  tagsJson      String?
+  status        SceneArtStatus @default(queued)
+  imageUrl      String?
+  engineVersion String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([status])
+}
+
 enum Tier {
   NOMAD
   TRAILBLAZOR

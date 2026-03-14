@@ -19,6 +19,7 @@ import LedgerPanel from "@/components/play/LedgerPanel";
 import { cardPadding, cardShell, emptyState, sectionHeading } from "@/components/play/cardStyles";
 import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
+import type { SceneArtPayload } from "@/lib/sceneArt";
 
 function pressureBadgeTone(stage: string | null | undefined) {
   const normalized = typeof stage === "string" ? stage.toLowerCase() : "calm";
@@ -149,6 +150,7 @@ export default function PlayClient({
   statePanel,
   currentScenario,
   dbOffline = false,
+  sceneArt,
 }: {
   adventureId: string | null;
   scenarioId: string | null;
@@ -156,7 +158,9 @@ export default function PlayClient({
   statePanel: PlayStatePanel;
   currentScenario: PlayScenarioMeta | null;
   dbOffline?: boolean;
+  sceneArt?: SceneArtPayload | null;
 }) {
+  void sceneArt;
   const HISTORY_KEY = "creator:recentAdventures";
   type HistoryEntry = {
     adventureId: string;
