@@ -428,33 +428,33 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       where: { adventureId },
       orderBy: { turnIndex: "desc" },
     });
+    const branch = (finalized as any)?.branch ?? "legacy";
     const sceneArtPayload = buildCanonicalSceneArtPayload({
       turn: latestTurn,
       state: stateRecord,
     });
 
-    console.log("sceneArt route before queue", {
-      adventureId,
-      branch: (finalized as any)?.branch ?? "unknown",
-      sceneKey: sceneArtPayload?.sceneKey ?? null,
-    });
+    let sceneArt: { sceneKey: string; status: string; imageUrl: string | null } | null = null;
 
-    if (sceneArtPayload) {
+    if (branch === "legacy" && sceneArtPayload) {
+      console.log("sceneArt route before queue", {
+        adventureId,
+        branch,
+        sceneKey: sceneArtPayload.sceneKey,
+      });
       console.log("sceneArt canonical source", {
         sceneKey: sceneArtPayload.sceneKey,
         basePrompt: sceneArtPayload.basePrompt,
       });
-    }
 
-    let sceneArt: { sceneKey: string; status: string; imageUrl: string | null } | null = null;
-    if (sceneArtPayload) {
       const existingSceneArt = await findSceneArt(sceneArtPayload.sceneKey);
       const shouldQueue = existingSceneArt === null;
       console.log("sceneArt queue gate", {
         sceneKey: sceneArtPayload.sceneKey,
         shouldQueue,
-        branch: (finalized as any)?.branch ?? "unknown",
+        branch,
       });
+
       if (existingSceneArt) {
         sceneArt = {
           sceneKey: existingSceneArt.sceneKey,
@@ -478,12 +478,13 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           imageUrl: queued.imageUrl,
         };
       }
+      console.log("sceneArt route returning response", {
+        adventureId,
+        branch,
+        sceneKey: sceneArtPayload.sceneKey,
+      });
     }
 
-    console.log("sceneArt route returning response", {
-      adventureId,
-      branch: (finalized as any)?.branch ?? "unknown",
-    });
     return NextResponse.json(
       {
         ok: true,
