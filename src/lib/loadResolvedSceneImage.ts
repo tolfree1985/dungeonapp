@@ -17,6 +17,14 @@ export async function loadResolvedSceneImage({
     previousSceneKey ? prisma.sceneArt.findUnique({ where: { sceneKey: previousSceneKey } }) : Promise.resolve(null),
   ]);
 
+  if (currentScene || previousScene) {
+    console.log("sceneArt loader row", {
+      sceneKey,
+      status: currentScene?.status ?? previousScene?.status ?? null,
+      imageUrl: currentScene?.imageUrl ?? previousScene?.imageUrl ?? null,
+    });
+  }
+
   console.log("loadResolvedSceneImage", {
     sceneKey,
     previousSceneKey,

@@ -8,6 +8,10 @@ export async function findSceneArt(sceneKey: string) {
 }
 
 export async function queueSceneArt(payload: SceneArtPayload, engineVersion?: string | null) {
+  console.log("sceneArt repo write", {
+    sceneKey: payload.sceneKey,
+    title: payload.title,
+  });
   return prisma.sceneArt.upsert({
     where: { sceneKey: payload.sceneKey },
     update: {},
@@ -17,7 +21,7 @@ export async function queueSceneArt(payload: SceneArtPayload, engineVersion?: st
       basePrompt: payload.basePrompt,
       renderPrompt: payload.renderPrompt,
       stylePreset: payload.stylePreset,
-      tagsJson: JSON.stringify(payload.tags),
+      tagsJson: JSON.stringify(payload.tags ?? []),
       status: "queued",
       imageUrl: null,
       engineVersion: engineVersion ?? null,

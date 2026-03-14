@@ -271,6 +271,56 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         );
       } catch {
         // If turnJson is unexpectedly not JSON, still return a safe replay response.
+        const persistedAdventureState = await db.adventure.findUnique({
+          where: { id: adventureId },
+          select: { state: true },
+        });
+        const persistedLatestTurn = await db.turn.findFirst({
+          where: { adventureId },
+          orderBy: { turnIndex: "desc" },
+        });
+        const canonicalPayload = buildCanonicalSceneArtPayload({
+          turn: persistedLatestTurn,
+          state: asRecord(persistedAdventureState?.state ?? null),
+        });
+        if (canonicalPayload) {
+          console.log("sceneArt route before queue", {
+            sceneKey: canonicalPayload.sceneKey,
+            branch: "legacy",
+            reason: "MODEL_ERROR",
+          });
+          const existingSceneArt = await findSceneArt(canonicalPayload.sceneKey);
+          const shouldQueue = existingSceneArt === null;
+          console.log("sceneArt queue gate", {
+            sceneKey: canonicalPayload.sceneKey,
+            shouldQueue,
+            branch: "legacy",
+            reason: "MODEL_ERROR",
+          });
+          if (existingSceneArt) {
+            console.log("sceneArt route returning response", {
+              sceneKey: canonicalPayload.sceneKey,
+              branch: "legacy",
+              reason: "MODEL_ERROR",
+            });
+          } else {
+            console.log("sceneArt queue request", {
+              sceneKey: canonicalPayload.sceneKey,
+              title: canonicalPayload.title,
+            });
+            const queued = await queueSceneArt(canonicalPayload, ENGINE_VERSION);
+            console.log("sceneArt queue persisted", {
+              sceneKey: queued.sceneKey,
+              status: queued.status,
+              id: queued.id,
+            });
+            console.log("sceneArt route returning response", {
+              sceneKey: canonicalPayload.sceneKey,
+              branch: "legacy",
+              reason: "MODEL_ERROR",
+            });
+          }
+        }
         console.log("TURN RETURN 3", { reason: "MODEL_ERROR" });
         return NextResponse.json(
           {
