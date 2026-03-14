@@ -162,7 +162,6 @@ export default function PlayClient({
   dbOffline?: boolean;
   sceneImage?: ResolvedSceneImage | null;
 }) {
-  void sceneArt;
   const HISTORY_KEY = "creator:recentAdventures";
   type HistoryEntry = {
     adventureId: string;
