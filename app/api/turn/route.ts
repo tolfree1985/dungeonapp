@@ -204,6 +204,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         reason: "soft limit",
       };
       if (!rateLimit.allowed) {
+        console.log("TURN RETURN 1", { reason: "BUDGET_EXCEEDED" });
         return NextResponse.json(
           safeTurnErrorPayload({
             error: "RATE_LIMITED",
@@ -253,6 +254,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
               }
             : undefined;
 
+        console.log("TURN RETURN 2", { reason: "ADVENTURE_FORBIDDEN" });
         return NextResponse.json(
           {
             ok: true,
@@ -269,6 +271,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         );
       } catch {
         // If turnJson is unexpectedly not JSON, still return a safe replay response.
+        console.log("TURN RETURN 3", { reason: "MODEL_ERROR" });
         return NextResponse.json(
           {
             ok: true,
@@ -324,6 +327,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           (code === "MONTHLY_TOKEN_CAP_EXCEEDED"
             ? new Date(new Date().getTime() + 60_000)
             : new Date(new Date().getTime() + 1_000));
+        console.log("TURN RETURN 4", { reason: "LEGACY_NOT_FOUND" });
         return NextResponse.json(
           safeTurnErrorPayload({
             error: "BUDGET_EXCEEDED",
@@ -540,5 +544,9 @@ function makeDefaultDeps(): PostHandlerDeps {
 }
 
 export const POST = withRouteLogging("POST /api/turn", async (req: NextRequest, _context: { params: Promise<{}> }) => {
+  console.log("TURN ROUTE SENTINEL", {
+    file: "app/api/turn/route.ts",
+    ts: Date.now(),
+  });
   return postTurn(req, makeDefaultDeps());
 });
