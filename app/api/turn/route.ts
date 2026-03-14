@@ -459,16 +459,15 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       select: { state: true },
     });
     const stateRecord = asRecord(updatedAdventureState?.state ?? null);
-    const legacySceneArtPayload = (finalized as any).sceneArtPayload ?? null;
+    const latestTurn = (finalized as any).turn ?? null;
     const sceneArtPayload: SceneArtPayload | null =
-      legacySceneArtPayload ??
-      (latestTurn
+      latestTurn
         ? (() => {
             const locationInfo = resolveLocationInfo(stateRecord);
             const timeInfo = resolveTimeInfo(stateRecord);
             const pressureInfo = resolvePressureStage(stateRecord);
             return presentSceneArt({
-              title: finalized.turn?.scene ?? undefined,
+              title: latestTurn.scene ?? undefined,
               locationId: locationInfo.id,
               locationText: locationInfo.text,
               timeBucket: timeInfo.bucket,
@@ -477,11 +476,11 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
               pressureText: pressureInfo.text,
               npcState: presentNpcStateForSceneKey(stateRecord),
               npcCues: presentNpcCuesForPrompt(stateRecord),
-              majorTags: presentMajorSceneTags(finalized.turn ?? null, stateRecord),
+              majorTags: presentMajorSceneTags(latestTurn, stateRecord),
               appearanceCues: [],
             });
           })()
-        : null);
+        : null;
 
     let sceneArt: { sceneKey: string; status: string; imageUrl: string | null } | null = null;
     if (sceneArtPayload) {

@@ -1,14 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma";
 import { resolveDeterministicTurn } from "@/server/turn/deterministicTurn";
-import { SceneArtPayload } from "@/lib/sceneArt";
-import { queueSceneArt } from "@/lib/sceneArtRepo";
-import {
-  presentMajorSceneTags,
-  presentNpcCuesForPrompt,
-  presentNpcStateForSceneKey,
-  presentSceneArt,
-} from "@/lib/presenters/presentSceneArt";
-import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 
 type TransactionClient = Parameters<PrismaClient["$transaction"]>[0] extends (tx: infer T) => any ? T : never;
 
@@ -157,82 +148,7 @@ export async function runLegacyTurnFlow(args: RunLegacyTurnFlowArgs, deps: RunLe
       },
     });
 
-    return { turn, billing: committed, idempotencyKey, nextState: resolvedTurn.nextState as Record<string, unknown> };
+    return { turn, billing: committed, idempotencyKey };
   });
-
-  const sceneArtPayload = buildSceneArtPayload({
-    turn: finalized.turn,
-    nextState: finalized.nextState ?? null,
-  });
-
-  if (sceneArtPayload) {
-    await queueSceneArt(sceneArtPayload, ENGINE_VERSION);
-  }
-
-  return { ...finalized, sceneArtPayload };
-}
-
-function buildSceneArtPayload(input: { turn: { scene: string }; nextState: Record<string, unknown> | null }): SceneArtPayload | null {
-  const stateRecord = asRecord(input.nextState);
-  const locationInfo = resolveLocationInfo(stateRecord);
-  const timeInfo = resolveTimeInfo(stateRecord);
-  const pressureInfo = resolvePressureStage(stateRecord);
-
-  return presentSceneArt({
-    title: input.turn.scene,
-    locationId: locationInfo.id,
-    locationText: locationInfo.text,
-    timeBucket: timeInfo.bucket,
-    timeText: timeInfo.text,
-    pressureStage: pressureInfo.stage,
-    pressureText: pressureInfo.text,
-    npcState: presentNpcStateForSceneKey(stateRecord),
-    npcCues: presentNpcCuesForPrompt(stateRecord),
-    majorTags: presentMajorSceneTags(input.turn as any, stateRecord),
-    appearanceCues: [],
-  });
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function readSection(state: Record<string, unknown> | null, key: string): unknown {
-  if (!state) return null;
-  if (state[key] !== undefined) return state[key];
-  const player = asRecord(state.player);
-  if (player?.[key] !== undefined) return player[key];
-  return null;
-}
-
-function resolveLocationInfo(state: Record<string, unknown> | null): { id: string; text: string } {
-  const raw = readSection(state, "location");
-  const record = asRecord(raw);
-  const candidateId = asString(record?.id) ?? asString(raw) ?? "unknown-location";
-  const candidateText =
-    asString(record?.label) ?? asString(record?.name) ?? asString(raw) ?? "Unknown location";
-  return { id: candidateId, text: candidateText };
-}
-
-function resolveTimeInfo(state: Record<string, unknown> | null): { bucket: string; text: string } {
-  const raw = readSection(state, "time");
-  const record = asRecord(raw);
-  const bucket = asString(record?.bucket) ?? asString(raw) ?? "unknown-time";
-  const text = asString(record?.label) ?? asString(record?.name) ?? asString(raw) ?? "Unknown time";
-  return { bucket, text };
-}
-
-function resolvePressureStage(state: Record<string, unknown> | null): { stage: string; text: string } {
-  const raw = readSection(state, "pressure");
-  const record = asRecord(raw) ?? state;
-  const stage = asString(record?.stage ?? state?.pressureStage) ?? "calm";
-  const text = asString(record?.label ?? state?.pressure?.label) ?? stage;
-  return { stage: stage.toLowerCase(), text };
-}
-
-function asString(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return null;
+  return finalized;
 }
