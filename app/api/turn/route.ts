@@ -433,6 +433,12 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       state: stateRecord,
     });
 
+    console.log("sceneArt route before queue", {
+      adventureId,
+      branch: (finalized as any)?.branch ?? "unknown",
+      sceneKey: sceneArtPayload?.sceneKey ?? null,
+    });
+
     if (sceneArtPayload) {
       console.log("sceneArt canonical source", {
         sceneKey: sceneArtPayload.sceneKey,
@@ -442,11 +448,13 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
 
     let sceneArt: { sceneKey: string; status: string; imageUrl: string | null } | null = null;
     if (sceneArtPayload) {
-      console.log("sceneArt queue request", {
-        sceneKey: sceneArtPayload.sceneKey,
-        title: sceneArtPayload.title,
-      });
       const existingSceneArt = await findSceneArt(sceneArtPayload.sceneKey);
+      const shouldQueue = existingSceneArt === null;
+      console.log("sceneArt queue gate", {
+        sceneKey: sceneArtPayload.sceneKey,
+        shouldQueue,
+        branch: (finalized as any)?.branch ?? "unknown",
+      });
       if (existingSceneArt) {
         sceneArt = {
           sceneKey: existingSceneArt.sceneKey,
@@ -454,6 +462,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           imageUrl: existingSceneArt.imageUrl,
         };
       } else {
+        console.log("sceneArt queue request", {
+          sceneKey: sceneArtPayload.sceneKey,
+          title: sceneArtPayload.title,
+        });
         const queued = await queueSceneArt(sceneArtPayload, ENGINE_VERSION);
         console.log("sceneArt queue persisted", {
           sceneKey: queued.sceneKey,
@@ -468,6 +480,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       }
     }
 
+    console.log("sceneArt route returning response", {
+      adventureId,
+      branch: (finalized as any)?.branch ?? "unknown",
+    });
     return NextResponse.json(
       {
         ok: true,
