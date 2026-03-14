@@ -22,18 +22,29 @@ export function buildCanonicalSceneArtPayload({ turn, state }: CanonicalSceneArt
   });
 
   const stateRecord = asRecord(state);
-  const locationInfo = resolveLocationInfo(stateRecord);
-  const timeInfo = resolveTimeInfo(stateRecord);
-  const pressureInfo = resolvePressureStage(stateRecord);
+  const stats = (stateRecord?.stats as Record<string, unknown>) ?? (state?.stats as Record<string, unknown>) ?? {};
+
+  const locationId = asString(stateRecord?.location ?? stats.location) ?? "Unknown location";
+  const locationText = asString(stateRecord?.location ?? stats.location) ?? "Unknown location";
+
+  const timeValue = stateRecord?.time ?? stats.time ?? null;
+  const timeBucket = asString((timeValue as Record<string, unknown>)?.bucket ?? timeValue) ?? "unknown-time";
+  const timeText = asString((timeValue as Record<string, unknown>)?.label ?? timeValue) ?? "Unknown time";
+
+  const pressureStageValue =
+    asString(stateRecord?.pressure ?? stateRecord?.pressureStage ?? stats.pressureStage) ?? "calm";
+  const pressureText = asString(stateRecord?.pressure?.label ?? stateRecord?.pressure?.status) ?? pressureStageValue;
+
+  const basePrompt = `${locationId}, ${timeText}, ${pressureStageValue}`;
 
   return presentSceneArt({
     title: turn.scene ?? undefined,
-    locationId: locationInfo.id,
-    locationText: locationInfo.text,
-    timeBucket: timeInfo.bucket,
-    timeText: timeInfo.text,
-    pressureStage: pressureInfo.stage,
-    pressureText: pressureInfo.text,
+    locationId,
+    locationText,
+    timeBucket,
+    timeText,
+    pressureStage: pressureStageValue,
+    pressureText,
     npcState: presentNpcStateForSceneKey(stateRecord),
     npcCues: presentNpcCuesForPrompt(stateRecord),
     majorTags: presentMajorSceneTags(turn as any, stateRecord),
@@ -44,39 +55,6 @@ export function buildCanonicalSceneArtPayload({ turn, state }: CanonicalSceneArt
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
-}
-
-function resolveLocationInfo(state: Record<string, unknown> | null): { id: string; text: string } {
-  const raw = readSection(state, "location");
-  const record = asRecord(raw);
-  const candidateId = asString(record?.id) ?? asString(raw) ?? "unknown-location";
-  const candidateText =
-    asString(record?.label) ?? asString(record?.name) ?? asString(raw) ?? "Unknown location";
-  return { id: candidateId, text: candidateText };
-}
-
-function resolveTimeInfo(state: Record<string, unknown> | null): { bucket: string; text: string } {
-  const raw = readSection(state, "time");
-  const record = asRecord(raw);
-  const bucket = asString(record?.bucket) ?? asString(raw) ?? "unknown-time";
-  const text = asString(record?.label) ?? asString(record?.name) ?? asString(raw) ?? "Unknown time";
-  return { bucket, text };
-}
-
-function resolvePressureStage(state: Record<string, unknown> | null): { stage: string; text: string } {
-  const raw = readSection(state, "pressure");
-  const record = asRecord(raw) ?? state;
-  const stage = asString((record as any)?.stage ?? state?.pressureStage) ?? "calm";
-  const text = asString((record as any)?.label ?? state?.pressure?.label) ?? stage;
-  return { stage: stage.toLowerCase(), text };
-}
-
-function readSection(state: Record<string, unknown> | null, key: string): unknown {
-  if (!state) return null;
-  if (state[key] !== undefined) return state[key];
-  const player = asRecord(state.player);
-  if (player?.[key] !== undefined) return player[key];
-  return null;
 }
 
 function asString(value: unknown): string | null {
