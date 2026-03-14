@@ -8,6 +8,7 @@ import {
   type STYLE_PRESETS,
 } from "@/lib/sceneArt";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
+import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 
 export type PresentSceneArtInput = {
   title?: string;
@@ -17,11 +18,12 @@ export type PresentSceneArtInput = {
   npcState?: string[];
   npcCues?: string[];
   majorTags?: string[];
+  framingState: SceneFramingState;
 };
 
 export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const stylePreset = input.stylePreset ?? DEFAULT_STYLE_PRESET;
-  const visualTags = input.visualTags ?? [];
+  const visualTags = [...(input.visualTags ?? [])];
   const npcState = input.npcState ?? [];
   const majorTags = input.majorTags ?? [];
 
@@ -29,6 +31,7 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const pressureStage = input.visualState.pressureStage;
   const timeText = input.visualState.timeValue;
   const timeBucket = input.visualState.timeValue;
+  const framing = input.framingState;
 
   const sceneKey = buildSceneKey({
     locationId,
@@ -49,9 +52,13 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const renderPrompt = buildRenderScenePrompt({
     basePrompt,
     stylePreset,
-    appearanceCues: visualTags.map((tag) => tag.replace(":", " ")),
+    appearanceCues: [...visualTags, `framing ${framing.frameKind}`, `shot ${framing.shotScale}`, `focus ${framing.subjectFocus}`, `angle ${framing.cameraAngle}`].map((tag) => tag.replace(":", " ")),
   });
 
+  visualTags.push(`framing:${framing.frameKind}`);
+  visualTags.push(`shot:${framing.shotScale}`);
+  visualTags.push(`focus:${framing.subjectFocus}`);
+  visualTags.push(`angle:${framing.cameraAngle}`);
   const tags = Array.from(new Set([...majorTags, ...visualTags]));
 
   return {

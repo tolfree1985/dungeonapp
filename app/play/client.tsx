@@ -22,6 +22,7 @@ import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
+import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 
 function pressureBadgeTone(stage: string | null | undefined) {
   const normalized = typeof stage === "string" ? stage.toLowerCase() : "calm";
@@ -119,13 +120,26 @@ function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
   );
 }
 
-function VisualStatePanel({ visualState }: { visualState: SceneVisualState }) {
+function VisualStatePanel({
+  visualState,
+  framingState,
+}: {
+  visualState: SceneVisualState;
+  framingState: SceneFramingState;
+}) {
   const details = [
     { label: "Lighting", value: visualState.lightingState },
     { label: "Atmosphere", value: visualState.atmosphereState },
     { label: "Wear", value: visualState.environmentWear },
     { label: "Threat", value: visualState.threatPresence },
   ];
+  const framingDetails = [
+    { label: "Frame", value: framingState.frameKind.replace(/_/g, " ") },
+    { label: "Shot", value: framingState.shotScale },
+    { label: "Focus", value: framingState.subjectFocus },
+    { label: "Angle", value: framingState.cameraAngle },
+  ];
+  const framing = visualState.frame ? { } : null;
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
       <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">Visual State</div>
@@ -141,6 +155,13 @@ function VisualStatePanel({ visualState }: { visualState: SceneVisualState }) {
         <span className="rounded-full border border-white/20 px-2 py-0.5">{visualState.locationId}</span>
         <span className="rounded-full border border-white/20 px-2 py-0.5">{visualState.timeValue}</span>
         <span className="rounded-full border border-white/20 px-2 py-0.5">{visualState.pressureStage}</span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
+        {framingDetails.map((detail) => (
+          <div key={detail.label} className="rounded-full border border-white/10 px-2 py-1 text-center text-xs">
+            {detail.label}: {detail.value}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -182,6 +203,7 @@ export default function PlayClient({
   sceneImage,
   sceneImageCaption,
   visualState,
+  sceneFramingState,
 }: {
   adventureId: string | null;
   scenarioId: string | null;
@@ -192,6 +214,7 @@ export default function PlayClient({
   sceneImage?: ResolvedSceneImage | null;
   sceneImageCaption?: string | null;
   visualState: SceneVisualState;
+  sceneFramingState: SceneFramingState;
 }) {
   const HISTORY_KEY = "creator:recentAdventures";
   type HistoryEntry = {
@@ -609,7 +632,7 @@ export default function PlayClient({
                     ambience={statePanel.ambience ?? "Cold / Quiet"}
                     tags={statePanel.contextTags ?? []}
                   />
-                  <VisualStatePanel visualState={visualState} />
+                  <VisualStatePanel visualState={visualState} framingState={sceneFramingState} />
                   <StatePanel viewModel={statePanelViewModel} />
                 </section>
                 <section className="space-y-4">

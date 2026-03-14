@@ -1,6 +1,7 @@
 import type { PlayTurn } from "@/app/play/types";
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
+import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import {
   presentMajorSceneTags,
   presentNpcCuesForPrompt,
@@ -17,9 +18,15 @@ export function buildCanonicalSceneArtPayload({ turn, state }: CanonicalSceneArt
   if (!turn?.scene) return null;
 
   const visualState = resolveSceneVisualState(state ?? undefined);
+  const framingState = resolveSceneFramingState({
+    turn,
+    visual: visualState,
+    locationChanged: false,
+  });
   console.log("sceneArt canonical inputs", {
     latestTurnScene: turn.scene,
     visualState,
+    framing: framingState,
   });
 
   const stateRecord = asRecord(state);
@@ -35,6 +42,7 @@ export function buildCanonicalSceneArtPayload({ turn, state }: CanonicalSceneArt
     title: turn.scene,
     visualState,
     visualTags,
+    framingState,
     npcState: presentNpcStateForSceneKey(stateRecord),
     npcCues: presentNpcCuesForPrompt(stateRecord),
     majorTags: presentMajorSceneTags(turn, stateRecord),

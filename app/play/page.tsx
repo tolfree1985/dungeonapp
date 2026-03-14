@@ -12,6 +12,7 @@ import { getOptionalUser } from "@/lib/api/identity";
 import { prisma } from "@/lib/prisma";
 import { getSceneImageUpdateCaption } from "@/lib/sceneImageCaption";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
+import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneVisualState, type VisualStateDelta } from "@/lib/resolveSceneVisualState";
 import { ResolvedSceneImage } from "@/lib/sceneArt";
 import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
@@ -379,6 +380,10 @@ let persistedAdventureOwnerId: string | null = null;
     state: rawState,
   });
   const visualState = resolveSceneVisualState(rawState ?? undefined);
+  const framingState = resolveSceneFramingState({
+    turn: latestTurn,
+    visual: visualState,
+  });
   const resolvedSceneImage = await loadResolvedSceneImage({
     sceneKey: sceneArt?.sceneKey ?? null,
     previousSceneKey: null,
@@ -425,6 +430,7 @@ let persistedAdventureOwnerId: string | null = null;
           sceneImage={resolvedSceneImage}
           sceneImageCaption={sceneImageCaption}
           visualState={visualState}
+          sceneFramingState={framingState}
         />
       </Suspense>
     </main>
