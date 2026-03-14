@@ -17,6 +17,20 @@ export async function loadResolvedSceneImage({
     previousSceneKey ? prisma.sceneArt.findUnique({ where: { sceneKey: previousSceneKey } }) : Promise.resolve(null),
   ]);
 
+  console.log("loadResolvedSceneImage", {
+    sceneKey,
+    previousSceneKey,
+    currentScene,
+  });
+
+  if (currentScene?.status === "ready" && currentScene.imageUrl) {
+    return {
+      imageUrl: currentScene.imageUrl,
+      source: "scene",
+      pending: false,
+    };
+  }
+
   return resolveDisplayedSceneImage({
     currentSceneImageUrl: currentScene?.status === "ready" ? currentScene.imageUrl : null,
     currentScenePending: currentScene?.status === "queued",

@@ -356,7 +356,7 @@ let persistedAdventureOwnerId: string | null = null;
   const pressureStageValue = (statePanel.pressureStage ?? "calm").toLowerCase();
   const pressureTextValue = getStatValue("pressure stage") ?? pressureStageValue;
 
-  const sceneArtPayload: SceneArtPayload | null = latestTurn
+  const sceneArt: SceneArtPayload | null = latestTurn
     ? presentSceneArt({
         title: latestTurn.scene,
         locationId,
@@ -372,12 +372,13 @@ let persistedAdventureOwnerId: string | null = null;
       })
     : null;
   const resolvedSceneImage = await loadResolvedSceneImage({
-    sceneKey: sceneArtPayload?.sceneKey ?? null,
+    sceneKey: sceneArt?.sceneKey ?? null,
     previousSceneKey: null,
     locationBackdropUrl: null,
     defaultImageUrl: DEFAULT_SCENE_FALLBACK_URL,
   });
   console.log("resolvedSceneImage", resolvedSceneImage);
+  console.log("sceneArt input", sceneArt);
 
   return (
     <main className="mx-auto max-w-6xl p-6">

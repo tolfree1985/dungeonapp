@@ -16,7 +16,7 @@ async function defaultRenderer(_: {
   renderPrompt: string;
 }): Promise<RenderSceneArtResult> {
   return {
-    imageUrl: "/default-scene.svg",
+    imageUrl: "/scene-ready-test.svg",
   };
 }
 
