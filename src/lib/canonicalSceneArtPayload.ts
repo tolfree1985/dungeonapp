@@ -14,6 +14,13 @@ type CanonicalSceneArtParams = {
 export function buildCanonicalSceneArtPayload({ turn, state }: CanonicalSceneArtParams): SceneArtPayload | null {
   if (!turn) return null;
 
+  console.log("sceneArt canonical inputs", {
+    latestTurnScene: turn.scene,
+    stateLocation: state?.location,
+    statePressure: state?.pressure,
+    stats: state?.stats,
+  });
+
   const stateRecord = asRecord(state);
   const locationInfo = resolveLocationInfo(stateRecord);
   const timeInfo = resolveTimeInfo(stateRecord);
