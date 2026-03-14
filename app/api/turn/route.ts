@@ -25,6 +25,10 @@ import { runTurnPipeline } from "@/server/turn/runTurnPipeline";
 import { reserveUsageDayLock } from "@/server/usage/reserveUsageDayLock";
 import { turnPersistence } from "./turnDb";
 import { logStructuredFailure } from "@/lib/turn/observability";
+import { findSceneArt, queueSceneArt } from "@/lib/sceneArtRepo";
+import { presentSceneArt, presentMajorSceneTags, presentNpcCuesForPrompt, presentNpcStateForSceneKey } from "@/lib/presenters/presentSceneArt";
+import { SceneArtPayload } from "@/lib/sceneArt";
+import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 
 type PostBody = {
   adventureId: string;
@@ -71,6 +75,60 @@ function coalesceUnknownArray(...values: unknown[]): unknown[] {
     if (Array.isArray(value)) return value;
   }
   return [];
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
+function readSection(state: Record<string, unknown> | null, key: string): unknown {
+  if (!state) return null;
+  if (state[key] !== undefined) return state[key];
+  const player = asRecord(state.player);
+  if (player?.[key] !== undefined) return player[key];
+  return null;
+}
+
+function resolveLocationInfo(state: Record<string, unknown> | null): { id: string; text: string } {
+  const raw = readSection(state, "location");
+  const record = asRecord(raw);
+  const candidateId =
+    asString(record?.id) ?? asString(raw) ?? asString((state as any)?.locationId) ?? "unknown-location";
+  const candidateText =
+    asString(record?.label) ?? asString(record?.name) ?? asString(raw) ?? "Unknown location";
+  return { id: candidateId, text: candidateText };
+}
+
+function resolveTimeInfo(state: Record<string, unknown> | null): { bucket: string; text: string } {
+  const raw = readSection(state, "time");
+  const record = asRecord(raw);
+  const bucket = asString(record?.bucket) ?? asString(raw) ?? asString((state as any)?.timeBucket) ?? "unknown-time";
+  const text = asString(record?.label) ?? asString(record?.name) ?? asString(raw) ?? "Unknown time";
+  return { bucket, text };
+}
+
+function resolvePressureStage(state: Record<string, unknown> | null): { stage: string; text: string } {
+  const forced = readSection(state, "pressureStage");
+  const fallback = resolvePressureRecord(state);
+  const stage = asString(forced) ?? fallback.stage ?? "calm";
+  const text = asString(fallback.text) ?? stage;
+  return { stage: stage.toLowerCase(), text };
+}
+
+function resolvePressureRecord(state: Record<string, unknown> | null): { stage?: string; text?: string } {
+  const pressure = asRecord(readSection(state, "pressure"));
+  if (!pressure) return {};
+  return {
+    stage: asString(pressure.stage),
+    text: asString(pressure.label) ?? asString(pressure.status),
+  };
 }
 
 function safeTurnErrorPayload(args: {
@@ -396,6 +454,48 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     const turnStateDeltas = asUnknownArray((finalized as any)?.turn?.stateDeltas);
     const turnLedgerAdds = asUnknownArray((finalized as any)?.turn?.ledgerAdds);
 
+    const updatedAdventureState = await db.adventure.findUnique({
+      where: { id: adventureId },
+      select: { state: true },
+    });
+    const stateRecord = asRecord(updatedAdventureState?.state ?? null);
+    const locationInfo = resolveLocationInfo(stateRecord);
+    const timeInfo = resolveTimeInfo(stateRecord);
+    const pressureInfo = resolvePressureStage(stateRecord);
+
+    const sceneArtPayload: SceneArtPayload | null = presentSceneArt({
+      title: finalized.turn?.scene ?? undefined,
+      locationId: locationInfo.id,
+      locationText: locationInfo.text,
+      timeBucket: timeInfo.bucket,
+      timeText: timeInfo.text,
+      pressureStage: pressureInfo.stage,
+      pressureText: pressureInfo.text,
+      npcState: presentNpcStateForSceneKey(stateRecord),
+      npcCues: presentNpcCuesForPrompt(stateRecord),
+      majorTags: presentMajorSceneTags(finalized.turn ?? null, stateRecord),
+      appearanceCues: [],
+    });
+
+    let sceneArt: { sceneKey: string; status: string; imageUrl: string | null } | null = null;
+    if (sceneArtPayload) {
+      const existingSceneArt = await findSceneArt(sceneArtPayload.sceneKey);
+      if (existingSceneArt) {
+        sceneArt = {
+          sceneKey: existingSceneArt.sceneKey,
+          status: existingSceneArt.status,
+          imageUrl: existingSceneArt.imageUrl,
+        };
+      } else {
+        void queueSceneArt(sceneArtPayload, ENGINE_VERSION);
+        sceneArt = {
+          sceneKey: sceneArtPayload.sceneKey,
+          status: "queued",
+          imageUrl: null,
+        };
+      }
+    }
+
     return NextResponse.json(
       {
         ok: true,
@@ -410,6 +510,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         },
         stateDeltas: turnStateDeltas,
         ledgerAdds: turnLedgerAdds,
+        sceneArt,
       },
       { status: 200 }
     );
