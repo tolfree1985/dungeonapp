@@ -26,8 +26,8 @@ import { reserveUsageDayLock } from "@/server/usage/reserveUsageDayLock";
 import { turnPersistence } from "./turnDb";
 import { logStructuredFailure } from "@/lib/turn/observability";
 import { findSceneArt, queueSceneArt } from "@/lib/sceneArtRepo";
-import { presentSceneArt, presentMajorSceneTags, presentNpcCuesForPrompt, presentNpcStateForSceneKey } from "@/lib/presenters/presentSceneArt";
 import { SceneArtPayload } from "@/lib/sceneArt";
+import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 
 type PostBody = {
@@ -94,41 +94,6 @@ function readSection(state: Record<string, unknown> | null, key: string): unknow
   const player = asRecord(state.player);
   if (player?.[key] !== undefined) return player[key];
   return null;
-}
-
-function resolveLocationInfo(state: Record<string, unknown> | null): { id: string; text: string } {
-  const raw = readSection(state, "location");
-  const record = asRecord(raw);
-  const candidateId =
-    asString(record?.id) ?? asString(raw) ?? asString((state as any)?.locationId) ?? "unknown-location";
-  const candidateText =
-    asString(record?.label) ?? asString(record?.name) ?? asString(raw) ?? "Unknown location";
-  return { id: candidateId, text: candidateText };
-}
-
-function resolveTimeInfo(state: Record<string, unknown> | null): { bucket: string; text: string } {
-  const raw = readSection(state, "time");
-  const record = asRecord(raw);
-  const bucket = asString(record?.bucket) ?? asString(raw) ?? asString((state as any)?.timeBucket) ?? "unknown-time";
-  const text = asString(record?.label) ?? asString(record?.name) ?? asString(raw) ?? "Unknown time";
-  return { bucket, text };
-}
-
-function resolvePressureStage(state: Record<string, unknown> | null): { stage: string; text: string } {
-  const forced = readSection(state, "pressureStage");
-  const fallback = resolvePressureRecord(state);
-  const stage = asString(forced) ?? fallback.stage ?? "calm";
-  const text = asString(fallback.text) ?? stage;
-  return { stage: stage.toLowerCase(), text };
-}
-
-function resolvePressureRecord(state: Record<string, unknown> | null): { stage?: string; text?: string } {
-  const pressure = asRecord(readSection(state, "pressure"));
-  if (!pressure) return {};
-  return {
-    stage: asString(pressure.stage),
-    text: asString(pressure.label) ?? asString(pressure.status),
-  };
 }
 
 function safeTurnErrorPayload(args: {
@@ -459,32 +424,28 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       select: { state: true },
     });
     const stateRecord = asRecord(updatedAdventureState?.state ?? null);
-    const latestTurn = (finalized as any).turn ?? null;
-    const sceneArtPayload: SceneArtPayload | null =
-      latestTurn
-        ? (() => {
-            const locationInfo = resolveLocationInfo(stateRecord);
-            const timeInfo = resolveTimeInfo(stateRecord);
-            const pressureInfo = resolvePressureStage(stateRecord);
-            return presentSceneArt({
-              title: latestTurn.scene ?? undefined,
-              locationId: locationInfo.id,
-              locationText: locationInfo.text,
-              timeBucket: timeInfo.bucket,
-              timeText: timeInfo.text,
-              pressureStage: pressureInfo.stage,
-              pressureText: pressureInfo.text,
-              npcState: presentNpcStateForSceneKey(stateRecord),
-              npcCues: presentNpcCuesForPrompt(stateRecord),
-              majorTags: presentMajorSceneTags(latestTurn, stateRecord),
-              appearanceCues: [],
-            });
-          })()
-        : null;
+    const latestTurn = await db.turn.findFirst({
+      where: { adventureId },
+      orderBy: { turnIndex: "desc" },
+    });
+    const sceneArtPayload = buildCanonicalSceneArtPayload({
+      turn: latestTurn,
+      state: stateRecord,
+    });
+
+    if (sceneArtPayload) {
+      console.log("sceneArt canonical source", {
+        sceneKey: sceneArtPayload.sceneKey,
+        basePrompt: sceneArtPayload.basePrompt,
+      });
+    }
 
     let sceneArt: { sceneKey: string; status: string; imageUrl: string | null } | null = null;
     if (sceneArtPayload) {
-      console.log("sceneArt write payload", sceneArtPayload);
+      console.log("sceneArt queue request", {
+        sceneKey: sceneArtPayload.sceneKey,
+        title: sceneArtPayload.title,
+      });
       const existingSceneArt = await findSceneArt(sceneArtPayload.sceneKey);
       if (existingSceneArt) {
         sceneArt = {
@@ -493,11 +454,16 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           imageUrl: existingSceneArt.imageUrl,
         };
       } else {
-        void queueSceneArt(sceneArtPayload, ENGINE_VERSION);
+        const queued = await queueSceneArt(sceneArtPayload, ENGINE_VERSION);
+        console.log("sceneArt queue persisted", {
+          sceneKey: queued.sceneKey,
+          status: queued.status,
+          id: queued.id,
+        });
         sceneArt = {
           sceneKey: sceneArtPayload.sceneKey,
-          status: "queued",
-          imageUrl: null,
+          status: queued.status,
+          imageUrl: queued.imageUrl,
         };
       }
     }

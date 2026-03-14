@@ -11,12 +11,7 @@ import {
 import { getOptionalUser } from "@/lib/api/identity";
 import { prisma } from "@/lib/prisma";
 import { SceneArtPayload } from "@/lib/sceneArt";
-import {
-  presentMajorSceneTags,
-  presentNpcCuesForPrompt,
-  presentNpcStateForSceneKey,
-  presentSceneArt,
-} from "@/lib/presenters/presentSceneArt";
+import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
 import { ResolvedSceneImage } from "@/lib/sceneArt";
 import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
 
@@ -347,30 +342,10 @@ let persistedAdventureOwnerId: string | null = null;
     const match = statePanel.stats.find((stat) => stat.key.toLowerCase() === key.toLowerCase());
     return match ? match.value : null;
   };
-  const locationValue = getStatValue("location");
-  const timeValue = getStatValue("time");
-  const locationId = typeof locationValue === "string" ? locationValue : "unknown-location";
-  const locationText = typeof locationValue === "string" ? locationValue : "Unknown location";
-  const timeBucket = typeof timeValue === "string" ? timeValue : "unknown-time";
-  const timeText = typeof timeValue === "string" ? timeValue : "Unknown time";
-  const pressureStageValue = (statePanel.pressureStage ?? "calm").toLowerCase();
-  const pressureTextValue = getStatValue("pressure stage") ?? pressureStageValue;
-
-  const sceneArt: SceneArtPayload | null = latestTurn
-    ? presentSceneArt({
-        title: latestTurn.scene,
-        locationId,
-        locationText,
-        timeBucket,
-        timeText,
-        pressureStage: pressureStageValue,
-        pressureText: typeof pressureTextValue === "string" ? pressureTextValue : String(pressureTextValue ?? pressureStageValue),
-        npcState: presentNpcStateForSceneKey(rawState),
-        npcCues: presentNpcCuesForPrompt(rawState),
-        majorTags: presentMajorSceneTags(latestTurn, rawState),
-        appearanceCues: [],
-      })
-    : null;
+  const sceneArt = buildCanonicalSceneArtPayload({
+    turn: latestTurn,
+    state: rawState,
+  });
   const resolvedSceneImage = await loadResolvedSceneImage({
     sceneKey: sceneArt?.sceneKey ?? null,
     previousSceneKey: null,
@@ -379,6 +354,10 @@ let persistedAdventureOwnerId: string | null = null;
   });
   console.log("resolvedSceneImage", resolvedSceneImage);
   console.log("sceneArt input", sceneArt);
+  console.log("sceneArt canonical source", {
+    sceneKey: sceneArt?.sceneKey,
+    basePrompt: sceneArt?.basePrompt,
+  });
 
   return (
     <main className="mx-auto max-w-6xl p-6">
