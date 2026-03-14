@@ -193,6 +193,12 @@ export default function PlayClient({
   }, []);
 
   useEffect(() => {
+    if (adventureId === null && typeof window !== "undefined") {
+      window.localStorage.removeItem(HISTORY_KEY);
+    }
+  }, [adventureId]);
+
+  useEffect(() => {
     if (!adventureId || typeof window === "undefined") return;
     setHistory((prev) => {
       const pinned = prev.find((entry) => entry.adventureId === adventureId)?.pinned ?? false;
@@ -547,11 +553,18 @@ export default function PlayClient({
                   isHighlighted={highlightLatestTurn}
                 />
               </div>
-              {sceneImage ? (
-                <div className="mt-4">
-                  <SceneImagePanel {...sceneImage} />
-                </div>
-              ) : null}
+              {console.log("sceneImage runtime", sceneImage)}
+              <div className="mt-4">
+                <SceneImagePanel
+                  {...
+                    sceneImage ?? {
+                      imageUrl: "/default-scene.svg",
+                      source: "default",
+                      pending: false,
+                    }
+                  }
+                />
+              </div>
               {adventureId ? <TurnInput adventureId={adventureId} /> : null}
           </section>
 

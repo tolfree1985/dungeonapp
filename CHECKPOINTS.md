@@ -36,3 +36,9 @@
 
 ### Next UI focus
 - **Pressure change feedback** – add a brief pulse or visual cue on the pressure display whenever pressure shifts, no logic changes.
+## Checkpoint: Stale Adventure Hardening
+
+- Redirect /play to a clean route when requested adventure no longer exists
+- Clear recent adventure history when no adventureId is active
+- Remove temporary route/client diagnostics
+- Keep scene image panel stable with default fallback

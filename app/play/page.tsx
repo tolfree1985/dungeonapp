@@ -1,7 +1,7 @@
 import PlayClient from "./client";
 import { Suspense } from "react";
 import { headers } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { PlayScenarioMeta, PlayStatePanel, PlayStateValue, PlayTurn } from "./types";
 import AuthRequiredState from "@/components/auth/AuthRequiredState";
 import {
@@ -247,17 +247,7 @@ let persistedAdventureOwnerId: string | null = null;
           userId: user.id,
         });
         if (!ownership.adventure) {
-          return (
-            <PlayClient
-              adventure={null}
-              turns={[]}
-              statePanel={statePanel}
-              currentScenario={currentScenario}
-              dbOffline={false}
-              adventureId={adventureId ?? null}
-              scenarioId={scenarioId}
-            />
-          );
+          redirect("/play");
         }
       } catch (error) {
         if (isAdventureOwnershipError(error) && error.code === "ADVENTURE_FORBIDDEN") {
@@ -387,6 +377,7 @@ let persistedAdventureOwnerId: string | null = null;
     locationBackdropUrl: null,
     defaultImageUrl: DEFAULT_SCENE_FALLBACK_URL,
   });
+  console.log("resolvedSceneImage", resolvedSceneImage);
 
   return (
     <main className="mx-auto max-w-6xl p-6">
