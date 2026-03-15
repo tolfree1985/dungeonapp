@@ -28,6 +28,11 @@ describe("ScenePresentationDebugCard", () => {
         secondarySubject: "threat",
         dominance: "balanced",
       },
+      compositionBias: {
+        balance: "asymmetric",
+        depth: "layered",
+        density: "balanced",
+      },
     };
     const transition: SceneTransition = {
       type: "advance",
@@ -56,6 +61,7 @@ describe("ScenePresentationDebugCard", () => {
     expect(screen.getByText("partial · detail · obscured")).toBeTruthy();
     expect(screen.getByText("reveal-partial")).toBeTruthy();
     expect(screen.getByText("object / threat · balanced")).toBeTruthy();
+    expect(screen.getByText("asymmetric · layered · balanced")).toBeTruthy();
     expect(screen.getByText("Transition")).toBeTruthy();
     expect(screen.getByText("advance")).toBeTruthy();
     expect(screen.getByText("Cue: Focus Shift")).toBeTruthy();

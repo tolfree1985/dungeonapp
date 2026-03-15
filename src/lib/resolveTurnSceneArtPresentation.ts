@@ -19,6 +19,7 @@ import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolv
 import { resolveSceneMotif, buildMotifTags, type SceneMotif } from "@/lib/resolveSceneMotif";
 import { resolveSceneRevealStructure, buildRevealStructureTags, type SceneRevealStructure } from "@/lib/resolveSceneRevealStructure";
 import { resolveSceneSpatialHierarchy, type SceneSpatialHierarchy } from "@/lib/resolveSceneSpatialHierarchy";
+import { resolveSceneCompositionBias, type SceneCompositionBias } from "@/lib/resolveSceneCompositionBias";
 import { resolveSceneThreatFraming, buildThreatFramingTags, type SceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
 import { buildSceneCanonicalTags, DEFAULT_SCENE_CANONICAL_TAG_POLICY, type SceneCanonicalTagPolicy } from "@/lib/sceneCanonicalTagPolicy";
 
@@ -67,6 +68,7 @@ export type ScenePresentation = {
   revealStructure: SceneRevealStructure | null;
   revealStructureTags: string[];
   spatialHierarchy: SceneSpatialHierarchy | null;
+  compositionBias: SceneCompositionBias | null;
 };
 
 export type ResolveTurnSceneArtPresentationResult = {
@@ -200,6 +202,11 @@ export function resolveTurnSceneArtPresentation(
     subjectState: resolvedSceneState.subjectState,
     framingState: resolvedSceneState.framingState,
   });
+  const compositionBias = resolveSceneCompositionBias({
+    framingState: resolvedSceneState.framingState,
+    visualState: resolvedSceneState.visualState,
+    focusState: resolvedSceneState.focusState,
+  });
 
   const motifInput = args.overrideMotif ?? motif;
   const motifTags = motifInput ? buildMotifTags(motifInput) : [];
@@ -224,6 +231,7 @@ export function resolveTurnSceneArtPresentation(
         revealStructure,
         revealStructureTags,
         spatialHierarchy,
+        compositionBias,
       }
     : null;
 

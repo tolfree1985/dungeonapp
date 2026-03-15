@@ -22,6 +22,7 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
   const revealStructure = presentation?.revealStructure;
   const revealStructureTags = presentation?.revealStructureTags ?? [];
   const spatialHierarchy = presentation?.spatialHierarchy;
+  const compositionBias = presentation?.compositionBias;
 
   return (
     <section className="rounded-2xl border border-white/5 bg-white/5 p-4 text-[11px] text-white/70">
@@ -68,6 +69,14 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
               <span className="whitespace-nowrap font-semibold text-white">
                 {spatialHierarchy.primarySubject}
                 {spatialHierarchy.secondarySubject ? ` / ${spatialHierarchy.secondarySubject}` : ""} · {spatialHierarchy.dominance}
+              </span>
+            </div>
+          ) : null}
+          {compositionBias ? (
+            <div className="flex items-center justify-between text-[11px] text-white/60">
+              <span>Composition</span>
+              <span className="whitespace-nowrap font-semibold text-white">
+                {compositionBias.balance} · {compositionBias.depth} · {compositionBias.density}
               </span>
             </div>
           ) : null}
