@@ -16,6 +16,7 @@ import { resolveSceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory
 import { resolveSceneShotIntent, type SceneShotIntent } from "@/lib/resolveSceneShotIntent";
 import { resolveSceneShotGrammar, type SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
 import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
+import { resolveSceneMotif, type SceneMotif } from "@/lib/resolveSceneMotif";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -54,6 +55,7 @@ export type ScenePresentation = {
   shotIntent: SceneShotIntent;
   shotGrammar: SceneShotGrammar | null;
   promptFraming: ScenePromptFraming | null;
+  motif: SceneMotif | null;
 };
 
 export type ResolveTurnSceneArtPresentationResult = {
@@ -156,11 +158,19 @@ export function resolveTurnSceneArtPresentation(
     actorState: resolvedSceneState.actorState,
   });
 
+  const motif = resolveSceneMotif({
+    shotIntent,
+    visualState: resolvedSceneState.visualState,
+    pressureStage: pressureStage ?? resolvedSceneState.visualState.pressureStage,
+    transitionMemory,
+  });
+
   const scenePresentation: ScenePresentation | null = shotIntent
     ? {
         shotIntent,
         shotGrammar,
         promptFraming,
+        motif,
       }
     : null;
 
