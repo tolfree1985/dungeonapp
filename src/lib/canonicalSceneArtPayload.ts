@@ -20,6 +20,8 @@ type CanonicalSceneArtParams = {
   shotIntent?: SceneShotIntent;
   scenePromptFraming?: ScenePromptFraming;
   motifTags?: string[];
+  threatFramingTags?: string[];
+  revealStructureTags?: string[];
 };
 
 export function buildCanonicalSceneArtPayload({
@@ -28,6 +30,8 @@ export function buildCanonicalSceneArtPayload({
   shotIntent,
   scenePromptFraming,
   motifTags,
+  threatFramingTags,
+  revealStructureTags,
 }: CanonicalSceneArtParams): SceneArtPayload | null {
   if (!turn?.scene) return null;
 
@@ -81,6 +85,8 @@ export function buildCanonicalSceneArtPayload({
     shotIntent,
     scenePromptFraming: scenePromptFraming ?? null,
     motifTags,
+    threatFramingTags,
+    revealStructureTags,
   });
 }
 

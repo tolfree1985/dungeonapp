@@ -71,7 +71,7 @@ function presentationArgs(overrides: Partial<Parameters<typeof resolveTurnSceneA
   const canonicalPayload = buildCanonicalSceneArtPayload({ turn, state });
   const previousSceneKey = overrides.previousSceneKey ?? canonicalPayload?.sceneKey ?? null;
 
-
+  
   return {
     turn,
     state,
@@ -83,8 +83,7 @@ function presentationArgs(overrides: Partial<Parameters<typeof resolveTurnSceneA
     previousSceneKey,
     pressureStage: resolvedSceneState.visualState.pressureStage,
     modelStatus: overrides.modelStatus ?? "ok",
-    includeMotifInCanonical: overrides.includeMotifInCanonical,
-    includeThreatFramingInCanonical: overrides.includeThreatFramingInCanonical,
+    tagPolicy: overrides.tagPolicy,
     overrideMotif: overrides.overrideMotif ?? null,
   };
 }
@@ -282,8 +281,12 @@ describe("resolveTurnSceneArtPresentation", () => {
   it("keeps sceneKey unchanged when threat tags stay metadata-only", () => {
     const turn = makeTurn("threat-metadata", "You observe quietly.");
     const state = makeState();
-    const first = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeThreatFramingInCanonical: false }));
-    const second = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeThreatFramingInCanonical: false }));
+    const first = resolveTurnSceneArtPresentation(
+      presentationArgs({ turn, state, tagPolicy: { includeThreatFramingInCanonical: false } })
+    );
+    const second = resolveTurnSceneArtPresentation(
+      presentationArgs({ turn, state, tagPolicy: { includeThreatFramingInCanonical: false } })
+    );
     expect(first.canonicalPayload?.sceneKey).toEqual(second.canonicalPayload?.sceneKey);
   });
 
@@ -315,9 +318,16 @@ describe("resolveTurnSceneArtPresentation", () => {
   it("keeps sceneKey unchanged when motif tags stay metadata-only", () => {
     const turn = makeTurn("metadata", "You survey the gallery.");
     const state = makeState();
-    const resultA = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeMotifInCanonical: false }));
+    const resultA = resolveTurnSceneArtPresentation(
+      presentationArgs({ turn, state, tagPolicy: { includeMotifTagsInCanonical: false } })
+    );
     const resultB = resolveTurnSceneArtPresentation(
-      presentationArgs({ turn, state, includeMotifInCanonical: false, overrideMotif: { tone: "mysterious", lighting: "glow", atmosphere: "foggy" } })
+      presentationArgs({
+        turn,
+        state,
+        tagPolicy: { includeMotifTagsInCanonical: false },
+        overrideMotif: { tone: "mysterious", lighting: "glow", atmosphere: "foggy" },
+      })
     );
     expect(resultA.canonicalPayload?.sceneKey).toEqual(resultB.canonicalPayload?.sceneKey);
   });
@@ -397,8 +407,12 @@ describe("resolveTurnSceneArtPresentation", () => {
   it("changes sceneKey when threat framing tags are enabled", () => {
     const turn = makeTurn("threat-canonical", "You face the guard.");
     const state = makeState({ pressureStage: "danger", visibleThreats: [{ id: "guard", label: "Guard" }] });
-    const base = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeThreatFramingInCanonical: false }));
-    const withThreat = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeThreatFramingInCanonical: true }));
+    const base = resolveTurnSceneArtPresentation(
+      presentationArgs({ turn, state, tagPolicy: { includeThreatFramingInCanonical: false } })
+    );
+    const withThreat = resolveTurnSceneArtPresentation(
+      presentationArgs({ turn, state, tagPolicy: { includeThreatFramingInCanonical: true } })
+    );
     expect(base.canonicalPayload?.sceneKey).not.toEqual(withThreat.canonicalPayload?.sceneKey);
   });
 });

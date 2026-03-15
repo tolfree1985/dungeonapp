@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveSceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
+import { resolveSceneThreatFraming, buildThreatFramingTags } from "@/lib/resolveSceneThreatFraming";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
 import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
@@ -98,5 +98,19 @@ describe("resolveSceneThreatFraming", () => {
       focus: baseFocus,
     });
     expect(a).toEqual(b);
+  });
+});
+
+describe("buildThreatFramingTags", () => {
+  it("returns empty array for none", () => {
+    expect(buildThreatFramingTags({ threatLevel: "none", confrontationBias: "low", subjectDominance: "balanced" })).toEqual([]);
+  });
+
+  it("returns present tag for present threat", () => {
+    expect(buildThreatFramingTags({ threatLevel: "present", confrontationBias: "medium", subjectDominance: "player-favored" })).toEqual(["threat present"]);
+  });
+
+  it("returns dominant tag for dominant threat", () => {
+    expect(buildThreatFramingTags({ threatLevel: "dominant", confrontationBias: "high", subjectDominance: "threat-favored" })).toEqual(["dominant threat"]);
   });
 });

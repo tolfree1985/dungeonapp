@@ -62,3 +62,13 @@ export function resolveSceneThreatFraming(args: ResolveSceneThreatFramingArgs): 
 
   return { threatLevel, confrontationBias, subjectDominance };
 }
+
+export function buildThreatFramingTags(frames: SceneThreatFraming | null): string[] {
+  if (!frames) return [];
+  const mapping: Record<SceneThreatLevel, string[]> = {
+    none: [],
+    present: ["threat present"],
+    dominant: ["dominant threat"],
+  };
+  return mapping[frames.threatLevel] ?? [];
+}

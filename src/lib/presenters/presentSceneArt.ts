@@ -30,6 +30,7 @@ export type PresentSceneArtInput = {
   shotIntent?: SceneShotIntent;
   scenePromptFraming?: ScenePromptFraming | null;
   motifTags?: string[];
+  revealStructureTags?: string[];
 };
 
 export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
@@ -48,6 +49,12 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const majorTags = [...(input.majorTags ?? [])];
   if (input.motifTags?.length) {
     majorTags.push(...input.motifTags);
+  }
+  if (input.threatFramingTags?.length) {
+    majorTags.push(...input.threatFramingTags);
+  }
+  if (input.revealStructureTags?.length) {
+    majorTags.push(...input.revealStructureTags);
   }
   const focusState = input.focusState;
 
