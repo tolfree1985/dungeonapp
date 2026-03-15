@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveSceneMotif } from "@/lib/resolveSceneMotif";
+import { buildMotifTags } from "@/lib/resolveSceneMotif";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 
 const baseVisual: SceneVisualState = {
@@ -37,5 +38,10 @@ describe("resolveSceneMotif", () => {
     const first = resolveSceneMotif({ shotIntent: "observe", visualState: baseVisual });
     const second = resolveSceneMotif({ shotIntent: "observe", visualState: baseVisual });
     expect(second).toEqual(first);
+  });
+
+  it("produces ordered canonical tags", () => {
+    const motif = resolveSceneMotif({ shotIntent: "threaten", visualState: baseVisual, pressureStage: "danger" });
+    expect(buildMotifTags(motif)).toEqual(["ominous presence", "harsh lighting", "smoky air"]);
   });
 });

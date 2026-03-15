@@ -21,6 +21,27 @@ type ResolveSceneMotifArgs = {
 
 const normalizePressure = (value?: string | null) => (value ?? "calm").toLowerCase();
 
+const toneTagMap: Record<SceneMotifTone, string> = {
+  neutral: "neutral tone",
+  tense: "tense mood",
+  ominous: "ominous presence",
+  mysterious: "mysterious aura",
+};
+
+const lightingTagMap: Record<SceneMotifLighting, string> = {
+  even: "even lighting",
+  dim: "dim lighting",
+  harsh: "harsh lighting",
+  glow: "glowing light",
+};
+
+const atmosphereTagMap: Record<SceneMotifAtmosphere, string> = {
+  clear: "clear air",
+  dusty: "dusty air",
+  foggy: "foggy air",
+  smoky: "smoky air",
+};
+
 export function resolveSceneMotif(args: ResolveSceneMotifArgs): SceneMotif {
   const pressure = normalizePressure(args.pressureStage ?? args.visualState.pressureStage);
   const highPressure = pressure === "danger" || pressure === "crisis";
@@ -50,4 +71,9 @@ export function resolveSceneMotif(args: ResolveSceneMotifArgs): SceneMotif {
   })();
 
   return { tone, lighting, atmosphere };
+}
+
+export function buildMotifTags(motif: SceneMotif | null): string[] {
+  if (!motif) return [];
+  return [toneTagMap[motif.tone], lightingTagMap[motif.lighting], atmosphereTagMap[motif.atmosphere]];
 }

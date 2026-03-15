@@ -7,6 +7,7 @@ import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
+import { buildMotifTags } from "@/lib/resolveSceneMotif";
 import {
   resolveTurnSceneArtPresentation,
   type ResolveTurnSceneArtPresentationResult,
@@ -81,6 +82,8 @@ function presentationArgs(overrides: Partial<Parameters<typeof resolveTurnSceneA
     previousSceneKey,
     pressureStage: resolvedSceneState.visualState.pressureStage,
     modelStatus: overrides.modelStatus ?? "ok",
+    includeMotifInCanonical: overrides.includeMotifInCanonical,
+    overrideMotif: overrides.overrideMotif ?? null,
   };
 }
 
@@ -237,6 +240,7 @@ describe("resolveTurnSceneArtPresentation", () => {
     expect(result.promptFraming?.visualTags).toContain("emphasis-threat");
     expect(result.promptFraming?.compositionNotes).toContain("confrontational");
     expect(result.canonicalPayload?.tags).toContain("intent:threaten");
+    expect(result.scenePresentation?.motif).toEqual({ tone: "ominous", lighting: "harsh", atmosphere: "smoky" });
   });
 
   it("propagates deterministic observe tags through the presentation helper", () => {
@@ -254,6 +258,34 @@ describe("resolveTurnSceneArtPresentation", () => {
     ];
     expect(result.promptFraming?.visualTags).toEqual(expectedTags);
     expect(result.scenePresentation?.promptFraming?.visualTags).toEqual(expectedTags);
+    expect(result.scenePresentation?.motif).toEqual({ tone: "neutral", lighting: "even", atmosphere: "clear" });
+  });
+
+  it("keeps motif metadata deterministic for identical inputs", () => {
+    const turn = makeTurn("motif", "You study the gallery.");
+    const state = makeState();
+    const first = resolveTurnSceneArtPresentation(presentationArgs({ turn, state }));
+    const second = resolveTurnSceneArtPresentation(presentationArgs({ turn, state }));
+    expect(first.scenePresentation?.motif).toEqual(second.scenePresentation?.motif);
+  });
+
+  it("keeps sceneKey unchanged when motif tags stay metadata-only", () => {
+    const turn = makeTurn("metadata", "You survey the gallery.");
+    const state = makeState();
+    const resultA = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeMotifInCanonical: false }));
+    const resultB = resolveTurnSceneArtPresentation(
+      presentationArgs({ turn, state, includeMotifInCanonical: false, overrideMotif: { tone: "mysterious", lighting: "glow", atmosphere: "foggy" } })
+    );
+    expect(resultA.canonicalPayload?.sceneKey).toEqual(resultB.canonicalPayload?.sceneKey);
+  });
+
+  it("changes sceneKey when motif-derived canonical tags differ", () => {
+    const turn = makeTurn("motif-key", "You stand in the gallery.");
+    const state = makeState();
+    const base = buildCanonicalSceneArtPayload({ turn, state, motifTags: [] });
+    const motifTags = buildMotifTags({ tone: "tense", lighting: "dim", atmosphere: "foggy" });
+    const withMotif = buildCanonicalSceneArtPayload({ turn, state, motifTags });
+    expect(base?.sceneKey).not.toEqual(withMotif?.sceneKey);
   });
 
   it("keeps prompt framing visual tags stable across identical inputs", () => {

@@ -19,6 +19,7 @@ type CanonicalSceneArtParams = {
   state: Record<string, unknown> | null;
   shotIntent?: SceneShotIntent;
   scenePromptFraming?: ScenePromptFraming;
+  motifTags?: string[];
 };
 
 export function buildCanonicalSceneArtPayload({
@@ -26,6 +27,7 @@ export function buildCanonicalSceneArtPayload({
   state,
   shotIntent,
   scenePromptFraming,
+  motifTags,
 }: CanonicalSceneArtParams): SceneArtPayload | null {
   if (!turn?.scene) return null;
 
@@ -78,6 +80,7 @@ export function buildCanonicalSceneArtPayload({
     focusState,
     shotIntent,
     scenePromptFraming: scenePromptFraming ?? null,
+    motifTags,
   });
 }
 

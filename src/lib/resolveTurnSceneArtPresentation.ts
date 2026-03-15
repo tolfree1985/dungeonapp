@@ -16,7 +16,7 @@ import { resolveSceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory
 import { resolveSceneShotIntent, type SceneShotIntent } from "@/lib/resolveSceneShotIntent";
 import { resolveSceneShotGrammar, type SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
 import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
-import { resolveSceneMotif, type SceneMotif } from "@/lib/resolveSceneMotif";
+import { resolveSceneMotif, buildMotifTags, type SceneMotif } from "@/lib/resolveSceneMotif";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -48,6 +48,8 @@ export type ResolveTurnSceneArtPresentationArgs = {
   previousTransitionMemory: SceneTransitionMemory | null;
   previousSceneKey: string | null;
   pressureStage?: string | null;
+  includeMotifInCanonical?: boolean;
+  overrideMotif?: SceneMotif | null;
   modelStatus: "ok" | "MODEL_ERROR";
 };
 
@@ -165,12 +167,16 @@ export function resolveTurnSceneArtPresentation(
     transitionMemory,
   });
 
+  const motifInput = args.overrideMotif ?? motif;
+  const includeMotifInCanonical = args.includeMotifInCanonical ?? true;
+  const motifTags = motifInput && includeMotifInCanonical ? buildMotifTags(motifInput) : undefined;
+
   const scenePresentation: ScenePresentation | null = shotIntent
     ? {
         shotIntent,
         shotGrammar,
         promptFraming,
-        motif,
+        motif: motifInput,
       }
     : null;
 
@@ -179,6 +185,7 @@ export function resolveTurnSceneArtPresentation(
     state: args.state,
     shotIntent,
     scenePromptFraming: promptFraming,
+    motifTags,
   });
 
   const refreshDecision = canonicalPayload

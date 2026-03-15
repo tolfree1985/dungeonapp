@@ -29,12 +29,14 @@ export type PresentSceneArtInput = {
   focusState: SceneFocusState;
   shotIntent?: SceneShotIntent;
   scenePromptFraming?: ScenePromptFraming | null;
+  motifTags?: string[];
 };
 
 export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const stylePreset = input.stylePreset ?? DEFAULT_STYLE_PRESET;
   const promptFraming = input.scenePromptFraming;
-  const visualTags = [...(input.visualTags ?? [])];
+  const motifTags = input.motifTags ?? [];
+  const visualTags = [...motifTags, ...(input.visualTags ?? [])];
   const promptCompositionNotes = promptFraming?.compositionNotes ?? [];
   if (promptFraming?.visualTags?.length) {
     visualTags.push(...promptFraming.visualTags);
@@ -44,6 +46,9 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   }
   const npcState = input.npcState ?? [];
   const majorTags = [...(input.majorTags ?? [])];
+  if (input.motifTags?.length) {
+    majorTags.push(...input.motifTags);
+  }
   const focusState = input.focusState;
 
   const focusLabelRaw = focusState.focusLabel ?? focusState.focusId ?? focusState.focusType;
