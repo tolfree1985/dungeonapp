@@ -317,11 +317,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           state: persistedStateRecord,
         });
         if (canonicalPayload) {
-          console.log("sceneArt route before queue", {
-            sceneKey: canonicalPayload.sceneKey,
-            branch: "legacy",
-            reason: "MODEL_ERROR",
-          });
           const existingSceneArt = await findSceneArt(canonicalPayload.sceneKey);
           const refreshDecision = resolveSceneRefreshDecision({
             transitionType: null,
@@ -337,35 +332,19 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             reason: "MODEL_ERROR",
           });
           const shouldQueue = refreshDecision.shouldQueueRender && !existingSceneArt;
-          console.log("sceneArt queue gate", {
-            sceneKey: canonicalPayload.sceneKey,
-            shouldQueue,
-            branch: "legacy",
-            reason: "MODEL_ERROR",
-            refreshDecision,
-          });
-          if (existingSceneArt) {
-            console.log("sceneArt route returning response", {
-              sceneKey: canonicalPayload.sceneKey,
-              branch: "legacy",
-              reason: "MODEL_ERROR",
-            });
-          } else if (shouldQueue) {
-            console.log("sceneArt queue request", {
-              sceneKey: canonicalPayload.sceneKey,
-              title: canonicalPayload.title,
-            });
+          if (shouldQueue) {
             const queued = await queueSceneArt(canonicalPayload, ENGINE_VERSION);
-            console.log("sceneArt queue persisted", {
-              sceneKey: queued.sceneKey,
-              status: queued.status,
-              id: queued.id,
-            });
-            console.log("sceneArt route returning response", {
+            sceneArt = {
               sceneKey: canonicalPayload.sceneKey,
-              branch: "legacy",
-              reason: "MODEL_ERROR",
-            });
+              status: queued.status,
+              imageUrl: queued.imageUrl,
+            };
+          } else if (existingSceneArt) {
+            sceneArt = {
+              sceneKey: existingSceneArt.sceneKey,
+              status: existingSceneArt.status,
+              imageUrl: existingSceneArt.imageUrl,
+            };
           }
         }
         console.log("TURN RETURN 3", { reason: "MODEL_ERROR" });
@@ -631,16 +610,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     let sceneArt: { sceneKey: string; status: string; imageUrl: string | null } | null = null;
 
     if (branch === "legacy" && sceneArtPayload) {
-      console.log("sceneArt route before queue", {
-        adventureId,
-        branch,
-        sceneKey: sceneArtPayload.sceneKey,
-      });
-      console.log("sceneArt canonical source", {
-        sceneKey: sceneArtPayload.sceneKey,
-        basePrompt: sceneArtPayload.basePrompt,
-      });
-
       const existingSceneArt = await findSceneArt(sceneArtPayload.sceneKey);
       const existingPreviousSceneArt =
         previousSceneArtPayload && previousSceneArtPayload.sceneKey !== sceneArtPayload.sceneKey
@@ -663,13 +632,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       });
 
       const shouldQueue = refreshDecision.shouldQueueRender && !existingSceneArt;
-      console.log("sceneArt queue gate", {
-        sceneKey: sceneArtPayload.sceneKey,
-        shouldQueue,
-        branch,
-        refreshDecision,
-      });
-
       if (existingSceneArt) {
         sceneArt = {
           sceneKey: existingSceneArt.sceneKey,
@@ -677,27 +639,13 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           imageUrl: existingSceneArt.imageUrl,
         };
       } else if (shouldQueue) {
-        console.log("sceneArt queue request", {
-          sceneKey: sceneArtPayload.sceneKey,
-          title: sceneArtPayload.title,
-        });
         const queued = await queueSceneArt(sceneArtPayload, ENGINE_VERSION);
-        console.log("sceneArt queue persisted", {
-          sceneKey: queued.sceneKey,
-          status: queued.status,
-          id: queued.id,
-        });
         sceneArt = {
           sceneKey: sceneArtPayload.sceneKey,
           status: queued.status,
           imageUrl: queued.imageUrl,
         };
       }
-      console.log("sceneArt route returning response", {
-        adventureId,
-        branch,
-        sceneKey: sceneArtPayload.sceneKey,
-      });
     }
 
     return NextResponse.json(
@@ -756,9 +704,5 @@ function makeDefaultDeps(): PostHandlerDeps {
 }
 
 export const POST = withRouteLogging("POST /api/turn", async (req: NextRequest, _context: { params: Promise<{}> }) => {
-  console.log("TURN ROUTE SENTINEL", {
-    file: "app/api/turn/route.ts",
-    ts: Date.now(),
-  });
   return postTurn(req, makeDefaultDeps());
 });
