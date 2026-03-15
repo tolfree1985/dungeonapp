@@ -17,6 +17,7 @@ import { resolveSceneShotIntent, type SceneShotIntent } from "@/lib/resolveScene
 import { resolveSceneShotGrammar, type SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
 import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
 import { resolveSceneMotif, buildMotifTags, type SceneMotif } from "@/lib/resolveSceneMotif";
+import { resolveSceneThreatFraming, type SceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -58,6 +59,7 @@ export type ScenePresentation = {
   shotGrammar: SceneShotGrammar | null;
   promptFraming: ScenePromptFraming | null;
   motif: SceneMotif | null;
+  threatFraming: SceneThreatFraming | null;
 };
 
 export type ResolveTurnSceneArtPresentationResult = {
@@ -167,6 +169,17 @@ export function resolveTurnSceneArtPresentation(
     transitionMemory,
   });
 
+  const threatFraming = resolveSceneThreatFraming({
+    shotIntent,
+    shotGrammar,
+    motif,
+    directorDecision,
+    pressureStage: pressureStage ?? resolvedSceneState.visualState.pressureStage,
+    focusState: resolvedSceneState.focusState,
+    sceneTransition,
+    transitionMemory,
+  });
+
   const motifInput = args.overrideMotif ?? motif;
   const includeMotifInCanonical = args.includeMotifInCanonical ?? true;
   const motifTags = motifInput && includeMotifInCanonical ? buildMotifTags(motifInput) : undefined;
@@ -177,6 +190,7 @@ export function resolveTurnSceneArtPresentation(
         shotGrammar,
         promptFraming,
         motif: motifInput,
+        threatFraming,
       }
     : null;
 

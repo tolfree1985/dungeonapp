@@ -17,6 +17,7 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
   const tags = presentation?.promptFraming?.visualTags ?? [];
   const grammar = presentation?.shotGrammar;
   const motif = presentation?.motif;
+  const threatFraming = presentation?.threatFraming;
 
   return (
     <section className="rounded-2xl border border-white/5 bg-white/5 p-4 text-[11px] text-white/70">
@@ -38,6 +39,14 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
               <span>Motif</span>
               <span className="whitespace-nowrap font-semibold text-white">
                 {motif.tone} · {motif.lighting} · {motif.atmosphere}
+              </span>
+            </div>
+          ) : null}
+          {threatFraming ? (
+            <div className="flex items-center justify-between text-[11px] text-white/60">
+              <span>Threat</span>
+              <span className="whitespace-nowrap font-semibold text-white">
+                {threatFraming.threatLevel} / {threatFraming.confrontationBias} / {threatFraming.subjectDominance}
               </span>
             </div>
           ) : null}

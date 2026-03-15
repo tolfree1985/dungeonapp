@@ -269,6 +269,31 @@ describe("resolveTurnSceneArtPresentation", () => {
     expect(first.scenePresentation?.motif).toEqual(second.scenePresentation?.motif);
   });
 
+  it("exposes calm threat framing metadata", () => {
+    const turn = makeTurn("calm-threat", "You observe the gallery.");
+    const state = makeState();
+    const result = resolveTurnSceneArtPresentation(presentationArgs({ turn, state }));
+    expect(result.scenePresentation?.threatFraming).toEqual({ threatLevel: "none", confrontationBias: "low", subjectDominance: "balanced" });
+  });
+
+  it("exposes threat framing when danger escalates", () => {
+    const turn = makeTurn("danger-threat", "A guard confronts you.");
+    const state = makeState({ pressureStage: "danger", visibleThreats: [{ id: "guard", label: "Guard" }] });
+    const resolved = buildResolvedSceneState(turn, state);
+    const resolvedPrev = buildSceneComposition(turn, state);
+    resolved.focusState = { ...resolved.focusState, focusType: "threat" };
+    resolvedPrev.focus = resolved.focusState;
+    const result = resolveTurnSceneArtPresentation(
+      presentationArgs({
+        turn,
+        state,
+        resolvedSceneState: resolved,
+        previousSceneComposition: resolvedPrev,
+      })
+    );
+    expect(result.scenePresentation?.threatFraming).toEqual({ threatLevel: "dominant", confrontationBias: "high", subjectDominance: "threat-favored" });
+  });
+
   it("keeps sceneKey unchanged when motif tags stay metadata-only", () => {
     const turn = makeTurn("metadata", "You survey the gallery.");
     const state = makeState();
