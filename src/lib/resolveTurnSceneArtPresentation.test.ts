@@ -11,6 +11,7 @@ import {
   resolveTurnSceneArtPresentation,
   type ResolveTurnSceneArtPresentationResult,
 } from "./resolveTurnSceneArtPresentation";
+import { intentVisualTagMap, emphasisTagMap, revealTagMap } from "@/lib/resolveScenePromptFraming";
 
 type SceneStateRecord = Record<string, unknown> | null;
 
@@ -211,5 +212,110 @@ describe("resolveTurnSceneArtPresentation", () => {
       previousTransitionMemory: { preserveActor: true, preserveFocus: true, preserveFraming: true, preserveSubject: true },
     });
     expect(first.canonicalPayload?.sceneKey).toEqual(second.canonicalPayload?.sceneKey);
+  });
+
+  it("surfaces the shot intent tag when threat intent is active", () => {
+    const turn = makeTurn("alert", "You face the guard.");
+    const state = makeState({ pressureStage: "danger", visibleThreats: [{ id: "guard", label: "Guard" }] });
+    const canonical = buildCanonicalSceneArtPayload({ turn, state });
+    const args = presentationArgs({
+      turn,
+      state,
+      previousSceneComposition: buildSceneComposition(turn, state),
+      previousSceneArt: canonical ? { sceneKey: canonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" } : null,
+      previousSceneArtForPreviousKey: canonical
+        ? { sceneKey: canonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" }
+        : null,
+      previousSceneKey: canonical?.sceneKey ?? null,
+    });
+    const result = resolveTurnSceneArtPresentation(args);
+
+    expect(result.shotIntent).toBe("threaten");
+    expect(result.shotGrammar?.emphasis).toBe("threat");
+    expect(result.promptFraming).not.toBeNull();
+    expect(result.promptFraming?.visualTags[0]).toBe("intent-threaten");
+    expect(result.promptFraming?.visualTags).toContain("emphasis-threat");
+    expect(result.promptFraming?.compositionNotes).toContain("confrontational");
+    expect(result.canonicalPayload?.tags).toContain("intent:threaten");
+  });
+
+  it("propagates deterministic observe tags through the presentation helper", () => {
+    const turn = makeTurn("observe", "You study the gallery.");
+    const state = makeState();
+    const result = resolveTurnSceneArtPresentation(presentationArgs({ turn, state }));
+    expect(result.shotIntent).toBe("observe");
+    expect(result.shotGrammar).not.toBeNull();
+    const grammar = result.shotGrammar!;
+    const expectedTags = [
+      "intent-observe",
+      ...intentVisualTagMap.observe,
+      ...emphasisTagMap[grammar.emphasis],
+      revealTagMap[grammar.revealLevel],
+    ];
+    expect(result.promptFraming?.visualTags).toEqual(expectedTags);
+    expect(result.scenePresentation?.promptFraming?.visualTags).toEqual(expectedTags);
+  });
+
+  it("keeps prompt framing visual tags stable across identical inputs", () => {
+    const turn = makeTurn("steady", "You face the guard.");
+    const state = makeState({ pressureStage: "danger", visibleThreats: [{ id: "guard", label: "Guard" }] });
+    const first = resolveTurnSceneArtPresentation(presentationArgs({ turn, state }));
+    const second = resolveTurnSceneArtPresentation(presentationArgs({ turn, state }));
+
+    expect(first.promptFraming?.visualTags).toEqual(second.promptFraming?.visualTags);
+  });
+
+  it("keeps sceneKey stable when prompt framing metadata differs but canonical tags stay the same", () => {
+    const baseTurn = makeTurn("inspect", "You inspect the gallery.");
+    const detailTurn = { ...baseTurn, intentJson: { mode: "LOOK" } };
+    const state = makeState();
+    const baseResult = resolveTurnSceneArtPresentation(
+      presentationArgs({
+        turn: baseTurn,
+        state,
+        previousTurn: baseTurn,
+        previousState: state,
+        previousSceneComposition: buildSceneComposition(baseTurn, state),
+      })
+    );
+    const detailResult = resolveTurnSceneArtPresentation(
+      presentationArgs({
+        turn: detailTurn,
+        state,
+        previousTurn: detailTurn,
+        previousState: state,
+        previousSceneComposition: buildSceneComposition(detailTurn, state),
+      })
+    );
+
+    expect(baseResult.canonicalPayload?.sceneKey).toEqual(detailResult.canonicalPayload?.sceneKey);
+    expect(baseResult.promptFraming).not.toBeNull();
+    expect(detailResult.promptFraming).not.toBeNull();
+  });
+
+  it("updates sceneKey when canonical tags change", () => {
+    const turn = makeTurn("pressure", "You stand in the stone gallery.");
+    const tensionState = makeState({ pressureStage: "tension" });
+    const dangerState = makeState({ pressureStage: "danger" });
+    const tensionResult = resolveTurnSceneArtPresentation(
+      presentationArgs({
+        turn,
+        state: tensionState,
+        previousTurn: turn,
+        previousState: tensionState,
+        previousSceneComposition: buildSceneComposition(turn, tensionState),
+      })
+    );
+    const dangerResult = resolveTurnSceneArtPresentation(
+      presentationArgs({
+        turn,
+        state: dangerState,
+        previousTurn: turn,
+        previousState: dangerState,
+        previousSceneComposition: buildSceneComposition(turn, dangerState),
+      })
+    );
+
+    expect(tensionResult.canonicalPayload?.sceneKey).not.toEqual(dangerResult.canonicalPayload?.sceneKey);
   });
 });
