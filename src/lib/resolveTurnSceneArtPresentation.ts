@@ -18,6 +18,7 @@ import { resolveSceneShotGrammar, type SceneShotGrammar } from "@/lib/resolveSce
 import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
 import { resolveSceneMotif, buildMotifTags, type SceneMotif } from "@/lib/resolveSceneMotif";
 import { resolveSceneRevealStructure, buildRevealStructureTags, type SceneRevealStructure } from "@/lib/resolveSceneRevealStructure";
+import { resolveSceneSpatialHierarchy, type SceneSpatialHierarchy } from "@/lib/resolveSceneSpatialHierarchy";
 import { resolveSceneThreatFraming, buildThreatFramingTags, type SceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
 import { buildSceneCanonicalTags, DEFAULT_SCENE_CANONICAL_TAG_POLICY, type SceneCanonicalTagPolicy } from "@/lib/sceneCanonicalTagPolicy";
 
@@ -65,6 +66,7 @@ export type ScenePresentation = {
   threatFramingTags: string[];
   revealStructure: SceneRevealStructure | null;
   revealStructureTags: string[];
+  spatialHierarchy: SceneSpatialHierarchy | null;
 };
 
 export type ResolveTurnSceneArtPresentationResult = {
@@ -192,6 +194,12 @@ export function resolveTurnSceneArtPresentation(
     sceneTransition,
   });
   const revealStructureTags = buildRevealStructureTags(revealStructure);
+  const spatialHierarchy = resolveSceneSpatialHierarchy({
+    focusState: resolvedSceneState.focusState,
+    actorState: resolvedSceneState.actorState,
+    subjectState: resolvedSceneState.subjectState,
+    framingState: resolvedSceneState.framingState,
+  });
 
   const motifInput = args.overrideMotif ?? motif;
   const motifTags = motifInput ? buildMotifTags(motifInput) : [];
@@ -215,6 +223,7 @@ export function resolveTurnSceneArtPresentation(
         threatFramingTags,
         revealStructure,
         revealStructureTags,
+        spatialHierarchy,
       }
     : null;
 

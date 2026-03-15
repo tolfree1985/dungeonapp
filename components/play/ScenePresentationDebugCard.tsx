@@ -21,6 +21,7 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
   const threatFramingTags = presentation?.threatFramingTags ?? [];
   const revealStructure = presentation?.revealStructure;
   const revealStructureTags = presentation?.revealStructureTags ?? [];
+  const spatialHierarchy = presentation?.spatialHierarchy;
 
   return (
     <section className="rounded-2xl border border-white/5 bg-white/5 p-4 text-[11px] text-white/70">
@@ -58,6 +59,15 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
               <span>Reveal</span>
               <span className="whitespace-nowrap font-semibold text-white">
                 {revealStructure.revealStage} · {revealStructure.revealFocus} · {revealStructure.revealClarity}
+              </span>
+            </div>
+          ) : null}
+          {spatialHierarchy ? (
+            <div className="flex items-center justify-between text-[11px] text-white/60">
+              <span>Spatial</span>
+              <span className="whitespace-nowrap font-semibold text-white">
+                {spatialHierarchy.primarySubject}
+                {spatialHierarchy.secondarySubject ? ` / ${spatialHierarchy.secondarySubject}` : ""} · {spatialHierarchy.dominance}
               </span>
             </div>
           ) : null}
