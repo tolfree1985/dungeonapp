@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { ResolutionBadge } from "@/components/ResolutionBadge";
+import { ResolutionBadge } from "~/components/ResolutionBadge";
 import {
   CONSEQUENCE_RULE_TABLE,
   deriveDifficultyStateFromTurnSignals,

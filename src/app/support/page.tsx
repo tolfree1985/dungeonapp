@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { SupportDashboard } from "@/components/SupportDashboard";
+import { SupportDashboard } from "~/components/SupportDashboard";
 
 type RunbookSection = {
   label: string;
