@@ -19,6 +19,7 @@ import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolv
 import { resolveSceneMotif, buildMotifTags, type SceneMotif } from "@/lib/resolveSceneMotif";
 import {
   resolveSceneRevealStructure,
+  buildRevealStructureTags,
   type SceneRevealStructure,
 } from "@/lib/resolveSceneRevealStructure";
 import { resolveSceneThreatFraming, buildThreatFramingTags, type SceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
@@ -67,6 +68,7 @@ export type ScenePresentation = {
   threatFraming: SceneThreatFraming | null;
   threatFramingTags: string[];
   revealStructure: SceneRevealStructure | null;
+  revealStructureTags: string[];
 };
 
 export type ResolveTurnSceneArtPresentationResult = {
@@ -193,6 +195,7 @@ export function resolveTurnSceneArtPresentation(
     motif,
     sceneTransition,
   });
+  const revealStructureTags = buildRevealStructureTags(revealStructure);
 
   const motifInput = args.overrideMotif ?? motif;
   const includeMotifInCanonical = args.includeMotifInCanonical ?? true;
@@ -210,6 +213,7 @@ export function resolveTurnSceneArtPresentation(
         threatFraming,
         threatFramingTags,
         revealStructure,
+        revealStructureTags,
       }
     : null;
 

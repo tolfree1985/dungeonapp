@@ -22,6 +22,7 @@ describe("ScenePresentationDebugCard", () => {
         revealFocus: "detail",
         revealClarity: "obscured",
       },
+      revealStructureTags: ["reveal-partial"],
     };
     const transition: SceneTransition = {
       type: "advance",
@@ -48,6 +49,7 @@ describe("ScenePresentationDebugCard", () => {
     tags.forEach((tag) => expect(screen.getByText(tag)).toBeTruthy());
     presentation.threatFramingTags?.forEach((tag) => expect(screen.getByText(tag)).toBeTruthy());
     expect(screen.getByText("partial · detail · obscured")).toBeTruthy();
+    expect(screen.getByText("reveal-partial")).toBeTruthy();
     expect(screen.getByText("Transition")).toBeTruthy();
     expect(screen.getByText("advance")).toBeTruthy();
     expect(screen.getByText("Cue: Focus Shift")).toBeTruthy();

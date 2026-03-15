@@ -54,3 +54,14 @@ export function resolveSceneRevealStructure({
     revealClarity: clarity,
   };
 }
+
+export function buildRevealStructureTags(structure: SceneRevealStructure | null): string[] {
+  if (!structure) return [];
+  const mapping: Record<SceneRevealStage, string> = {
+    hint: "reveal-hint",
+    partial: "reveal-partial",
+    full: "reveal-full",
+    aftermath: "reveal-aftermath",
+  };
+  return [mapping[structure.revealStage]];
+}

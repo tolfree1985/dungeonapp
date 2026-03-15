@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveSceneRevealStructure } from "@/lib/resolveSceneRevealStructure";
+import { resolveSceneRevealStructure, buildRevealStructureTags } from "@/lib/resolveSceneRevealStructure";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
 
@@ -65,5 +65,18 @@ describe("resolveSceneRevealStructure", () => {
     expect(structure.revealStage).toBe("aftermath");
     expect(structure.revealFocus).toBe("threat");
     expect(structure.revealClarity).toBe("obscured");
+  });
+});
+
+describe("buildRevealStructureTags", () => {
+  it("maps stages to reveal tags", () => {
+    expect(buildRevealStructureTags({ revealStage: "hint", revealFocus: "environment", revealClarity: "clear" })).toEqual(["reveal-hint"]);
+    expect(buildRevealStructureTags({ revealStage: "partial", revealFocus: "detail", revealClarity: "obscured" })).toEqual([
+      "reveal-partial",
+    ]);
+    expect(buildRevealStructureTags({ revealStage: "full", revealFocus: "threat", revealClarity: "clear" })).toEqual(["reveal-full"]);
+    expect(buildRevealStructureTags({ revealStage: "aftermath", revealFocus: "actor", revealClarity: "fuzzy" })).toEqual([
+      "reveal-aftermath",
+    ]);
   });
 });

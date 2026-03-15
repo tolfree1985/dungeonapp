@@ -20,6 +20,7 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
   const threatFraming = presentation?.threatFraming;
   const threatFramingTags = presentation?.threatFramingTags ?? [];
   const revealStructure = presentation?.revealStructure;
+  const revealStructureTags = presentation?.revealStructureTags ?? [];
 
   return (
     <section className="rounded-2xl border border-white/5 bg-white/5 p-4 text-[11px] text-white/70">
@@ -58,6 +59,21 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
               <span className="whitespace-nowrap font-semibold text-white">
                 {revealStructure.revealStage} · {revealStructure.revealFocus} · {revealStructure.revealClarity}
               </span>
+            </div>
+          ) : null}
+          {revealStructureTags.length > 0 ? (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.4em] text-white/40">Reveal tags</div>
+              <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-white/70">
+                {revealStructureTags.map((tag, index) => (
+                  <span
+                    key={`reveal-${tag}-${index}`}
+                    className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-semibold text-white"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
             </div>
           ) : null}
           <div>
