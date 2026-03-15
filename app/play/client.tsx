@@ -32,6 +32,7 @@ import { resolveSceneContinuityState } from "@/lib/sceneContinuity";
 import TurnInput from "@/components/play/TurnInput";
 import { ScenePresentationDebugCard } from "@/components/play/ScenePresentationDebugCard";
 import type { ScenePresentation } from "@/lib/resolveTurnSceneArtPresentation";
+import type { TurnApiResponse, TurnInputPayload } from "@/lib/turnApi";
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
 
@@ -298,9 +299,13 @@ export default function PlayClient({
   sceneRefreshDecision,
   scenePresentation,
 }: PlayClientProps) {
+  const [liveSceneArt, setLiveSceneArt] = useState<ResolvedSceneImage | null>(sceneImage ?? null);
+  const [liveSceneTransition, setLiveSceneTransition] = useState<SceneTransition | null>(sceneTransition ?? null);
+  const [liveScenePresentation, setLiveScenePresentation] = useState<ScenePresentation | null>(scenePresentation ?? null);
+  const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
+  const [turnError, setTurnError] = useState<string | null>(null);
   const HISTORY_KEY = "creator:recentAdventures";
   const latestTurnWithPresentation = turns[0] as PlayTurnWithPresentation | undefined;
-  const liveScenePresentation = latestTurnWithPresentation?.scenePresentation ?? scenePresentation ?? null;
   type HistoryEntry = {
     adventureId: string;
     scenarioId?: string | null;
@@ -309,10 +314,12 @@ export default function PlayClient({
   };
   const MAX_HISTORY = 6;
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [liveSceneTransition, setLiveSceneTransition] = useState<SceneTransition | null>(sceneTransition ?? null);
   useEffect(() => {
     setLiveSceneTransition(sceneTransition ?? null);
   }, [sceneTransition]);
+  useEffect(() => {
+    setLiveScenePresentation(scenePresentation ?? null);
+  }, [scenePresentation]);
   const currentId = adventureId;
   const sortHistory = (entries: HistoryEntry[]) =>
     [...entries].sort((a, b) => {
@@ -402,6 +409,54 @@ export default function PlayClient({
       window.sessionStorage.setItem(SCENE_TRANSITION_KEY, JSON.stringify(transition));
     } else {
       window.sessionStorage.removeItem(SCENE_TRANSITION_KEY);
+    }
+  };
+
+  const handleSubmitTurn = async (input: TurnInputPayload): Promise<boolean> => {
+    if (!adventureId) {
+      setTurnError("Adventure not selected.");
+      return false;
+    }
+
+    setIsSubmittingTurn(true);
+    setTurnError(null);
+
+    try {
+      const response = await fetch("/api/turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adventureId, mode: input.mode, playerText: input.playerText }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as TurnApiResponse | { error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(
+          payload && typeof payload === "object" && typeof payload.error === "string"
+            ? payload.error
+            : "Internal error"
+        );
+      }
+
+      const result = (payload ?? {}) as TurnApiResponse;
+      handleSceneTransitionUpdate(result.sceneTransition ?? null);
+      setLiveScenePresentation(result.scenePresentation ?? null);
+
+      if (result.sceneArt) {
+        setLiveSceneArt({
+          imageUrl: result.sceneArt.imageUrl,
+          source: "scene",
+          pending: result.sceneArt.status !== "ready",
+        });
+      }
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unexpected error submitting turn.";
+      setTurnError(message);
+      return false;
+    } finally {
+      setIsSubmittingTurn(false);
     }
   };
 
@@ -751,7 +806,14 @@ export default function PlayClient({
                   transitionCue={sceneTransitionCue}
                 />
               </div>
-              {adventureId ? <TurnInput adventureId={adventureId} onSceneTransition={handleSceneTransitionUpdate} /> : null}
+            {adventureId ? (
+              <TurnInput
+                adventureId={adventureId}
+                isSubmitting={isSubmittingTurn}
+                error={turnError}
+                onSubmitTurn={handleSubmitTurn}
+              />
+            ) : null}
           </section>
 
             <aside className={ui.rightColumn}>

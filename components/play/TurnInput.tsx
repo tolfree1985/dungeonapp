@@ -32,14 +32,14 @@ const accentMap: Record<TurnMode, string> = {
 
 type TurnInputProps = {
   adventureId: string;
-  onSceneTransition?: (transition: SceneTransition | null) => void;
+  isSubmitting: boolean;
+  error: string | null;
+  onSubmitTurn: (input: { mode: TurnMode; playerText: string }) => Promise<boolean>;
 };
 
-export default function TurnInput({ adventureId }: TurnInputProps) {
+export default function TurnInput({ adventureId, isSubmitting, error, onSubmitTurn }: TurnInputProps) {
   const [mode, setMode] = useState<TurnMode>("DO");
   const [playerText, setPlayerText] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const canSubmit = Boolean(playerText.trim()) && !isSubmitting;
 
@@ -47,32 +47,10 @@ export default function TurnInput({ adventureId }: TurnInputProps) {
     event.preventDefault();
     if (!canSubmit) return;
 
-    setIsSubmitting(true);
-    setError(null);
-
     const trimmed = playerText.trim();
-    const prefix = mode === "DO" ? "" : `${mode}: `;
-    const composedText = `${prefix}${trimmed}`;
-
-    try {
-      const response = await fetch("/api/turn", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adventureId, playerText: composedText }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "Failed to take turn.");
-      }
-
-      onSceneTransition?.(payload.sceneTransition ?? null);
+    const success = await onSubmitTurn({ playerText: trimmed, mode });
+    if (success) {
       setPlayerText("");
-      window.location.reload();
-    } catch (err: any) {
-      setError(err?.message ?? "Something went wrong.");
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -146,9 +124,6 @@ export default function TurnInput({ adventureId }: TurnInputProps) {
           </button>
         </div>
 
-      {isSubmitting && (
-        <p className="text-xs uppercase tracking-[0.35em] text-white/60">Submitting deterministic turn...</p>
-      )}
       {error ? <p className="text-xs text-rose-300">{error}</p> : null}
     </form>
   );
