@@ -17,7 +17,11 @@ import { resolveSceneShotIntent, type SceneShotIntent } from "@/lib/resolveScene
 import { resolveSceneShotGrammar, type SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
 import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
 import { resolveSceneMotif, buildMotifTags, type SceneMotif } from "@/lib/resolveSceneMotif";
-import { resolveSceneThreatFraming, type SceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
+import {
+  resolveSceneRevealStructure,
+  type SceneRevealStructure,
+} from "@/lib/resolveSceneRevealStructure";
+import { resolveSceneThreatFraming, buildThreatFramingTags, type SceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -51,6 +55,7 @@ export type ResolveTurnSceneArtPresentationArgs = {
   pressureStage?: string | null;
   includeMotifInCanonical?: boolean;
   overrideMotif?: SceneMotif | null;
+  includeThreatFramingInCanonical?: boolean;
   modelStatus: "ok" | "MODEL_ERROR";
 };
 
@@ -60,6 +65,8 @@ export type ScenePresentation = {
   promptFraming: ScenePromptFraming | null;
   motif: SceneMotif | null;
   threatFraming: SceneThreatFraming | null;
+  threatFramingTags: string[];
+  revealStructure: SceneRevealStructure | null;
 };
 
 export type ResolveTurnSceneArtPresentationResult = {
@@ -180,9 +187,19 @@ export function resolveTurnSceneArtPresentation(
     transitionMemory,
   });
 
+  const revealStructure = resolveSceneRevealStructure({
+    shotIntent,
+    focusState: resolvedSceneState.focusState,
+    motif,
+    sceneTransition,
+  });
+
   const motifInput = args.overrideMotif ?? motif;
   const includeMotifInCanonical = args.includeMotifInCanonical ?? true;
   const motifTags = motifInput && includeMotifInCanonical ? buildMotifTags(motifInput) : undefined;
+  const threatFramingTags = buildThreatFramingTags(threatFraming);
+  const includeThreatInCanonical = args.includeThreatFramingInCanonical ?? false;
+  const canonicalThreatTags = includeThreatInCanonical ? threatFramingTags : undefined;
 
   const scenePresentation: ScenePresentation | null = shotIntent
     ? {
@@ -191,6 +208,8 @@ export function resolveTurnSceneArtPresentation(
         promptFraming,
         motif: motifInput,
         threatFraming,
+        threatFramingTags,
+        revealStructure,
       }
     : null;
 
@@ -200,6 +219,7 @@ export function resolveTurnSceneArtPresentation(
     shotIntent,
     scenePromptFraming: promptFraming,
     motifTags,
+    threatFramingTags: canonicalThreatTags,
   });
 
   const refreshDecision = canonicalPayload

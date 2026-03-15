@@ -16,6 +16,12 @@ describe("ScenePresentationDebugCard", () => {
         visualTags: ["intent-inspect", "emphasis-detail", "detail-evidence"],
         compositionNotes: ["single-subject"],
       },
+      threatFramingTags: ["threat present", "dominant threat"],
+      revealStructure: {
+        revealStage: "partial",
+        revealFocus: "detail",
+        revealClarity: "obscured",
+      },
     };
     const transition: SceneTransition = {
       type: "advance",
@@ -40,6 +46,8 @@ describe("ScenePresentationDebugCard", () => {
     expect(screen.getByText("detail / singular / low")).toBeTruthy();
     const tags = presentation.promptFraming?.visualTags ?? [];
     tags.forEach((tag) => expect(screen.getByText(tag)).toBeTruthy());
+    presentation.threatFramingTags?.forEach((tag) => expect(screen.getByText(tag)).toBeTruthy());
+    expect(screen.getByText("partial · detail · obscured")).toBeTruthy();
     expect(screen.getByText("Transition")).toBeTruthy();
     expect(screen.getByText("advance")).toBeTruthy();
     expect(screen.getByText("Cue: Focus Shift")).toBeTruthy();
