@@ -1,4 +1,4 @@
-import type { SceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
+import type { SceneTransitionMemory } from "./sceneTypes";
 
 export type SceneRefreshDecision = {
   shouldQueueRender: boolean;

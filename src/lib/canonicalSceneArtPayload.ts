@@ -5,6 +5,7 @@ import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
+import { ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
 import { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
 import {
   presentMajorSceneTags,
@@ -17,12 +18,14 @@ type CanonicalSceneArtParams = {
   turn: PlayTurn | null;
   state: Record<string, unknown> | null;
   shotIntent?: SceneShotIntent;
+  scenePromptFraming?: ScenePromptFraming;
 };
 
 export function buildCanonicalSceneArtPayload({
   turn,
   state,
   shotIntent,
+  scenePromptFraming,
 }: CanonicalSceneArtParams): SceneArtPayload | null {
   if (!turn?.scene) return null;
 
@@ -74,6 +77,7 @@ export function buildCanonicalSceneArtPayload({
     actorState,
     focusState,
     shotIntent,
+    scenePromptFraming: scenePromptFraming ?? null,
   });
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveSceneTransitionMemory } from "./resolveSceneTransitionMemory";
+import { EMPTY_SCENE_TRANSITION_MEMORY } from "./sceneTypes";
 import type { SceneFramingState } from "./resolveSceneFramingState";
 import type { SceneSubjectState } from "./resolveSceneSubjectState";
 import type { SceneActorState } from "./resolveSceneActorState";
@@ -32,16 +33,33 @@ const baseFocus: SceneFocusState = {
 };
 
 describe("resolveSceneTransitionMemory", () => {
+  it("returns empty memory for the first scene", () => {
+    const decision = resolveSceneTransitionMemory({
+      previous: null,
+      current: {
+        framing: baseFraming,
+        subject: baseSubject,
+        actor: baseActor,
+        focus: baseFocus,
+      },
+    });
+    expect(decision).toEqual(EMPTY_SCENE_TRANSITION_MEMORY);
+  });
+
   it("preserves everything when the stack matches", () => {
     const decision = resolveSceneTransitionMemory({
-      previousFraming: baseFraming,
-      previousSubject: baseSubject,
-      previousActor: baseActor,
-      previousFocus: baseFocus,
-      currentFraming: baseFraming,
-      currentSubject: baseSubject,
-      currentActor: baseActor,
-      currentFocus: baseFocus,
+      previous: {
+        framing: baseFraming,
+        subject: baseSubject,
+        actor: baseActor,
+        focus: baseFocus,
+      },
+      current: {
+        framing: baseFraming,
+        subject: baseSubject,
+        actor: baseActor,
+        focus: baseFocus,
+      },
     });
     expect(decision).toEqual({
       preserveFraming: true,
@@ -51,21 +69,25 @@ describe("resolveSceneTransitionMemory", () => {
     });
   });
 
-  it("preserves only framing when focus changes", () => {
+  it("drops only focus preservation when focus changes", () => {
     const changedFocus: SceneFocusState = {
       focusType: "object",
       focusId: "clue-a",
       focusLabel: "clue A",
     };
     const decision = resolveSceneTransitionMemory({
-      previousFraming: baseFraming,
-      previousSubject: baseSubject,
-      previousActor: baseActor,
-      previousFocus: baseFocus,
-      currentFraming: baseFraming,
-      currentSubject: baseSubject,
-      currentActor: baseActor,
-      currentFocus: changedFocus,
+      previous: {
+        framing: baseFraming,
+        subject: baseSubject,
+        actor: baseActor,
+        focus: baseFocus,
+      },
+      current: {
+        framing: baseFraming,
+        subject: baseSubject,
+        actor: baseActor,
+        focus: changedFocus,
+      },
     });
     expect(decision).toEqual({
       preserveFraming: true,
@@ -75,56 +97,37 @@ describe("resolveSceneTransitionMemory", () => {
     });
   });
 
-  it("drops actor preservation when actor changes", () => {
-    const newActor: SceneActorState = {
-      primaryActorId: "guard-1",
-      primaryActorLabel: "Guard",
-      primaryActorRole: "threat",
-      actorVisible: true,
-    };
-    const decision = resolveSceneTransitionMemory({
-      previousFraming: baseFraming,
-      previousSubject: baseSubject,
-      previousActor: baseActor,
-      previousFocus: baseFocus,
-      currentFraming: baseFraming,
-      currentSubject: baseSubject,
-      currentActor: newActor,
-      currentFocus: baseFocus,
-    });
-    expect(decision).toEqual({
-      preserveFraming: true,
-      preserveSubject: true,
-      preserveActor: false,
-      preserveFocus: true,
-    });
-  });
-
-  it("breaks preservation when framing and subject change", () => {
+  it("respects prior memory when subject remains but framing changes", () => {
     const newFraming: SceneFramingState = {
       frameKind: "investigation_focus",
       shotScale: "close",
       subjectFocus: "clue",
       cameraAngle: "level",
     };
-    const newSubject: SceneSubjectState = {
-      primarySubjectKind: "clue",
-      primarySubjectId: "clue-1",
-      primarySubjectLabel: "Clue 1",
+    const memory = {
+      preserveFraming: false,
+      preserveSubject: true,
+      preserveActor: true,
+      preserveFocus: true,
     };
     const decision = resolveSceneTransitionMemory({
-      previousFraming: baseFraming,
-      previousSubject: baseSubject,
-      previousActor: baseActor,
-      previousFocus: baseFocus,
-      currentFraming: newFraming,
-      currentSubject: newSubject,
-      currentActor: baseActor,
-      currentFocus: baseFocus,
+      previousMemory: memory,
+      previous: {
+        framing: baseFraming,
+        subject: baseSubject,
+        actor: baseActor,
+        focus: baseFocus,
+      },
+      current: {
+        framing: newFraming,
+        subject: baseSubject,
+        actor: baseActor,
+        focus: baseFocus,
+      },
     });
     expect(decision).toEqual({
       preserveFraming: false,
-      preserveSubject: false,
+      preserveSubject: true,
       preserveActor: true,
       preserveFocus: true,
     });

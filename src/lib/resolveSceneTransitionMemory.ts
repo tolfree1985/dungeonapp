@@ -2,65 +2,55 @@ import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
+import { EMPTY_SCENE_TRANSITION_MEMORY, type SceneTransitionMemory } from "./sceneTypes";
 
-export type SceneTransitionMemory = {
-  preserveFraming: boolean;
-  preserveSubject: boolean;
-  preserveActor: boolean;
-  preserveFocus: boolean;
+type Input<TFraming, TSubject, TActor, TFocus> = {
+  previousMemory?: SceneTransitionMemory | null;
+  previous:
+    | {
+        framing: TFraming | null;
+        subject: TSubject | null;
+        actor: TActor | null;
+        focus: TFocus | null;
+      }
+    | null;
+  current: {
+    framing: TFraming;
+    subject: TSubject;
+    actor: TActor;
+    focus: TFocus;
+  };
 };
 
-type Args = {
-  previousFraming: SceneFramingState | null;
-  previousSubject: SceneSubjectState | null;
-  previousActor: SceneActorState | null;
-  previousFocus: SceneFocusState | null;
-  currentFraming: SceneFramingState;
-  currentSubject: SceneSubjectState;
-  currentActor: SceneActorState;
-  currentFocus: SceneFocusState;
-};
+function stableEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
-export function resolveSceneTransitionMemory({
-  previousFraming,
-  previousSubject,
-  previousActor,
-  previousFocus,
-  currentFraming,
-  currentSubject,
-  currentActor,
-  currentFocus,
-}: Args): SceneTransitionMemory {
-  const preserveFraming =
-    Boolean(previousFraming) &&
-    previousFraming.frameKind === currentFraming.frameKind &&
-    previousFraming.shotScale === currentFraming.shotScale &&
-    previousFraming.cameraAngle === currentFraming.cameraAngle;
+export function resolveSceneTransitionMemory<
+  TFraming,
+  TSubject,
+  TActor,
+  TFocus,
+>({
+  previousMemory,
+  previous,
+  current,
+}: Input<TFraming, TSubject, TActor, TFocus>): SceneTransitionMemory {
+  const prior = previousMemory ?? EMPTY_SCENE_TRANSITION_MEMORY;
 
-  const preserveSubject =
-    Boolean(previousSubject) &&
-    previousSubject.primarySubjectKind === currentSubject.primarySubjectKind &&
-    (previousSubject.primarySubjectId ?? previousSubject.primarySubjectLabel ?? null) ===
-      (currentSubject.primarySubjectId ?? currentSubject.primarySubjectLabel ?? null);
+  if (!previous) {
+    return EMPTY_SCENE_TRANSITION_MEMORY;
+  }
 
-  const previousActorId = previousActor?.primaryActorId ?? null;
-  const currentActorId = currentActor.primaryActorId ?? null;
-  const preserveActor =
-    Boolean(previousActor) &&
-    (previousActorId === null && currentActorId === null
-      ? true
-      : previousActorId !== null && previousActorId === currentActorId);
-
-  const preserveFocus =
-    Boolean(previousFocus) &&
-    previousFocus.focusType === currentFocus.focusType &&
-    (previousFocus.focusId ?? previousFocus.focusLabel ?? null) ===
-      (currentFocus.focusId ?? currentFocus.focusLabel ?? null);
+  const sameFraming = stableEqual(previous.framing, current.framing);
+  const sameSubject = stableEqual(previous.subject, current.subject);
+  const sameActor = stableEqual(previous.actor, current.actor);
+  const sameFocus = stableEqual(previous.focus, current.focus);
 
   return {
-    preserveFraming,
-    preserveSubject,
-    preserveActor,
-    preserveFocus,
+    preserveFraming: sameFraming || (prior.preserveFraming && sameSubject),
+    preserveSubject: sameSubject || (prior.preserveSubject && sameFraming),
+    preserveActor: sameActor || (prior.preserveActor && sameSubject),
+    preserveFocus: sameFocus || (prior.preserveFocus && sameFraming),
   };
 }

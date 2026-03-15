@@ -15,6 +15,7 @@ import { resolveSceneTransition } from "@/lib/resolveSceneTransition";
 import { resolveSceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
 import { resolveSceneShotIntent, type SceneShotIntent } from "@/lib/resolveSceneShotIntent";
 import { resolveSceneShotGrammar, type SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
+import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -49,6 +50,12 @@ export type ResolveTurnSceneArtPresentationArgs = {
   modelStatus: "ok" | "MODEL_ERROR";
 };
 
+export type ScenePresentation = {
+  shotIntent: SceneShotIntent;
+  shotGrammar: SceneShotGrammar | null;
+  promptFraming: ScenePromptFraming | null;
+};
+
 export type ResolveTurnSceneArtPresentationResult = {
   canonicalPayload: SceneArtPayload | null;
   sceneTransition: SceneTransition | null;
@@ -58,6 +65,8 @@ export type ResolveTurnSceneArtPresentationResult = {
   shouldCreateSceneArt: boolean;
   shotIntent: SceneShotIntent | null;
   shotGrammar: SceneShotGrammar | null;
+  promptFraming: ScenePromptFraming | null;
+  scenePresentation: ScenePresentation | null;
 };
 
 export function resolveTurnSceneArtPresentation(
@@ -137,11 +146,29 @@ export function resolveTurnSceneArtPresentation(
     actorState: resolvedSceneState.actorState,
     sceneTransition,
   });
+  const promptFraming = resolveScenePromptFraming({
+    shotIntent,
+    shotGrammar,
+    directorDecision,
+    framingState: resolvedSceneState.framingState,
+    focusState: resolvedSceneState.focusState,
+    subjectState: resolvedSceneState.subjectState,
+    actorState: resolvedSceneState.actorState,
+  });
+
+  const scenePresentation: ScenePresentation | null = shotIntent
+    ? {
+        shotIntent,
+        shotGrammar,
+        promptFraming,
+      }
+    : null;
 
   const canonicalPayload = buildCanonicalSceneArtPayload({
     turn,
     state: args.state,
     shotIntent,
+    scenePromptFraming: promptFraming,
   });
 
   const refreshDecision = canonicalPayload
@@ -175,5 +202,7 @@ export function resolveTurnSceneArtPresentation(
     shouldCreateSceneArt,
     shotIntent,
     shotGrammar,
+    promptFraming,
+    scenePresentation,
   };
 }

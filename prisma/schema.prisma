@@ -195,6 +195,13 @@ enum SceneArtStatus {
   failed
 }
 
+enum SceneArtPriority {
+  low
+  normal
+  high
+  critical
+}
+
 model SceneArt {
   id            String         @id @default(cuid())
   sceneKey      String         @unique
@@ -208,6 +215,7 @@ model SceneArt {
   engineVersion String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+  renderPriority SceneArtPriority @default(normal)
 
   @@index([status])
 }

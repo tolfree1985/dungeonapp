@@ -30,6 +30,8 @@ import type { SceneContinuityState } from "@/lib/sceneContinuity";
 import type { SceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { resolveSceneContinuityState } from "@/lib/sceneContinuity";
 import TurnInput from "@/components/play/TurnInput";
+import { ScenePresentationDebugCard } from "@/components/play/ScenePresentationDebugCard";
+import type { ScenePresentation } from "@/lib/resolveTurnSceneArtPresentation";
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
 
@@ -255,6 +257,29 @@ function TopBar() {
   );
 }
 
+export type PlayClientProps = {
+  adventureId: string | null;
+  scenarioId: string | null;
+  turns: PlayTurn[];
+  statePanel: PlayStatePanel;
+  currentScenario: PlayScenarioMeta | null;
+  dbOffline?: boolean;
+  sceneImage?: ResolvedSceneImage | null;
+  sceneImageCaption?: string | null;
+  sceneVisualState: SceneVisualState;
+  sceneFramingState: SceneFramingState;
+  sceneSubjectState: SceneSubjectState;
+  sceneActorState: SceneActorState;
+  sceneFocusState: SceneFocusState;
+  sceneTransition?: SceneTransition | null;
+  sceneRefreshDecision?: SceneRefreshDecision | null;
+  scenePresentation?: ScenePresentation | null;
+};
+
+type PlayTurnWithPresentation = PlayTurn & {
+  scenePresentation?: ScenePresentation | null;
+};
+
 export default function PlayClient({
   adventureId,
   scenarioId,
@@ -271,24 +296,11 @@ export default function PlayClient({
   sceneActorState,
   sceneTransition = null,
   sceneRefreshDecision,
-}: {
-  adventureId: string | null;
-  scenarioId: string | null;
-  turns: PlayTurn[];
-  statePanel: PlayStatePanel;
-  currentScenario: PlayScenarioMeta | null;
-  dbOffline?: boolean;
-  sceneImage?: ResolvedSceneImage | null;
-  sceneImageCaption?: string | null;
-  sceneVisualState: SceneVisualState;
-  sceneFramingState: SceneFramingState;
-  sceneSubjectState: SceneSubjectState;
-  sceneActorState: SceneActorState;
-  sceneFocusState: SceneFocusState;
-  sceneTransition?: SceneTransition | null;
-  sceneRefreshDecision?: SceneRefreshDecision | null;
-}) {
+  scenePresentation,
+}: PlayClientProps) {
   const HISTORY_KEY = "creator:recentAdventures";
+  const latestTurnWithPresentation = turns[0] as PlayTurnWithPresentation | undefined;
+  const liveScenePresentation = latestTurnWithPresentation?.scenePresentation ?? scenePresentation ?? null;
   type HistoryEntry = {
     adventureId: string;
     scenarioId?: string | null;
@@ -759,6 +771,11 @@ export default function PlayClient({
                     sceneActorState={sceneActorState}
                     sceneFocusState={sceneFocusState}
                     sceneTransition={liveSceneTransition}
+                  />
+                  <ScenePresentationDebugCard
+                    presentation={liveScenePresentation}
+                    transition={liveSceneTransition}
+                    transitionCue={sceneTransitionCue}
                   />
                   <StatePanel viewModel={statePanelViewModel} />
                 </section>

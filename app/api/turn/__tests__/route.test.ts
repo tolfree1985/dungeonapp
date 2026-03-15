@@ -2,12 +2,69 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 import { SceneArtPayload } from "@/lib/sceneArt";
+import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
+import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
+import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
+import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
+import { resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
 import { SceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import type {
   SceneCameraContinuityState,
   SceneTransitionMemory,
 } from "@/lib/sceneTypes";
+import { resolveTurnSceneArtPresentation } from "@/lib/resolveTurnSceneArtPresentation";
 import { persistSceneTransitionMemory, orchestrateLegacySceneArtDecision } from "@/app/api/turn/route";
+import type { PlayTurn } from "@/app/play/types";
+
+function makeTurn(id: string, scene: string): PlayTurn {
+  return {
+    id,
+    turnIndex: 1,
+    playerInput: "Look",
+    scene,
+    resolution: "ok",
+    stateDeltas: [],
+    ledgerAdds: [],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function makeState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    location: "stone gallery",
+    pressureStage: "tension",
+    timeOfDay: "night",
+    stats: { heat: 2, noise: 0, alert: 1, location: "stone gallery" },
+    visibleDetails: [{ id: "shard", label: "Shiny" }],
+    ...overrides,
+  };
+}
+
+function buildPresentationArgs(turn: PlayTurn, state: Record<string, unknown> | null) {
+  const visual = resolveSceneVisualState(state);
+  const framing = resolveSceneFramingState({ turn, visual, locationChanged: false });
+  const subject = resolveSceneSubjectState({ state, framing });
+  const actor = resolveSceneActorState({ state, subject });
+  const focus = resolveSceneFocusState({ state, framing, subject, actor });
+  return {
+    turn,
+    state,
+    resolvedSceneState: {
+      visualState: visual,
+      framingState: framing,
+      subjectState: subject,
+      actorState: actor,
+      focusState: focus,
+    },
+    previousSceneComposition: null,
+    previousSceneArt: null,
+    previousSceneArtForPreviousKey: null,
+    previousTransitionMemory: null,
+    previousSceneKey: null,
+    pressureStage: visual.pressureStage,
+    modelStatus: "ok",
+  };
+}
 
 describe("POST /api/turn helpers", () => {
   const payload: SceneArtPayload = {
@@ -33,7 +90,7 @@ describe("POST /api/turn helpers", () => {
       queueSceneArt,
     });
 
-    expect(queueSceneArt).toHaveBeenCalledWith(payload, ENGINE_VERSION);
+    expect(queueSceneArt).toHaveBeenCalledWith(payload, ENGINE_VERSION, "normal");
     expect(result).toEqual({ sceneKey: payload.sceneKey, status: "queued", imageUrl: "/queued.png" });
     expect(result?.sceneKey).toBe(payload.sceneKey);
   });
@@ -116,5 +173,13 @@ describe("POST /api/turn helpers", () => {
         sceneCameraContinuityState: continuityState,
       },
     });
+  });
+
+  it("exposes scenePresentation metadata from the helper", () => {
+    const turn = makeTurn("presentation", "You inspect the gallery.");
+    const state = makeState();
+    const presentation = resolveTurnSceneArtPresentation(buildPresentationArgs(turn, state));
+    expect(presentation.scenePresentation).not.toBeNull();
+    expect(presentation.scenePresentation?.promptFraming?.visualTags).toEqual(presentation.promptFraming?.visualTags);
   });
 });

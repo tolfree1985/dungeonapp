@@ -12,6 +12,7 @@ import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
+import type { ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
 import type { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
 
 export type PresentSceneArtInput = {
@@ -27,11 +28,20 @@ export type PresentSceneArtInput = {
   actorState: SceneActorState;
   focusState: SceneFocusState;
   shotIntent?: SceneShotIntent;
+  scenePromptFraming?: ScenePromptFraming | null;
 };
 
 export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const stylePreset = input.stylePreset ?? DEFAULT_STYLE_PRESET;
+  const promptFraming = input.scenePromptFraming;
   const visualTags = [...(input.visualTags ?? [])];
+  const promptCompositionNotes = promptFraming?.compositionNotes ?? [];
+  if (promptFraming?.visualTags?.length) {
+    visualTags.push(...promptFraming.visualTags);
+  }
+  if (promptCompositionNotes.length) {
+    visualTags.push(...promptCompositionNotes);
+  }
   const npcState = input.npcState ?? [];
   const majorTags = [...(input.majorTags ?? [])];
   const focusState = input.focusState;
@@ -80,6 +90,7 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
     stylePreset,
     appearanceCues: [
       ...visualTags,
+      ...promptCompositionNotes,
       `framing ${framing.frameKind}`,
       `shot ${framing.shotScale}`,
       `focus ${focusLabelRaw ?? focusState.focusType}`,

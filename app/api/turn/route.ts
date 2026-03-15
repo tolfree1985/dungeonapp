@@ -46,7 +46,7 @@ import { resolveSceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision
 import { EMPTY_SCENE_TRANSITION_MEMORY } from "@/lib/sceneTypes";
 import { resolveSceneCameraEscalationDecision } from "@/lib/resolveSceneCameraEscalationDecision";
 import type { SceneCameraEscalationDecision } from "@/lib/resolveSceneCameraEscalationDecision";
-import { resolveTurnSceneArtPresentation } from "@/lib/resolveTurnSceneArtPresentation";
+import { resolveTurnSceneArtPresentation, type ScenePresentation } from "@/lib/resolveTurnSceneArtPresentation";
 import type { SceneArtRow } from "@/lib/resolveTurnSceneArtPresentation";
 import type { SceneArtPriority } from "@/generated/prisma";
 
@@ -701,14 +701,15 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           pressureStage: nextVisualState.pressureStage ?? null,
           modelStatus: "ok",
         })
-      : {
-          canonicalPayload: null,
-          sceneTransition: null,
-          refreshDecision: null,
-          transitionMemory: previousTransitionMemory ?? EMPTY_SCENE_TRANSITION_MEMORY,
-          sceneArtResult: null,
-          shouldCreateSceneArt: false,
-        };
+    : {
+        canonicalPayload: null,
+        sceneTransition: null,
+        refreshDecision: null,
+        transitionMemory: previousTransitionMemory ?? EMPTY_SCENE_TRANSITION_MEMORY,
+        sceneArtResult: null,
+        shouldCreateSceneArt: false,
+        scenePresentation: null,
+      };
     let presentation = basePresentation;
     let continuityState = previousContinuityState;
     let escalation: SceneCameraEscalationDecision | null = null;
@@ -773,6 +774,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         decision: refreshDecision,
       });
     }
+    const scenePresentation = presentation.scenePresentation;
     const visualStateDeltas = diffSceneVisualState(previousVisualState, nextVisualState);
     const visualLedgerEntries = visualStateDeltas.map((delta) => ({
       kind: "visual_state",
@@ -827,6 +829,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         ledgerAdds: ledgerAddsWithVisual,
         sceneArt: sceneArtResult,
         sceneTransition: sceneTransitionPayload,
+        scenePresentation,
       },
       { status: 200 }
     );

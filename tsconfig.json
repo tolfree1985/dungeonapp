@@ -26,7 +26,8 @@
       "@/generated/*": ["./src/generated/*"],
       "@/lib/*": ["./src/lib/*"],
       "@/server/*": ["./src/server/*"],
-      "@/src/*": ["./src/*"]
+      "@/src/*": ["./src/*"],
+      "~/*": ["./src/*"]
     }
   },
   "include": [

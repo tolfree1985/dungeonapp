@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveSceneRefreshDecision } from "./resolveSceneRefreshDecision";
-import type { SceneTransitionMemory } from "./resolveSceneTransitionMemory";
+import type { SceneTransitionMemory } from "./sceneTypes";
 
 describe("resolveSceneRefreshDecision", () => {
   it("does not queue renders when hold keeps the same key", () => {

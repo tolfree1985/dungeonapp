@@ -22,7 +22,7 @@ import {
 } from "@/lib/turnDiff/buildTurnDiffCopyText";
 import { filterLedgerEntries } from "@/lib/filterLedgerEntries";
 import { formatConsequenceValue } from "@/lib/formatConsequenceValue";
-import { ResolutionBadge as OutcomeBadge } from "@/components/ResolutionBadge";
+import { ResolutionBadge as OutcomeBadge } from "~/components/ResolutionBadge";
 
 type Props = {
   turnIndex?: number | null;

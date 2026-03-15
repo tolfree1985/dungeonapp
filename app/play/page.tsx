@@ -20,6 +20,7 @@ import { resolveSceneVisualState, type VisualStateDelta } from "@/lib/resolveSce
 import { ResolvedSceneImage } from "@/lib/sceneArt";
 import { loadResolvedSceneImage, type ResolvedSceneImageResult } from "@/lib/loadResolvedSceneImage";
 import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
+import { resolveTurnSceneArtPresentation } from "@/lib/resolveTurnSceneArtPresentation";
 
 const PROTECTED_ADVENTURE_IDS = new Set(["canon_ui", "sandbox", "replay_lab", "dev_run"]);
 const DEV_DEFAULT_ADVENTURE = "85e17a2c-c8a9-4c48-9186-2ed7e3e9d983";
@@ -398,6 +399,26 @@ let persistedAdventureOwnerId: string | null = null;
     subject: sceneSubjectState,
     actor: sceneActorState,
   });
+  const scenePresentation = latestTurn
+    ? resolveTurnSceneArtPresentation({
+        turn: latestTurn,
+        state: rawState,
+        resolvedSceneState: {
+          visualState: sceneVisualState,
+          framingState: sceneFramingState,
+          subjectState: sceneSubjectState,
+          actorState: sceneActorState,
+          focusState: sceneFocusState,
+        },
+        previousSceneComposition: null,
+        previousSceneArt: null,
+        previousSceneArtForPreviousKey: null,
+        previousTransitionMemory: null,
+        previousSceneKey: null,
+        pressureStage: sceneVisualState.pressureStage ?? null,
+        modelStatus: "ok",
+      }).scenePresentation
+    : null;
   const sceneArt = buildCanonicalSceneArtPayload({
     turn: latestTurn,
     state: rawState,
@@ -448,22 +469,23 @@ let persistedAdventureOwnerId: string | null = null;
         </span>
       </div>
       <Suspense fallback={<div className="mt-6 text-sm text-gray-500">Loading play controls...</div>}>
-        <PlayClient
-          adventureId={adventureId}
-          scenarioId={scenarioId}
-          turns={turns}
-          statePanel={statePanel}
-          currentScenario={currentScenario}
-          dbOffline={dbOffline}
-          sceneImage={resolvedSceneImage}
-          sceneImageCaption={sceneImageCaption}
-          sceneRefreshDecision={sceneRefreshDecision}
-          sceneVisualState={sceneVisualState}
-          sceneFramingState={sceneFramingState}
-          sceneSubjectState={sceneSubjectState}
-          sceneActorState={sceneActorState}
-          sceneFocusState={sceneFocusState}
-        />
+          <PlayClient
+            adventureId={adventureId}
+            scenarioId={scenarioId}
+            turns={turns}
+            statePanel={statePanel}
+            currentScenario={currentScenario}
+            dbOffline={dbOffline}
+            sceneImage={resolvedSceneImage}
+            sceneImageCaption={sceneImageCaption}
+            sceneRefreshDecision={sceneRefreshDecision}
+            sceneVisualState={sceneVisualState}
+            sceneFramingState={sceneFramingState}
+            sceneSubjectState={sceneSubjectState}
+            sceneActorState={sceneActorState}
+            sceneFocusState={sceneFocusState}
+            scenePresentation={scenePresentation}
+          />
       </Suspense>
     </main>
   );
