@@ -17,12 +17,9 @@ import { resolveSceneShotIntent, type SceneShotIntent } from "@/lib/resolveScene
 import { resolveSceneShotGrammar, type SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
 import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
 import { resolveSceneMotif, buildMotifTags, type SceneMotif } from "@/lib/resolveSceneMotif";
-import {
-  resolveSceneRevealStructure,
-  buildRevealStructureTags,
-  type SceneRevealStructure,
-} from "@/lib/resolveSceneRevealStructure";
+import { resolveSceneRevealStructure, buildRevealStructureTags, type SceneRevealStructure } from "@/lib/resolveSceneRevealStructure";
 import { resolveSceneThreatFraming, buildThreatFramingTags, type SceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
+import { buildSceneCanonicalTags, DEFAULT_SCENE_CANONICAL_TAG_POLICY, type SceneCanonicalTagPolicy } from "@/lib/sceneCanonicalTagPolicy";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -54,9 +51,8 @@ export type ResolveTurnSceneArtPresentationArgs = {
   previousTransitionMemory: SceneTransitionMemory | null;
   previousSceneKey: string | null;
   pressureStage?: string | null;
-  includeMotifInCanonical?: boolean;
   overrideMotif?: SceneMotif | null;
-  includeThreatFramingInCanonical?: boolean;
+  tagPolicy?: SceneCanonicalTagPolicy;
   modelStatus: "ok" | "MODEL_ERROR";
 };
 
@@ -198,11 +194,16 @@ export function resolveTurnSceneArtPresentation(
   const revealStructureTags = buildRevealStructureTags(revealStructure);
 
   const motifInput = args.overrideMotif ?? motif;
-  const includeMotifInCanonical = args.includeMotifInCanonical ?? true;
-  const motifTags = motifInput && includeMotifInCanonical ? buildMotifTags(motifInput) : undefined;
+  const motifTags = motifInput ? buildMotifTags(motifInput) : [];
   const threatFramingTags = buildThreatFramingTags(threatFraming);
-  const includeThreatInCanonical = args.includeThreatFramingInCanonical ?? false;
-  const canonicalThreatTags = includeThreatInCanonical ? threatFramingTags : undefined;
+
+  const canonicalTagResult = buildSceneCanonicalTags({
+    promptFramingTags: promptFraming?.visualTags,
+    motifTags,
+    threatFramingTags,
+    revealStructureTags,
+    tagPolicy: args.tagPolicy ?? DEFAULT_SCENE_CANONICAL_TAG_POLICY,
+  });
 
   const scenePresentation: ScenePresentation | null = shotIntent
     ? {
@@ -222,8 +223,9 @@ export function resolveTurnSceneArtPresentation(
     state: args.state,
     shotIntent,
     scenePromptFraming: promptFraming,
-    motifTags,
-    threatFramingTags: canonicalThreatTags,
+    motifTags: canonicalTagResult.motifTags,
+    threatFramingTags: canonicalTagResult.threatFramingTags,
+    revealStructureTags: canonicalTagResult.revealStructureTags,
   });
 
   const refreshDecision = canonicalPayload
