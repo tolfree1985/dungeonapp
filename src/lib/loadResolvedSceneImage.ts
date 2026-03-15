@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { resolveDisplayedSceneImage } from "@/lib/sceneArt";
+import type { SceneArt } from "@prisma/client";
+
+export type ResolvedSceneImageResult = {
+  image: ResolvedSceneImage;
+  currentScene: SceneArt | null;
+  previousScene: SceneArt | null;
+};
 
 export async function loadResolvedSceneImage({
   sceneKey,
@@ -11,7 +18,7 @@ export async function loadResolvedSceneImage({
   previousSceneKey: string | null;
   locationBackdropUrl: string | null;
   defaultImageUrl: string;
-}) {
+}): Promise<ResolvedSceneImageResult> {
   const [currentScene, previousScene] = await Promise.all([
     sceneKey ? prisma.sceneArt.findUnique({ where: { sceneKey } }) : Promise.resolve(null),
     previousSceneKey ? prisma.sceneArt.findUnique({ where: { sceneKey: previousSceneKey } }) : Promise.resolve(null),
@@ -35,25 +42,37 @@ export async function loadResolvedSceneImage({
   const previousReady = previousScene?.status === "ready" && previousScene.imageUrl;
   if (currentReady) {
     return {
-      imageUrl: currentScene.imageUrl,
-      source: "scene",
-      pending: false,
+      image: {
+        imageUrl: currentScene.imageUrl,
+        source: "scene",
+        pending: false,
+      },
+      currentScene,
+      previousScene,
     };
   }
 
   if (previousReady) {
     return {
-      imageUrl: previousScene.imageUrl,
-      source: "scene",
-      pending: currentScene?.status === "queued",
+      image: {
+        imageUrl: previousScene.imageUrl,
+        source: "scene",
+        pending: currentScene?.status === "queued",
+      },
+      currentScene,
+      previousScene,
     };
   }
 
-  return resolveDisplayedSceneImage({
-    currentSceneImageUrl: null,
-    currentScenePending: !!currentScene && currentScene.status === "queued",
-    previousSceneImageUrl: null,
-    locationBackdropUrl,
-    defaultImageUrl,
-  });
+  return {
+    image: resolveDisplayedSceneImage({
+      currentSceneImageUrl: null,
+      currentScenePending: !!currentScene && currentScene.status === "queued",
+      previousSceneImageUrl: null,
+      locationBackdropUrl,
+      defaultImageUrl,
+    }),
+    currentScene,
+    previousScene,
+  };
 }

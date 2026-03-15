@@ -15,9 +15,11 @@ import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
 import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
+import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import { resolveSceneVisualState, type VisualStateDelta } from "@/lib/resolveSceneVisualState";
 import { ResolvedSceneImage } from "@/lib/sceneArt";
-import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
+import { loadResolvedSceneImage, type ResolvedSceneImageResult } from "@/lib/loadResolvedSceneImage";
+import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 
 const PROTECTED_ADVENTURE_IDS = new Set(["canon_ui", "sandbox", "replay_lab", "dev_run"]);
 const DEV_DEFAULT_ADVENTURE = "85e17a2c-c8a9-4c48-9186-2ed7e3e9d983";
@@ -390,21 +392,37 @@ let persistedAdventureOwnerId: string | null = null;
     state: rawState,
     subject: sceneSubjectState,
   });
+  const sceneFocusState = resolveSceneFocusState({
+    state: rawState,
+    framing: sceneFramingState,
+    subject: sceneSubjectState,
+    actor: sceneActorState,
+  });
   const sceneArt = buildCanonicalSceneArtPayload({
     turn: latestTurn,
     state: rawState,
   });
-  const resolvedSceneImage = await loadResolvedSceneImage({
+  const resolvedSceneImageResult = await loadResolvedSceneImage({
     sceneKey: sceneArt?.sceneKey ?? null,
     previousSceneKey: null,
     locationBackdropUrl: null,
     defaultImageUrl: DEFAULT_SCENE_FALLBACK_URL,
   });
+  const resolvedSceneImage = resolvedSceneImageResult.image;
+  const currentSceneRow = resolvedSceneImageResult.currentScene;
+  const previousSceneRow = resolvedSceneImageResult.previousScene;
   console.log("resolvedSceneImage", resolvedSceneImage);
   console.log("sceneArt input", sceneArt);
   console.log("sceneArt canonical source", {
     sceneKey: sceneArt?.sceneKey,
     basePrompt: sceneArt?.basePrompt,
+  });
+  const sceneRefreshDecision = resolveSceneRefreshDecision({
+    transitionType: null,
+    currentSceneKey: sceneArt?.sceneKey ?? null,
+    previousSceneKey: previousSceneRow?.sceneKey ?? null,
+    currentReady: currentSceneRow?.status === "ready",
+    previousReady: previousSceneRow?.status === "ready",
   });
   const visualDeltas = buildVisualDeltasFromLedger(latestTurn?.ledgerAdds ?? []);
   const sceneImageCaption =
@@ -439,10 +457,12 @@ let persistedAdventureOwnerId: string | null = null;
           dbOffline={dbOffline}
           sceneImage={resolvedSceneImage}
           sceneImageCaption={sceneImageCaption}
+          sceneRefreshDecision={sceneRefreshDecision}
           sceneVisualState={sceneVisualState}
           sceneFramingState={sceneFramingState}
           sceneSubjectState={sceneSubjectState}
           sceneActorState={sceneActorState}
+          sceneFocusState={sceneFocusState}
         />
       </Suspense>
     </main>

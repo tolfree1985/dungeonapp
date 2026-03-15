@@ -6,7 +6,6 @@ import { formatPlayTimestamp } from "@/components/play/formatTimestamp";
 import LatestTurnCard from "@/components/play/LatestTurnCard";
 import PressureMeter from "@/components/play/PressureMeter";
 import StatePanel from "@/components/play/StatePanel";
-import TurnInput from "@/components/play/TurnInput";
 import { SceneImagePanel } from "@/components/play/SceneImagePanel";
 import {
   AdventureHistoryRowViewModel,
@@ -25,6 +24,14 @@ import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
+import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
+import type { SceneTransition } from "@/lib/resolveSceneTransition";
+import type { SceneContinuityState } from "@/lib/sceneContinuity";
+import type { SceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
+import { resolveSceneContinuityState } from "@/lib/sceneContinuity";
+import TurnInput from "@/components/play/TurnInput";
+
+const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
 
 function pressureBadgeTone(stage: string | null | undefined) {
   const normalized = typeof stage === "string" ? stage.toLowerCase() : "calm";
@@ -127,11 +134,15 @@ function VisualStatePanel({
   framingState,
   subjectState,
   sceneActorState,
+  sceneFocusState,
+  sceneTransition,
 }: {
   sceneVisualState: SceneVisualState;
   framingState: SceneFramingState;
   subjectState: SceneSubjectState;
   sceneActorState: SceneActorState;
+  sceneFocusState: SceneFocusState;
+  sceneTransition?: SceneTransition | null;
 }) {
   const details = [
     { label: "Lighting", value: sceneVisualState.lightingState },
@@ -169,7 +180,7 @@ function VisualStatePanel({
           </div>
         ))}
       </div>
-    <div className="mt-3 text-[11px] uppercase tracking-[0.3em] text-white/60">
+      <div className="mt-3 text-[11px] uppercase tracking-[0.3em] text-white/60">
         <div className="text-xs text-white/40">Subject kind</div>
         <div className="text-sm font-semibold text-white">{subjectState.primarySubjectKind}</div>
         <div className="text-xs text-white/40">Subject</div>
@@ -188,6 +199,22 @@ function VisualStatePanel({
         <div className="text-sm font-semibold text-white">
           {sceneActorState.actorVisible ? "yes" : "no"}
         </div>
+      </div>
+      {sceneTransition ? (
+        <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/70">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+            <span>Scene transition</span>
+            <span className="text-xs uppercase tracking-[0.35em] text-white/40">{sceneTransition.type}</span>
+          </div>
+          <div className="mt-1 text-[10px] text-white/40">
+            framing {sceneTransition.preserveFraming ? "preserved" : "reset"} · subject {sceneTransition.preserveSubject ? "preserved" : "reset"} · actor {sceneTransition.preserveActor ? "preserved" : "reset"}
+          </div>
+        </div>
+      ) : null}
+      <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/70">
+        <div className="text-xs uppercase tracking-[0.3em] text-white/60">Focus</div>
+        <div className="mt-1 text-xs text-white/40">Type: {sceneFocusState.focusType}</div>
+        <div className="text-sm font-semibold text-white">{sceneFocusState.focusLabel ?? "(none)"}</div>
       </div>
     </div>
   );
@@ -228,10 +255,13 @@ export default function PlayClient({
   dbOffline = false,
   sceneImage,
   sceneImageCaption,
+  sceneFocusState,
   sceneVisualState,
   sceneFramingState,
   sceneSubjectState,
   sceneActorState,
+  sceneTransition = null,
+  sceneRefreshDecision,
 }: {
   adventureId: string | null;
   scenarioId: string | null;
@@ -245,6 +275,9 @@ export default function PlayClient({
   sceneFramingState: SceneFramingState;
   sceneSubjectState: SceneSubjectState;
   sceneActorState: SceneActorState;
+  sceneFocusState: SceneFocusState;
+  sceneTransition?: SceneTransition | null;
+  sceneRefreshDecision?: SceneRefreshDecision | null;
 }) {
   const HISTORY_KEY = "creator:recentAdventures";
   type HistoryEntry = {
@@ -255,6 +288,10 @@ export default function PlayClient({
   };
   const MAX_HISTORY = 6;
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [liveSceneTransition, setLiveSceneTransition] = useState<SceneTransition | null>(sceneTransition ?? null);
+  useEffect(() => {
+    setLiveSceneTransition(sceneTransition ?? null);
+  }, [sceneTransition]);
   const currentId = adventureId;
   const sortHistory = (entries: HistoryEntry[]) =>
     [...entries].sort((a, b) => {
@@ -262,6 +299,36 @@ export default function PlayClient({
       return b.timestamp - a.timestamp;
     });
   const limitHistory = (entries: HistoryEntry[]) => sortHistory(entries).slice(0, MAX_HISTORY);
+  const previousSceneImageUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.sessionStorage.getItem(SCENE_TRANSITION_KEY);
+    if (!stored) return;
+    try {
+      setLiveSceneTransition(JSON.parse(stored) as SceneTransition);
+    } catch {
+      // ignore invalid data
+    }
+    window.sessionStorage.removeItem(SCENE_TRANSITION_KEY);
+  }, []);
+  useEffect(() => {
+    if (sceneImage?.source === "scene" && sceneImage.imageUrl) {
+      previousSceneImageUrlRef.current = sceneImage.imageUrl;
+    }
+  }, [sceneImage?.source, sceneImage?.imageUrl]);
+
+  const continuityState = useMemo(
+    () =>
+      resolveSceneContinuityState({
+        refreshDecision: sceneRefreshDecision ?? null,
+        transition: liveSceneTransition,
+        currentImageUrl: sceneImage?.imageUrl ?? null,
+        previousImageUrl: previousSceneImageUrlRef.current,
+        isPending: Boolean(sceneImage?.pending),
+      }),
+    [sceneRefreshDecision, liveSceneTransition, sceneImage?.imageUrl, sceneImage?.pending]
+  );
+  const displayedSceneImageCaption = sceneImageCaption && continuityState.shouldShowCaption ? sceneImageCaption : null;
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(HISTORY_KEY);
@@ -305,6 +372,16 @@ export default function PlayClient({
     }
     window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
   }, [history]);
+
+  const handleSceneTransitionUpdate = (transition: SceneTransition | null) => {
+    setLiveSceneTransition(transition);
+    if (typeof window === "undefined") return;
+    if (transition) {
+      window.sessionStorage.setItem(SCENE_TRANSITION_KEY, JSON.stringify(transition));
+    } else {
+      window.sessionStorage.removeItem(SCENE_TRANSITION_KEY);
+    }
+  };
 
   const copyToClipboard = (value: string) => {
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
@@ -646,10 +723,12 @@ export default function PlayClient({
                       pending: false,
                     }
                   }
-                  caption={sceneImageCaption ?? undefined}
+                  caption={displayedSceneImageCaption ?? undefined}
+                  transition={liveSceneTransition}
+                  continuity={continuityState}
                 />
               </div>
-              {adventureId ? <TurnInput adventureId={adventureId} /> : null}
+              {adventureId ? <TurnInput adventureId={adventureId} onSceneTransition={handleSceneTransitionUpdate} /> : null}
           </section>
 
             <aside className={ui.rightColumn}>
@@ -667,6 +746,8 @@ export default function PlayClient({
                     framingState={sceneFramingState}
                     subjectState={sceneSubjectState}
                     sceneActorState={sceneActorState}
+                    sceneFocusState={sceneFocusState}
+                    sceneTransition={liveSceneTransition}
                   />
                   <StatePanel viewModel={statePanelViewModel} />
                 </section>

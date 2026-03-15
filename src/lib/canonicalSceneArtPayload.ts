@@ -4,6 +4,7 @@ import { resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
 import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
+import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import {
   presentMajorSceneTags,
   presentNpcCuesForPrompt,
@@ -37,6 +38,12 @@ export function buildCanonicalSceneArtPayload({
     state: stateRecord,
     subject: subjectState,
   });
+  const focusState = resolveSceneFocusState({
+    state: stateRecord,
+    subject: subjectState,
+    actor: actorState,
+    framing: framingState,
+  });
   console.log("sceneArt canonical inputs", {
     latestTurnScene: turn.scene,
     visualState,
@@ -62,6 +69,7 @@ export function buildCanonicalSceneArtPayload({
     npcCues: presentNpcCuesForPrompt(stateRecord),
     majorTags: presentMajorSceneTags(turn, stateRecord),
     actorState,
+    focusState,
   });
 }
 

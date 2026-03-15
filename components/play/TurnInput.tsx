@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { cardPadding, cardShell, sectionHeading } from "./cardStyles";
+import type { SceneTransition } from "@/lib/resolveSceneTransition";
 
 type TurnMode = "DO" | "SAY" | "LOOK";
 
@@ -31,6 +32,7 @@ const accentMap: Record<TurnMode, string> = {
 
 type TurnInputProps = {
   adventureId: string;
+  onSceneTransition?: (transition: SceneTransition | null) => void;
 };
 
 export default function TurnInput({ adventureId }: TurnInputProps) {
@@ -59,10 +61,12 @@ export default function TurnInput({ adventureId }: TurnInputProps) {
         body: JSON.stringify({ adventureId, playerText: composedText }),
       });
 
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error("Failed to take turn.");
+        throw new Error(payload?.error ?? "Failed to take turn.");
       }
 
+      onSceneTransition?.(payload.sceneTransition ?? null);
       setPlayerText("");
       window.location.reload();
     } catch (err: any) {

@@ -9,6 +9,7 @@ import {
 } from "@/lib/sceneArt";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
+import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
 
@@ -23,13 +24,20 @@ export type PresentSceneArtInput = {
   framingState: SceneFramingState;
   subjectState: SceneSubjectState;
   actorState: SceneActorState;
+  focusState: SceneFocusState;
 };
 
 export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const stylePreset = input.stylePreset ?? DEFAULT_STYLE_PRESET;
   const visualTags = [...(input.visualTags ?? [])];
   const npcState = input.npcState ?? [];
-  const majorTags = input.majorTags ?? [];
+  const majorTags = [...(input.majorTags ?? [])];
+  const focusState = input.focusState;
+
+  const focusLabelRaw = focusState.focusLabel ?? focusState.focusId ?? focusState.focusType;
+  if (focusLabelRaw) {
+    majorTags.push(`focus-${normalizeToken(focusLabelRaw)}`);
+  }
 
   const locationId = input.visualState.locationId;
   const pressureStage = input.visualState.pressureStage;
@@ -59,6 +67,10 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
     : subject.primarySubjectKind;
   const actor = input.actorState;
   const actorLabel = actor.actorVisible && actor.primaryActorLabel ? actor.primaryActorLabel : null;
+  if (focusLabelRaw) {
+    visualTags.push(`focus:${focusLabelRaw}`);
+  }
+
   const renderPrompt = buildRenderScenePrompt({
     basePrompt,
     stylePreset,
@@ -66,7 +78,7 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
       ...visualTags,
       `framing ${framing.frameKind}`,
       `shot ${framing.shotScale}`,
-      `focus ${framing.subjectFocus}`,
+      `focus ${focusLabelRaw ?? focusState.focusType}`,
       `angle ${framing.cameraAngle}`,
       `subject ${subjectText}`,
       actorLabel ? `actor ${actorLabel}` : null,
@@ -80,6 +92,7 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   visualTags.push(`focus:${framing.subjectFocus}`);
   visualTags.push(`angle:${framing.cameraAngle}`);
   visualTags.push(`subject:${subject.primarySubjectKind}`);
+  visualTags.push(`focus-label:${focusLabelRaw ?? focusState.focusType}`);
   if (subject.primarySubjectLabel) {
     visualTags.push(`subject-label:${subject.primarySubjectLabel}`);
   }

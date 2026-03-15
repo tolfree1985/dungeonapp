@@ -33,6 +33,8 @@ import { findSceneArt, queueSceneArt } from "@/lib/sceneArtRepo";
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
+import { SceneTransition, resolveSceneTransition } from "@/lib/resolveSceneTransition";
+import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 
 type PostBody = {
   adventureId: string;
@@ -110,6 +112,18 @@ function safeTurnErrorPayload(args: {
     code: args.code,
     ...(args.extra ?? {}),
   };
+}
+
+function describeSceneTransition(transition: SceneTransition): string {
+  switch (transition.type) {
+    case "hold":
+      return "The camera holds steady on the familiar scene.";
+    case "advance":
+      return "The scene advances while the subject remains in focus.";
+    case "cut":
+    default:
+      return "A new composition takes over the frame.";
+  }
 }
 
 async function runModelStub(args: { prompt: string; max_tokens: number }): Promise<StubModelResult> {
@@ -309,12 +323,26 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             reason: "MODEL_ERROR",
           });
           const existingSceneArt = await findSceneArt(canonicalPayload.sceneKey);
-          const shouldQueue = existingSceneArt === null;
+          const refreshDecision = resolveSceneRefreshDecision({
+            transitionType: null,
+            currentSceneKey: canonicalPayload.sceneKey,
+            previousSceneKey: null,
+            currentReady: existingSceneArt?.status === "ready",
+            previousReady: false,
+          });
+          console.log("sceneArt refresh decision", {
+            sceneKey: canonicalPayload.sceneKey,
+            decision: refreshDecision,
+            branch: "legacy",
+            reason: "MODEL_ERROR",
+          });
+          const shouldQueue = refreshDecision.shouldQueueRender && !existingSceneArt;
           console.log("sceneArt queue gate", {
             sceneKey: canonicalPayload.sceneKey,
             shouldQueue,
             branch: "legacy",
             reason: "MODEL_ERROR",
+            refreshDecision,
           });
           if (existingSceneArt) {
             console.log("sceneArt route returning response", {
@@ -322,7 +350,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
               branch: "legacy",
               reason: "MODEL_ERROR",
             });
-          } else {
+          } else if (shouldQueue) {
             console.log("sceneArt queue request", {
               sceneKey: canonicalPayload.sceneKey,
               title: canonicalPayload.title,
@@ -505,6 +533,13 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       select: { state: true },
     });
     const stateRecord = asRecord(updatedAdventureState?.state ?? null);
+    const turns = await db.turn.findMany({
+      where: { adventureId },
+      orderBy: { turnIndex: "desc" },
+      take: 2,
+    });
+    const latestTurn = turns[0] ?? null;
+    const previousTurn = turns[1] ?? null;
     const nextVisualState = resolveSceneVisualState(stateRecord);
     const nextFramingState = resolveSceneFramingState({
       turn: latestTurn,
@@ -519,6 +554,54 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       state: stateRecord,
       subject: nextSubjectState,
     });
+    const previousFramingState = previousTurn && previousVisualState
+      ? resolveSceneFramingState({
+          turn: previousTurn,
+          visual: previousVisualState,
+          locationChanged: false,
+        })
+      : null;
+    const previousSubjectState = previousFramingState
+      ? resolveSceneSubjectState({
+          state: previousStateRecord,
+          framing: previousFramingState,
+        })
+      : null;
+    const previousActorState = previousSubjectState
+      ? resolveSceneActorState({
+          state: previousStateRecord,
+          subject: previousSubjectState,
+        })
+      : null;
+    const previousComposition =
+      previousVisualState &&
+      previousFramingState &&
+      previousSubjectState &&
+      previousActorState
+        ? {
+            visual: previousVisualState,
+            framing: previousFramingState,
+            subject: previousSubjectState,
+            actor: previousActorState,
+          }
+        : null;
+    const nextComposition = {
+      visual: nextVisualState,
+      framing: nextFramingState,
+      subject: nextSubjectState,
+      actor: nextActorState,
+    };
+    const sceneTransition = resolveSceneTransition({
+      previous: previousComposition,
+      next: nextComposition,
+    });
+    const previousSceneArtPayload =
+      previousTurn && previousStateRecord
+        ? buildCanonicalSceneArtPayload({
+            turn: previousTurn,
+            state: previousStateRecord,
+          })
+        : null;
     const visualStateDeltas = diffSceneVisualState(previousVisualState, nextVisualState);
     const visualLedgerEntries = visualStateDeltas.map((delta) => ({
       kind: "visual_state",
@@ -526,11 +609,19 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       cause: `Visual ${delta.key}`,
       effect: delta.message,
     }));
-    const ledgerAddsWithVisual = [...turnLedgerAdds, ...visualLedgerEntries];
-    const latestTurn = await db.turn.findFirst({
-      where: { adventureId },
-      orderBy: { turnIndex: "desc" },
-    });
+    const transitionLedgerEntry = previousComposition
+      ? {
+          kind: "scene_transition",
+          domain: "visual",
+          cause: `Scene ${sceneTransition.type}`,
+          effect: describeSceneTransition(sceneTransition),
+        }
+      : null;
+    const ledgerAddsWithVisual = [
+      ...turnLedgerAdds,
+      ...visualLedgerEntries,
+      ...(transitionLedgerEntry ? [transitionLedgerEntry] : []),
+    ];
     const branch = (finalized as any)?.branch ?? "legacy";
     const sceneArtPayload = buildCanonicalSceneArtPayload({
       turn: latestTurn,
@@ -551,11 +642,32 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       });
 
       const existingSceneArt = await findSceneArt(sceneArtPayload.sceneKey);
-      const shouldQueue = existingSceneArt === null;
+      const existingPreviousSceneArt =
+        previousSceneArtPayload && previousSceneArtPayload.sceneKey !== sceneArtPayload.sceneKey
+          ? await findSceneArt(previousSceneArtPayload.sceneKey)
+          : previousSceneArtPayload
+          ? existingSceneArt
+          : null;
+
+      const refreshDecision = resolveSceneRefreshDecision({
+        transitionType: sceneTransition.type,
+        currentSceneKey: sceneArtPayload.sceneKey,
+        previousSceneKey: previousSceneArtPayload?.sceneKey ?? null,
+        currentReady: existingSceneArt?.status === "ready",
+        previousReady: existingPreviousSceneArt?.status === "ready",
+      });
+
+      console.log("sceneArt refresh decision", {
+        sceneKey: sceneArtPayload.sceneKey,
+        decision: refreshDecision,
+      });
+
+      const shouldQueue = refreshDecision.shouldQueueRender && !existingSceneArt;
       console.log("sceneArt queue gate", {
         sceneKey: sceneArtPayload.sceneKey,
         shouldQueue,
         branch,
+        refreshDecision,
       });
 
       if (existingSceneArt) {
@@ -564,7 +676,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           status: existingSceneArt.status,
           imageUrl: existingSceneArt.imageUrl,
         };
-      } else {
+      } else if (shouldQueue) {
         console.log("sceneArt queue request", {
           sceneKey: sceneArtPayload.sceneKey,
           title: sceneArtPayload.title,
@@ -603,6 +715,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         stateDeltas: turnStateDeltas,
         ledgerAdds: ledgerAddsWithVisual,
         sceneArt,
+        sceneTransition,
       },
       { status: 200 }
     );
