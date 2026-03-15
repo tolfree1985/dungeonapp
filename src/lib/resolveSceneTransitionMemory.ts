@@ -43,10 +43,13 @@ export function resolveSceneTransitionMemory({
     (previousSubject.primarySubjectId ?? previousSubject.primarySubjectLabel ?? null) ===
       (currentSubject.primarySubjectId ?? currentSubject.primarySubjectLabel ?? null);
 
+  const previousActorId = previousActor?.primaryActorId ?? null;
+  const currentActorId = currentActor.primaryActorId ?? null;
   const preserveActor =
     Boolean(previousActor) &&
-    (previousActor.primaryActorId ?? null) !== null &&
-    (previousActor.primaryActorId ?? null) === (currentActor.primaryActorId ?? null);
+    (previousActorId === null && currentActorId === null
+      ? true
+      : previousActorId !== null && previousActorId === currentActorId);
 
   const preserveFocus =
     Boolean(previousFocus) &&
