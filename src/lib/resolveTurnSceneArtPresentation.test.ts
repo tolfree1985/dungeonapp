@@ -13,6 +13,7 @@ import {
   type ResolveTurnSceneArtPresentationResult,
 } from "./resolveTurnSceneArtPresentation";
 import { intentVisualTagMap, emphasisTagMap, revealTagMap } from "@/lib/resolveScenePromptFraming";
+import { buildThreatFramingTags } from "@/lib/resolveSceneThreatFraming";
 
 type SceneStateRecord = Record<string, unknown> | null;
 
@@ -83,6 +84,7 @@ function presentationArgs(overrides: Partial<Parameters<typeof resolveTurnSceneA
     pressureStage: resolvedSceneState.visualState.pressureStage,
     modelStatus: overrides.modelStatus ?? "ok",
     includeMotifInCanonical: overrides.includeMotifInCanonical,
+    includeThreatFramingInCanonical: overrides.includeThreatFramingInCanonical,
     overrideMotif: overrides.overrideMotif ?? null,
   };
 }
@@ -269,6 +271,22 @@ describe("resolveTurnSceneArtPresentation", () => {
     expect(first.scenePresentation?.motif).toEqual(second.scenePresentation?.motif);
   });
 
+  it("exposes threat framing tags in presentation metadata", () => {
+    const turn = makeTurn("threat-tags", "You face the room.");
+    const state = makeState({ pressureStage: "tension" });
+    const result = resolveTurnSceneArtPresentation(presentationArgs({ turn, state }));
+    const tags = buildThreatFramingTags(result.scenePresentation?.threatFraming ?? null);
+    expect(result.scenePresentation?.threatFramingTags).toEqual(tags);
+  });
+
+  it("keeps sceneKey unchanged when threat tags stay metadata-only", () => {
+    const turn = makeTurn("threat-metadata", "You observe quietly.");
+    const state = makeState();
+    const first = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeThreatFramingInCanonical: false }));
+    const second = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeThreatFramingInCanonical: false }));
+    expect(first.canonicalPayload?.sceneKey).toEqual(second.canonicalPayload?.sceneKey);
+  });
+
   it("exposes calm threat framing metadata", () => {
     const turn = makeTurn("calm-threat", "You observe the gallery.");
     const state = makeState();
@@ -374,5 +392,13 @@ describe("resolveTurnSceneArtPresentation", () => {
     );
 
     expect(tensionResult.canonicalPayload?.sceneKey).not.toEqual(dangerResult.canonicalPayload?.sceneKey);
+  });
+
+  it("changes sceneKey when threat framing tags are enabled", () => {
+    const turn = makeTurn("threat-canonical", "You face the guard.");
+    const state = makeState({ pressureStage: "danger", visibleThreats: [{ id: "guard", label: "Guard" }] });
+    const base = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeThreatFramingInCanonical: false }));
+    const withThreat = resolveTurnSceneArtPresentation(presentationArgs({ turn, state, includeThreatFramingInCanonical: true }));
+    expect(base.canonicalPayload?.sceneKey).not.toEqual(withThreat.canonicalPayload?.sceneKey);
   });
 });
