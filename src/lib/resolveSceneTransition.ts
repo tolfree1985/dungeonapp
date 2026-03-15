@@ -2,13 +2,16 @@ import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
-import type { SceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
+import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
+import type { SceneTransitionMemory } from "./sceneTypes";
+import type { SceneDirectorDecision } from "./resolveSceneDirectorDecision";
 
 export type SceneComposition = {
   visual: SceneVisualState;
   framing: SceneFramingState;
   subject: SceneSubjectState;
   actor: SceneActorState;
+  focus: SceneFocusState;
 };
 
 type SceneTransitionType = "hold" | "advance" | "cut";
@@ -18,6 +21,9 @@ export type SceneTransition = {
   preserveFraming: boolean;
   preserveSubject: boolean;
   preserveActor: boolean;
+  preserveFocus: boolean;
+  focusHeld: boolean;
+  shouldEscalateCamera?: boolean;
 };
 
 function equalsSubject(a: SceneSubjectState, b: SceneSubjectState) {
@@ -32,6 +38,14 @@ function equalsActor(a: SceneActorState, b: SceneActorState) {
     return a.primaryActorId === b.primaryActorId;
   }
   return a.primaryActorLabel === b.primaryActorLabel && a.actorVisible === b.actorVisible;
+}
+
+function equalsFocus(a: SceneFocusState, b: SceneFocusState) {
+  return (
+    a.focusType === b.focusType &&
+    (a.focusId ?? null) === (b.focusId ?? null) &&
+    (a.focusLabel ?? null) === (b.focusLabel ?? null)
+  );
 }
 
 function equalsVisual(a: SceneVisualState, b: SceneVisualState) {
@@ -59,35 +73,72 @@ export function resolveSceneTransition(args: {
   previous: SceneComposition | null;
   next: SceneComposition;
   memory?: SceneTransitionMemory | null;
+  directorDecision?: SceneDirectorDecision | null;
 }): SceneTransition {
   const { previous, next } = args;
   const memory = args.memory ?? null;
+  const directorDecision = args.directorDecision ?? null;
   if (!previous) {
-    return { type: "cut", preserveFraming: false, preserveSubject: false, preserveActor: false };
+    return {
+      type: "cut",
+      preserveFraming: false,
+      preserveSubject: false,
+      preserveActor: false,
+      preserveFocus: false,
+      focusHeld: false,
+    };
   }
 
   const sameSubject = equalsSubject(previous.subject, next.subject);
   const sameActor = equalsActor(previous.actor, next.actor);
   const sameVisual = equalsVisual(previous.visual, next.visual);
   const sameFraming = equalsFraming(previous.framing, next.framing);
+  const sameFocus = equalsFocus(previous.focus, next.focus);
 
   const preserveFraming = memory?.preserveFraming ?? sameFraming;
   const preserveSubject = memory?.preserveSubject ?? sameSubject;
   const preserveActor = memory?.preserveActor ?? sameActor;
-  const preserveFocus = memory?.preserveFocus ?? true;
+  const preserveFocus = memory?.preserveFocus ?? sameFocus;
 
-  if (!preserveSubject || !preserveActor) {
-    return { type: "cut", preserveFraming, preserveSubject, preserveActor };
-  }
+  const preferThreatFraming = directorDecision?.preferThreatFraming ?? false;
+  const allowCut = directorDecision?.allowCut ?? true;
+  const forceHold = directorDecision?.forceHold ?? false;
+  const escalateCamera = directorDecision?.escalateCamera ?? false;
 
-  if (preserveFraming && preserveFocus) {
-    return { type: "hold", preserveFraming, preserveSubject, preserveActor };
-  }
-
-  return {
-    type: "advance",
+  const baseResult = {
     preserveFraming,
     preserveSubject,
     preserveActor,
+    preserveFocus,
+    focusHeld: preserveFocus,
   };
+
+  if (!preserveSubject || !preserveActor) {
+    if (allowCut) {
+      return { type: "cut", ...baseResult };
+    }
+    return { type: "advance", ...baseResult };
+  }
+
+  if (forceHold) {
+    return { type: "hold", ...baseResult };
+  }
+
+  if (preserveFraming && preserveFocus && !escalateCamera) {
+    return { type: "hold", ...baseResult };
+  }
+
+  if (preserveFraming && preserveFocus && escalateCamera) {
+    return { type: "advance", ...baseResult };
+  }
+
+  if (preserveFraming && !preserveFocus) {
+    return { type: "advance", ...baseResult };
+  }
+
+  if (allowCut) {
+    return { type: "cut", ...baseResult };
+  }
+
+  return { type: "advance", ...baseResult };
 }

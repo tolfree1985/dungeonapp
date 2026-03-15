@@ -47,11 +47,13 @@ export function SceneImagePanel({
   transition,
   continuity,
   focusState,
+  transitionCue,
 }: ResolvedSceneImage & {
   caption?: string | null;
   transition?: SceneTransition | null;
   continuity?: SceneContinuityState | null;
   focusState?: SceneFocusState | null;
+  transitionCue?: string | null;
 }) {
   const [displayedImage, setDisplayedImage] = useState<DisplayedImage>({
     imageUrl: imageUrl ?? null,
@@ -118,6 +120,11 @@ export function SceneImagePanel({
         {focusLabel ? (
           <div className="absolute bottom-7 left-3 rounded-md border border-white/10 bg-black/70 px-3 py-1 text-xs text-white/80 backdrop-blur-sm">
             {focusLabel}
+          </div>
+        ) : null}
+        {transitionCue ? (
+          <div className="absolute bottom-7 right-3 rounded-md border border-white/10 bg-black/70 px-3 py-1 text-xs uppercase tracking-[0.25em] text-white/80 backdrop-blur-sm">
+            {transitionCue}
           </div>
         ) : null}
         {caption ? (

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { SceneArtPayload } from "@/lib/sceneArt";
+import type { SceneArtPriority } from "@/generated/prisma";
 
 export async function findSceneArt(sceneKey: string) {
   return prisma.sceneArt.findUnique({
@@ -7,11 +8,11 @@ export async function findSceneArt(sceneKey: string) {
   });
 }
 
-export async function queueSceneArt(payload: SceneArtPayload, engineVersion?: string | null) {
-  console.log("sceneArt repo write", {
-    sceneKey: payload.sceneKey,
-    title: payload.title,
-  });
+export async function queueSceneArt(
+  payload: SceneArtPayload,
+  engineVersion?: string | null,
+  renderPriority: SceneArtPriority = "normal",
+) {
   return prisma.sceneArt.upsert({
     where: { sceneKey: payload.sceneKey },
     update: {},
@@ -25,6 +26,7 @@ export async function queueSceneArt(payload: SceneArtPayload, engineVersion?: st
       status: "queued",
       imageUrl: null,
       engineVersion: engineVersion ?? null,
+      renderPriority,
     },
   });
 }

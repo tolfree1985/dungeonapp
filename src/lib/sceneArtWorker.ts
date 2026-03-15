@@ -29,7 +29,10 @@ export async function processQueuedSceneArt(args?: {
 
   const queuedRows = await prisma.sceneArt.findMany({
     where: { status: "queued" },
-    orderBy: { createdAt: "asc" },
+    orderBy: [
+      { renderPriority: "desc" },
+      { createdAt: "asc" },
+    ],
     take: limit,
     select: {
       id: true,

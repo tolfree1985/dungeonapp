@@ -30,6 +30,8 @@ it("falls back to transition alone when no decision is present", () => {
       preserveFraming: true,
       preserveSubject: true,
       preserveActor: true,
+      preserveFocus: true,
+      focusHeld: true,
     };
     const state = resolveSceneContinuityState({
       refreshDecision: null,

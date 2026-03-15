@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AdventureHistoryRow from "@/components/play/AdventureHistoryRow";
 import HistorySlotCard from "@/components/play/HistorySlotCard";
-import { formatPlayTimestamp } from "@/components/play/formatTimestamp";
+import { formatPlayTimestamp } from "~/components/play/formatTimestamp";
 import LatestTurnCard from "@/components/play/LatestTurnCard";
 import PressureMeter from "@/components/play/PressureMeter";
 import StatePanel from "@/components/play/StatePanel";
@@ -32,6 +32,15 @@ import { resolveSceneContinuityState } from "@/lib/sceneContinuity";
 import TurnInput from "@/components/play/TurnInput";
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
+
+export function deriveSceneTransitionCue(transition: SceneTransition | null): string | null {
+  if (!transition) return null;
+  if (transition.type === "advance") {
+    if (transition.shouldEscalateCamera) return "Camera Push-In";
+    if (!transition.focusHeld) return "Focus Shift";
+  }
+  return null;
+}
 
 function pressureBadgeTone(stage: string | null | undefined) {
   const normalized = typeof stage === "string" ? stage.toLowerCase() : "calm";
@@ -207,7 +216,7 @@ function VisualStatePanel({
             <span className="text-xs uppercase tracking-[0.35em] text-white/40">{sceneTransition.type}</span>
           </div>
           <div className="mt-1 text-[10px] text-white/40">
-            framing {sceneTransition.preserveFraming ? "preserved" : "reset"} · subject {sceneTransition.preserveSubject ? "preserved" : "reset"} · actor {sceneTransition.preserveActor ? "preserved" : "reset"}
+            framing {sceneTransition.preserveFraming ? "preserved" : "reset"} · subject {sceneTransition.preserveSubject ? "preserved" : "reset"} · actor {sceneTransition.preserveActor ? "preserved" : "reset"} · focus {sceneTransition.preserveFocus ? "held" : "shifted"}
           </div>
         </div>
       ) : null}
@@ -329,6 +338,7 @@ export default function PlayClient({
     [sceneRefreshDecision, liveSceneTransition, sceneImage?.imageUrl, sceneImage?.pending]
   );
   const displayedSceneImageCaption = sceneImageCaption && continuityState.shouldShowCaption ? sceneImageCaption : null;
+  const sceneTransitionCue = useMemo(() => deriveSceneTransitionCue(liveSceneTransition), [liveSceneTransition]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(HISTORY_KEY);
@@ -726,6 +736,7 @@ export default function PlayClient({
                   caption={displayedSceneImageCaption ?? undefined}
                   transition={liveSceneTransition}
                   continuity={continuityState}
+                  transitionCue={sceneTransitionCue}
                 />
               </div>
               {adventureId ? <TurnInput adventureId={adventureId} onSceneTransition={handleSceneTransitionUpdate} /> : null}

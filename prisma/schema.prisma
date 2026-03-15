@@ -11,6 +11,8 @@ datasource db {
 model Adventure {
   id              String      @id
   latestTurnIndex Int         @default(0)
+  sceneTransitionMemory Json?
+  sceneCameraContinuityState Json?
   seed            Int?
   state           Json?
   ownerId         String?
