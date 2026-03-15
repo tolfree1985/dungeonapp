@@ -5,6 +5,7 @@ import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
+import { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
 import {
   presentMajorSceneTags,
   presentNpcCuesForPrompt,
@@ -15,11 +16,13 @@ import {
 type CanonicalSceneArtParams = {
   turn: PlayTurn | null;
   state: Record<string, unknown> | null;
+  shotIntent?: SceneShotIntent;
 };
 
 export function buildCanonicalSceneArtPayload({
   turn,
   state,
+  shotIntent,
 }: CanonicalSceneArtParams): SceneArtPayload | null {
   if (!turn?.scene) return null;
 
@@ -70,6 +73,7 @@ export function buildCanonicalSceneArtPayload({
     majorTags: presentMajorSceneTags(turn, stateRecord),
     actorState,
     focusState,
+    shotIntent,
   });
 }
 

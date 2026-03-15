@@ -12,6 +12,7 @@ import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
+import type { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
 
 export type PresentSceneArtInput = {
   title?: string;
@@ -25,6 +26,7 @@ export type PresentSceneArtInput = {
   subjectState: SceneSubjectState;
   actorState: SceneActorState;
   focusState: SceneFocusState;
+  shotIntent?: SceneShotIntent;
 };
 
 export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
@@ -71,6 +73,8 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
     visualTags.push(`focus:${focusLabelRaw}`);
   }
 
+  const shotIntent = input.shotIntent ?? "observe";
+
   const renderPrompt = buildRenderScenePrompt({
     basePrompt,
     stylePreset,
@@ -82,6 +86,7 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
       `angle ${framing.cameraAngle}`,
       `subject ${subjectText}`,
       actorLabel ? `actor ${actorLabel}` : null,
+      `intent ${shotIntent}`,
     ]
       .filter(Boolean)
       .map((tag) => tag.replace(":", " ")),
@@ -102,6 +107,7 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   if (actor.actorVisible && actor.primaryActorLabel) {
     visualTags.push(`actor-label:${actor.primaryActorLabel}`);
   }
+  visualTags.push(`intent:${shotIntent}`);
   const tags = Array.from(new Set([...majorTags, ...visualTags]));
 
   return {

@@ -13,6 +13,7 @@ import { resolveSceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision
 import { resolveSceneRefreshDecision, type SceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { resolveSceneTransition } from "@/lib/resolveSceneTransition";
 import { resolveSceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
+import { resolveSceneShotIntent, type SceneShotIntent } from "@/lib/resolveSceneShotIntent";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -54,6 +55,7 @@ export type ResolveTurnSceneArtPresentationResult = {
   transitionMemory: SceneTransitionMemory;
   sceneArtResult: SceneArtRow | null;
   shouldCreateSceneArt: boolean;
+  shotIntent: SceneShotIntent | null;
 };
 
 export function resolveTurnSceneArtPresentation(
@@ -69,11 +71,6 @@ export function resolveTurnSceneArtPresentation(
     previousSceneKey,
     pressureStage,
   } = args;
-
-  const canonicalPayload = buildCanonicalSceneArtPayload({
-    turn,
-    state: args.state,
-  });
 
   const transitionMemory = resolveSceneTransitionMemory({
     previousMemory: previousTransitionMemory,
@@ -119,6 +116,23 @@ export function resolveTurnSceneArtPresentation(
     directorDecision,
   });
 
+  const shotIntent = resolveSceneShotIntent({
+    pressureStage: pressureStage ?? resolvedSceneState.visualState.pressureStage,
+    focusState: resolvedSceneState.focusState,
+    subjectState: resolvedSceneState.subjectState,
+    actorState: resolvedSceneState.actorState,
+    framingState: resolvedSceneState.framingState,
+    directorDecision,
+    sceneTransition,
+    transitionMemory,
+  });
+
+  const canonicalPayload = buildCanonicalSceneArtPayload({
+    turn,
+    state: args.state,
+    shotIntent,
+  });
+
   const refreshDecision = canonicalPayload
     ? resolveSceneRefreshDecision({
         transitionType: sceneTransition.type,
@@ -128,7 +142,7 @@ export function resolveTurnSceneArtPresentation(
         previousReady: previousSceneArtForPreviousKey?.status === "ready",
         transitionMemory,
       })
-    : null;
+      : null;
 
   const shouldCreateSceneArt = Boolean(refreshDecision?.shouldQueueRender && !previousSceneArt);
   let sceneArtResult: SceneArtRow | null = previousSceneArt
@@ -148,5 +162,6 @@ export function resolveTurnSceneArtPresentation(
     transitionMemory,
     sceneArtResult,
     shouldCreateSceneArt,
+    shotIntent,
   };
 }
