@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveSceneRefreshDecision } from "./resolveSceneRefreshDecision";
+import type { SceneTransitionMemory } from "./resolveSceneTransitionMemory";
 
 describe("resolveSceneRefreshDecision", () => {
   it("does not queue renders when hold keeps the same key", () => {
@@ -56,5 +57,24 @@ describe("resolveSceneRefreshDecision", () => {
       shouldReuseCurrentImage: false,
       shouldSwapImmediatelyWhenReady: true,
     });
+  });
+
+  it("prefers reuse when transition memory preserves everything", () => {
+    const memory: SceneTransitionMemory = {
+      preserveFraming: true,
+      preserveSubject: true,
+      preserveActor: true,
+      preserveFocus: true,
+    };
+    const decision = resolveSceneRefreshDecision({
+      transitionType: "cut",
+      currentSceneKey: "key-b",
+      previousSceneKey: "key-a",
+      currentReady: true,
+      previousReady: true,
+      transitionMemory: memory,
+    });
+    expect(decision.shouldQueueRender).toBe(false);
+    expect(decision.shouldReuseCurrentImage).toBe(true);
   });
 });

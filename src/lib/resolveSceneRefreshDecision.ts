@@ -1,3 +1,5 @@
+import type { SceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
+
 export type SceneRefreshDecision = {
   shouldQueueRender: boolean;
   shouldReuseCurrentImage: boolean;
@@ -10,6 +12,7 @@ export type ResolveSceneRefreshDecisionArgs = {
   previousSceneKey: string | null;
   currentReady: boolean;
   previousReady: boolean;
+  transitionMemory?: SceneTransitionMemory | null;
 };
 
 export function resolveSceneRefreshDecision(
@@ -17,6 +20,21 @@ export function resolveSceneRefreshDecision(
 ): SceneRefreshDecision {
   const type = args.transitionType ?? "cut";
   const keysDiffer = args.currentSceneKey !== args.previousSceneKey;
+  const memory = args.transitionMemory ?? null;
+  const fullyPreserved =
+    memory &&
+    memory.preserveFraming &&
+    memory.preserveSubject &&
+    memory.preserveActor &&
+    memory.preserveFocus;
+
+  if (fullyPreserved) {
+    return {
+      shouldQueueRender: false,
+      shouldReuseCurrentImage: true,
+      shouldSwapImmediatelyWhenReady: false,
+    };
+  }
 
   switch (type) {
     case "hold":

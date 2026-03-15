@@ -29,11 +29,13 @@ import { diffSceneVisualState, resolveSceneVisualState } from "@/lib/resolveScen
 import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
+import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import { findSceneArt, queueSceneArt } from "@/lib/sceneArtRepo";
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 import { SceneTransition, resolveSceneTransition } from "@/lib/resolveSceneTransition";
+import { resolveSceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
 import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 
 type PostBody = {
@@ -533,6 +535,12 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       state: stateRecord,
       subject: nextSubjectState,
     });
+    const nextFocusState = resolveSceneFocusState({
+      state: stateRecord,
+      framing: nextFramingState,
+      subject: nextSubjectState,
+      actor: nextActorState,
+    });
     const previousFramingState = previousTurn && previousVisualState
       ? resolveSceneFramingState({
           turn: previousTurn,
@@ -550,6 +558,14 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       ? resolveSceneActorState({
           state: previousStateRecord,
           subject: previousSubjectState,
+        })
+      : null;
+    const previousFocusState = previousActorState
+      ? resolveSceneFocusState({
+          state: previousStateRecord,
+          framing: previousFramingState!,
+          subject: previousSubjectState!,
+          actor: previousActorState,
         })
       : null;
     const previousComposition =
@@ -570,9 +586,20 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       subject: nextSubjectState,
       actor: nextActorState,
     };
+    const transitionMemory = resolveSceneTransitionMemory({
+      previousFraming: previousFramingState,
+      previousSubject: previousSubjectState,
+      previousActor: previousActorState,
+      previousFocus: previousFocusState,
+      currentFraming: nextFramingState,
+      currentSubject: nextSubjectState,
+      currentActor: nextActorState,
+      currentFocus: nextFocusState,
+    });
     const sceneTransition = resolveSceneTransition({
       previous: previousComposition,
       next: nextComposition,
+      memory: transitionMemory,
     });
     const previousSceneArtPayload =
       previousTurn && previousStateRecord
@@ -624,6 +651,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         previousSceneKey: previousSceneArtPayload?.sceneKey ?? null,
         currentReady: existingSceneArt?.status === "ready",
         previousReady: existingPreviousSceneArt?.status === "ready",
+        transitionMemory,
       });
 
       console.log("sceneArt refresh decision", {

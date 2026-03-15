@@ -2,6 +2,7 @@ import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
+import type { SceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
 
 export type SceneComposition = {
   visual: SceneVisualState;
@@ -57,8 +58,10 @@ function equalsFraming(a: SceneFramingState, b: SceneFramingState) {
 export function resolveSceneTransition(args: {
   previous: SceneComposition | null;
   next: SceneComposition;
+  memory?: SceneTransitionMemory | null;
 }): SceneTransition {
   const { previous, next } = args;
+  const memory = args.memory ?? null;
   if (!previous) {
     return { type: "cut", preserveFraming: false, preserveSubject: false, preserveActor: false };
   }
@@ -68,18 +71,23 @@ export function resolveSceneTransition(args: {
   const sameVisual = equalsVisual(previous.visual, next.visual);
   const sameFraming = equalsFraming(previous.framing, next.framing);
 
-  if (!sameSubject || !sameActor) {
-    return { type: "cut", preserveFraming: false, preserveSubject: false, preserveActor: false };
+  const preserveFraming = memory?.preserveFraming ?? sameFraming;
+  const preserveSubject = memory?.preserveSubject ?? sameSubject;
+  const preserveActor = memory?.preserveActor ?? sameActor;
+  const preserveFocus = memory?.preserveFocus ?? true;
+
+  if (!preserveSubject || !preserveActor) {
+    return { type: "cut", preserveFraming, preserveSubject, preserveActor };
   }
 
-  if (sameVisual && sameFraming) {
-    return { type: "hold", preserveFraming: true, preserveSubject: true, preserveActor: true };
+  if (preserveFraming && preserveFocus) {
+    return { type: "hold", preserveFraming, preserveSubject, preserveActor };
   }
 
   return {
     type: "advance",
-    preserveFraming: sameFraming,
-    preserveSubject: true,
-    preserveActor: true,
+    preserveFraming,
+    preserveSubject,
+    preserveActor,
   };
 }
