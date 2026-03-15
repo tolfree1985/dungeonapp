@@ -14,6 +14,7 @@ import { resolveSceneRefreshDecision, type SceneRefreshDecision } from "@/lib/re
 import { resolveSceneTransition } from "@/lib/resolveSceneTransition";
 import { resolveSceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
 import { resolveSceneShotIntent, type SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import { resolveSceneShotGrammar, type SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -56,6 +57,7 @@ export type ResolveTurnSceneArtPresentationResult = {
   sceneArtResult: SceneArtRow | null;
   shouldCreateSceneArt: boolean;
   shotIntent: SceneShotIntent | null;
+  shotGrammar: SceneShotGrammar | null;
 };
 
 export function resolveTurnSceneArtPresentation(
@@ -126,6 +128,15 @@ export function resolveTurnSceneArtPresentation(
     sceneTransition,
     transitionMemory,
   });
+  const shotGrammar = resolveSceneShotGrammar({
+    shotIntent,
+    directorDecision,
+    framingState: resolvedSceneState.framingState,
+    focusState: resolvedSceneState.focusState,
+    subjectState: resolvedSceneState.subjectState,
+    actorState: resolvedSceneState.actorState,
+    sceneTransition,
+  });
 
   const canonicalPayload = buildCanonicalSceneArtPayload({
     turn,
@@ -163,5 +174,6 @@ export function resolveTurnSceneArtPresentation(
     sceneArtResult,
     shouldCreateSceneArt,
     shotIntent,
+    shotGrammar,
   };
 }
