@@ -469,6 +469,11 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     const previousVisualState = previousStateRecord
       ? resolveSceneVisualState(previousStateRecord)
       : null;
+    const previousComposition = previousVisualState
+      ? {
+          visual: previousVisualState,
+        }
+      : null;
     let preflight;
     try {
       preflight = await db.$transaction((tx) =>
@@ -622,66 +627,11 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       subject: nextSubjectState,
       actor: nextActorState,
     });
-    const previousFramingState = previousTurn && previousVisualState
-      ? resolveSceneFramingState({
-          turn: previousTurn,
-          visual: previousVisualState,
-          locationChanged: false,
-        })
-      : null;
-    const previousSubjectState = previousFramingState
-      ? resolveSceneSubjectState({
-          state: previousStateRecord,
-          framing: previousFramingState,
-        })
-      : null;
-    const previousActorState = previousSubjectState
-      ? resolveSceneActorState({
-          state: previousStateRecord,
-          subject: previousSubjectState,
-        })
-      : null;
-    const previousFocusState = previousActorState
-      ? resolveSceneFocusState({
-          state: previousStateRecord,
-          framing: previousFramingState!,
-          subject: previousSubjectState!,
-          actor: previousActorState,
-        })
-      : null;
-    const previousSceneState =
-      previousFramingState &&
-      previousSubjectState &&
-      previousActorState &&
-      previousFocusState
-        ? {
-            framing: previousFramingState,
-            subject: previousSubjectState,
-            actor: previousActorState,
-            focus: previousFocusState,
-          }
-        : null;
-    const previousComposition =
-      previousVisualState && previousSceneState
-        ? {
-            visual: previousVisualState,
-            framing: previousSceneState.framing,
-            subject: previousSceneState.subject,
-            actor: previousSceneState.actor,
-            focus: previousSceneState.focus,
-          }
-        : null;
     const sceneArtPayload = buildCanonicalSceneArtPayload({
       turn: latestTurn,
       state: stateRecord,
     });
     const existingSceneArt = sceneArtPayload ? await findSceneArt(sceneArtPayload.sceneKey) : null;
-    const existingPreviousSceneArt =
-      previousSceneArtPayload && sceneArtPayload && previousSceneArtPayload.sceneKey !== sceneArtPayload.sceneKey
-        ? await findSceneArt(previousSceneArtPayload.sceneKey)
-        : previousSceneArtPayload
-        ? existingSceneArt
-        : null;
     const basePresentation = sceneArtPayload
       ? resolveTurnSceneArtPresentation({
           turn: latestTurn,
@@ -693,11 +643,11 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             actorState: nextActorState,
             focusState: nextFocusState,
           },
-          previousSceneComposition,
+          previousSceneComposition: null,
           previousSceneArt: existingSceneArt,
-          previousSceneArtForPreviousKey: existingPreviousSceneArt,
+          previousSceneArtForPreviousKey: null,
           previousTransitionMemory,
-          previousSceneKey: previousSceneArtPayload?.sceneKey ?? null,
+          previousSceneKey: null,
           pressureStage: nextVisualState.pressureStage ?? null,
           modelStatus: "ok",
         })
@@ -741,11 +691,11 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             actorState: nextActorState,
             focusState: tightenedFocusState,
           },
-          previousSceneComposition,
+          previousSceneComposition: null,
           previousSceneArt: existingSceneArt,
-          previousSceneArtForPreviousKey: existingPreviousSceneArt,
+          previousSceneArtForPreviousKey: null,
           previousTransitionMemory,
-          previousSceneKey: previousSceneArtPayload?.sceneKey ?? null,
+          previousSceneKey: null,
           pressureStage: nextVisualState.pressureStage ?? null,
           modelStatus: "ok",
         });
