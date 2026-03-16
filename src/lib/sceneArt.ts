@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { SceneArtStatus } from "@/lib/sceneArtStatus";
 
 export const DEFAULT_STYLE_PRESET = "victorian-gothic-cinematic" as const;
 
@@ -32,6 +33,8 @@ export type ResolvedSceneImage = {
   imageUrl: string | null;
   source: "scene" | "previous" | "location" | "default";
   pending: boolean;
+  sceneKey: string | null;
+  status: SceneArtStatus | null;
 };
 
 function normalizeToken(value: string): string {
@@ -98,17 +101,21 @@ export function buildRenderScenePrompt(input: {
 }
 
 export function resolveDisplayedSceneImage(input: {
+  sceneKey: string | null;
   currentSceneImageUrl: string | null;
   currentScenePending: boolean;
   previousSceneImageUrl: string | null;
   locationBackdropUrl: string | null;
   defaultImageUrl: string;
+  sceneStatus: SceneArtStatus | null;
 }): ResolvedSceneImage {
   if (input.currentSceneImageUrl) {
     return {
       imageUrl: input.currentSceneImageUrl,
       source: "scene",
       pending: false,
+      sceneKey: input.sceneKey,
+      status: "ready",
     };
   }
 
@@ -117,6 +124,8 @@ export function resolveDisplayedSceneImage(input: {
       imageUrl: input.previousSceneImageUrl,
       source: "previous",
       pending: input.currentScenePending,
+      sceneKey: input.sceneKey,
+      status: input.sceneStatus,
     };
   }
 
@@ -125,6 +134,8 @@ export function resolveDisplayedSceneImage(input: {
       imageUrl: input.locationBackdropUrl,
       source: "location",
       pending: input.currentScenePending,
+      sceneKey: input.sceneKey,
+      status: input.sceneStatus,
     };
   }
 
@@ -132,5 +143,7 @@ export function resolveDisplayedSceneImage(input: {
     imageUrl: input.defaultImageUrl,
     source: "default",
     pending: input.currentScenePending,
+    sceneKey: input.sceneKey,
+    status: input.sceneStatus,
   };
 }

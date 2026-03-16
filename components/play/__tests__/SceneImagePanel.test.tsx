@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, afterEach } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
 import { SceneImagePanel } from "@/components/play/SceneImagePanel";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
 
@@ -10,9 +10,12 @@ const baseImage: ResolvedSceneImage = {
   imageUrl: "/default.png",
   source: "default",
   pending: false,
+  sceneKey: null,
+  status: null,
 };
 
 describe("SceneImagePanel", () => {
+  afterEach(() => cleanup());
   it("renders the supplied transition cue", () => {
     render(<SceneImagePanel {...baseImage} transitionCue="Focus Shift" />);
     expect(screen.getByText("Focus Shift")).toBeTruthy();
@@ -21,5 +24,30 @@ describe("SceneImagePanel", () => {
   it("hides the cue when none is provided", () => {
     render(<SceneImagePanel {...baseImage} />);
     expect(screen.queryByText("Camera Push-In")).toBeNull();
+  });
+
+  it("renders the pending placeholder when a render is queued", () => {
+    render(<SceneImagePanel {...baseImage} pending status="queued" />);
+    expect(screen.getByText("Rendering scene...")).toBeTruthy();
+    expect(screen.queryByText("Using fallback scene")).toBeNull();
+  });
+
+  it("renders fallback messaging for the default source", () => {
+    render(
+      <SceneImagePanel
+        {...baseImage}
+        imageUrl={null}
+        pending={false}
+        source="default"
+        status={null}
+      />
+    );
+    expect(screen.getByText("Default Chronicle Scene")).toBeTruthy();
+    expect(screen.getByText("Using fallback scene")).toBeTruthy();
+  });
+
+  it("renders the image when imageUrl is present", () => {
+    render(<SceneImagePanel {...baseImage} imageUrl="/scene.png" source="scene" status="ready" />);
+    expect(screen.getByRole("img").getAttribute("src")).toBe("/scene.png");
   });
 });

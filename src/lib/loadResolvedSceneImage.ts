@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { resolveDisplayedSceneImage } from "@/lib/sceneArt";
+import type { SceneArtStatus } from "@/lib/sceneArtStatus";
 import type { SceneArt } from "@prisma/client";
 
 export type ResolvedSceneImageResult = {
@@ -46,6 +47,8 @@ export async function loadResolvedSceneImage({
         imageUrl: currentScene.imageUrl,
         source: "scene",
         pending: false,
+        sceneKey,
+        status: "ready",
       },
       currentScene,
       previousScene,
@@ -58,6 +61,8 @@ export async function loadResolvedSceneImage({
         imageUrl: previousScene.imageUrl,
         source: "scene",
         pending: currentScene?.status === "queued",
+        sceneKey,
+        status: "ready",
       },
       currentScene,
       previousScene,
@@ -66,6 +71,8 @@ export async function loadResolvedSceneImage({
 
   return {
     image: resolveDisplayedSceneImage({
+      sceneStatus: (currentScene?.status as SceneArtStatus) ?? null,
+      sceneKey,
       currentSceneImageUrl: null,
       currentScenePending: !!currentScene && currentScene.status === "queued",
       previousSceneImageUrl: null,

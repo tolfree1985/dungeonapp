@@ -43,6 +43,7 @@ export function SceneImagePanel({
   imageUrl,
   source,
   pending,
+  status,
   caption,
   transition,
   continuity,
@@ -85,6 +86,26 @@ export function SceneImagePanel({
         return "Default Backdrop";
     }
   };
+  const renderStateBadge =
+    status === "failed"
+      ? "Render failed"
+      : pending
+        ? "Rendering scene..."
+        : finalSource === "scene"
+          ? null
+          : finalSource === "previous"
+            ? "Using previous scene"
+            : finalSource === "location"
+              ? "Using location backdrop"
+              : "Using fallback scene";
+  const placeholderLabel =
+    status === "failed"
+      ? "Render failed"
+      : pending
+        ? "Rendering scene..."
+        : finalSource === "default"
+          ? "Default Chronicle Scene"
+          : "No scene image available";
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
@@ -93,7 +114,7 @@ export function SceneImagePanel({
           <img src={finalImageUrl} alt={sourceLabel()} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.35em] text-stone-500">
-            No scene image available
+            {placeholderLabel}
           </div>
         )}
         <div className="absolute -top-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1 text-[10px] uppercase tracking-[0.3em]">
@@ -106,11 +127,11 @@ export function SceneImagePanel({
         </div>
         <div className="absolute -top-2 left-2 flex gap-2 text-[10px] uppercase tracking-[0.3em]">
           <span className="rounded-md border border-white/15 bg-black/50 px-2 py-1 text-stone-200">{sourceLabel()}</span>
-          {pending && (
+          {renderStateBadge ? (
             <span className="rounded-md border border-amber-500/40 bg-amber-950/70 px-2 py-1 text-amber-200">
-              updating
+              {renderStateBadge}
             </span>
-          )}
+          ) : null}
         </div>
         {transition && (
           <div className="absolute -top-2 right-2 flex gap-2 text-[10px] uppercase tracking-[0.3em]">

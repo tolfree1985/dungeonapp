@@ -32,6 +32,7 @@ import { resolveSceneContinuityState } from "@/lib/sceneContinuity";
 import TurnInput from "@/components/play/TurnInput";
 import { ScenePresentationDebugCard } from "@/components/play/ScenePresentationDebugCard";
 import type { ScenePresentation } from "@/lib/resolveTurnSceneArtPresentation";
+import type { SceneArtStatus, SceneArtStatusResponse } from "@/lib/sceneArtStatus";
 import type { TurnApiResponse, TurnInputPayload } from "@/lib/turnApi";
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
@@ -320,6 +321,9 @@ export default function PlayClient({
   useEffect(() => {
     setLiveScenePresentation(scenePresentation ?? null);
   }, [scenePresentation]);
+  useEffect(() => {
+    setLiveSceneArt(sceneImage ?? null);
+  }, [sceneImage]);
   const currentId = adventureId;
   const sortHistory = (entries: HistoryEntry[]) =>
     [...entries].sort((a, b) => {
@@ -340,24 +344,133 @@ export default function PlayClient({
     window.sessionStorage.removeItem(SCENE_TRANSITION_KEY);
   }, []);
   useEffect(() => {
-    if (sceneImage?.source === "scene" && sceneImage.imageUrl) {
-      previousSceneImageUrlRef.current = sceneImage.imageUrl;
+    if (liveSceneArt?.source === "scene" && liveSceneArt.imageUrl) {
+      previousSceneImageUrlRef.current = liveSceneArt.imageUrl;
     }
-  }, [sceneImage?.source, sceneImage?.imageUrl]);
+  }, [liveSceneArt?.source, liveSceneArt?.imageUrl]);
 
   const continuityState = useMemo(
     () =>
       resolveSceneContinuityState({
         refreshDecision: sceneRefreshDecision ?? null,
         transition: liveSceneTransition,
-        currentImageUrl: sceneImage?.imageUrl ?? null,
+        currentImageUrl: liveSceneArt?.imageUrl ?? null,
         previousImageUrl: previousSceneImageUrlRef.current,
-        isPending: Boolean(sceneImage?.pending),
+        isPending: Boolean(liveSceneArt?.pending),
       }),
-    [sceneRefreshDecision, liveSceneTransition, sceneImage?.imageUrl, sceneImage?.pending]
+    [sceneRefreshDecision, liveSceneTransition, liveSceneArt?.imageUrl, liveSceneArt?.pending]
   );
   const displayedSceneImageCaption = sceneImageCaption && continuityState.shouldShowCaption ? sceneImageCaption : null;
   const sceneTransitionCue = useMemo(() => deriveSceneTransitionCue(liveSceneTransition), [liveSceneTransition]);
+  const pollingStatusRef = useRef<SceneArtStatus | "missing" | null>(null);
+  useEffect(() => {
+    const sceneKey = liveSceneArt?.sceneKey;
+    const currentStatus = liveSceneArt?.status ?? null;
+    if (!sceneKey || currentStatus !== "queued") {
+      pollingStatusRef.current = currentStatus;
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const fallbackImageUrl = liveSceneArt?.imageUrl ?? null;
+    const fallbackSource = liveSceneArt?.source === "scene" ? "default" : liveSceneArt?.source ?? "default";
+
+    pollingStatusRef.current = "queued";
+
+    const stopPolling = () => {
+      cancelled = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const reportTransition = (nextStatus: SceneArtStatus | "missing") => {
+      const prevStatus = pollingStatusRef.current;
+      if (prevStatus === "queued" && nextStatus !== "queued") {
+        const label = nextStatus === "ready" ? "ready" : nextStatus === "failed" ? "failed" : "missing";
+        console.info(`[scene-art] ${sceneKey} queued -> ${label}`);
+      }
+      pollingStatusRef.current = nextStatus;
+    };
+
+    const handleFailure = (nextStatus: SceneArtStatus | "missing") => {
+      setLiveSceneArt({
+        imageUrl: fallbackImageUrl,
+        source: fallbackSource,
+        pending: false,
+        sceneKey,
+        status: nextStatus === "missing" ? "failed" : nextStatus,
+      });
+      reportTransition(nextStatus);
+      stopPolling();
+    };
+
+    const pollSceneArt = async () => {
+      try {
+        const response = await fetch(`/api/scene-art?sceneKey=${encodeURIComponent(sceneKey)}`);
+        if (cancelled) return;
+        if (!response.ok) {
+          handleFailure("missing");
+          return;
+        }
+        const payload = (await response.json()) as SceneArtStatusResponse;
+        if (cancelled) return;
+        const sceneArt = payload.sceneArt;
+        if (!sceneArt) {
+          handleFailure("missing");
+          return;
+        }
+        if (sceneArt.sceneKey !== sceneKey) {
+          stopPolling();
+          return;
+        }
+
+        const nextStatus = sceneArt.status;
+        if (nextStatus !== "queued") {
+          setLiveSceneArt({
+            imageUrl: nextStatus === "ready" ? sceneArt.imageUrl : fallbackImageUrl,
+            source: nextStatus === "ready" ? "scene" : fallbackSource,
+            pending: false,
+            sceneKey,
+            status: nextStatus,
+          });
+          reportTransition(nextStatus);
+          stopPolling();
+          return;
+        }
+
+        setLiveSceneArt((prev) => {
+          if (cancelled) return prev;
+          if (
+            prev?.imageUrl === sceneArt.imageUrl &&
+            prev?.pending &&
+            prev?.status === "queued" &&
+            prev?.sceneKey === sceneKey
+          ) {
+            return prev;
+          }
+          return {
+            imageUrl: sceneArt.imageUrl ?? fallbackImageUrl,
+            source: "scene",
+            pending: true,
+            sceneKey,
+            status: "queued",
+          };
+        });
+        pollingStatusRef.current = "queued";
+      } catch {
+        if (!cancelled) {
+          handleFailure("missing");
+        }
+      }
+    };
+
+    pollSceneArt();
+    intervalId = setInterval(pollSceneArt, 3000);
+    return () => stopPolling();
+  }, [liveSceneArt?.sceneKey, liveSceneArt?.status]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(HISTORY_KEY);
@@ -447,6 +560,8 @@ export default function PlayClient({
           imageUrl: result.sceneArt.imageUrl,
           source: "scene",
           pending: result.sceneArt.status !== "ready",
+          sceneKey: result.sceneArt.sceneKey,
+          status: result.sceneArt.status,
         });
       }
 
@@ -792,12 +907,14 @@ export default function PlayClient({
                 />
               </div>
               <div className="mt-4">
-                <SceneImagePanel
-                  {...
-                    sceneImage ?? {
+              <SceneImagePanel
+                {...
+                    liveSceneArt ?? {
                       imageUrl: "/default-scene.svg",
                       source: "default",
                       pending: false,
+                      sceneKey: null,
+                      status: null,
                     }
                   }
                   caption={displayedSceneImageCaption ?? undefined}
