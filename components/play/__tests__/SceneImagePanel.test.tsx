@@ -11,7 +11,7 @@ const baseImage: ResolvedSceneImage = {
   source: "default",
   pending: false,
   sceneKey: null,
-  status: null,
+  status: "missing",
 };
 
 describe("SceneImagePanel", () => {
@@ -28,8 +28,11 @@ describe("SceneImagePanel", () => {
 
   it("renders the pending placeholder when a render is queued", () => {
     render(<SceneImagePanel {...baseImage} pending status="queued" />);
-    expect(screen.getByText("Rendering scene...")).toBeTruthy();
+    const placeholder = screen.getByText("Rendering scene...", { selector: ".scene-placeholder" });
+    expect(placeholder).toBeTruthy();
     expect(screen.queryByText("Using fallback scene")).toBeNull();
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(placeholder.className).toContain("scene-placeholder");
   });
 
   it("renders fallback messaging for the default source", () => {
@@ -39,7 +42,7 @@ describe("SceneImagePanel", () => {
         imageUrl={null}
         pending={false}
         source="default"
-        status={null}
+        status="missing"
       />
     );
     expect(screen.getByText("Default Chronicle Scene")).toBeTruthy();

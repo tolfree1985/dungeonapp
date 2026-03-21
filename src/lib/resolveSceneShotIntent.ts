@@ -2,11 +2,8 @@ import type { SceneActorState } from "@/lib/resolveSceneActorState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
-import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
-import type { SceneTransitionMemory } from "@/lib/sceneTypes";
-
-export type SceneShotIntent = "observe" | "inspect" | "threaten" | "reveal" | "isolate";
+import type { SceneShotIntent, SceneTransitionMemory } from "@/lib/sceneTypes";
 
 type ResolveSceneShotIntentArgs = {
   pressureStage?: string | null;
@@ -14,7 +11,6 @@ type ResolveSceneShotIntentArgs = {
   subjectState: SceneSubjectState;
   actorState: SceneActorState;
   framingState: SceneFramingState;
-  directorDecision: SceneDirectorDecision | null;
   sceneTransition: SceneTransition | null;
   transitionMemory?: SceneTransitionMemory | null;
 };

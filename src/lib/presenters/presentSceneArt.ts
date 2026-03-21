@@ -1,11 +1,13 @@
 import type { PlayTurn } from "@/app/play/types";
 import {
   DEFAULT_STYLE_PRESET,
+  STYLE_PRESETS,
   buildBaseScenePrompt,
   buildRenderScenePrompt,
   buildSceneKey,
+  type CanonicalSceneIdentity,
+  type CanonicalScenePromptMetadata,
   type SceneArtPayload,
-  type STYLE_PRESETS,
 } from "@/lib/sceneArt";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
@@ -13,7 +15,8 @@ import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
 import type { ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
-import type { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import type { SceneShotIntent } from "@/lib/sceneTypes";
+import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
 
 export type PresentSceneArtInput = {
   title?: string;
@@ -31,6 +34,7 @@ export type PresentSceneArtInput = {
   scenePromptFraming?: ScenePromptFraming | null;
   motifTags?: string[];
   revealStructureTags?: string[];
+  directorDecision?: SceneDirectorDecision | null;
 };
 
 export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
@@ -66,17 +70,27 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const locationId = input.visualState.locationId;
   const pressureStage = input.visualState.pressureStage;
   const timeText = input.visualState.timeValue;
-  const timeBucket = input.visualState.timeValue;
   const framing = input.framingState;
   const subject = input.subjectState;
 
-  const sceneKey = buildSceneKey({
-    locationId,
-    timeBucket,
-    pressureStage,
-    npcState,
-    majorTags,
-  });
+  const actor = input.actorState;
+  const identity: CanonicalSceneIdentity = {
+    locationId: locationId ?? null,
+    pressureStage: pressureStage ?? null,
+    lightingState: input.visualState.lightingState ?? null,
+    atmosphereState: input.visualState.atmosphereState ?? null,
+    environmentWear: input.visualState.environmentWear ?? null,
+    threatPresence: input.visualState.threatPresence ?? null,
+    frameKind: framing.frameKind ?? null,
+    shotScale: framing.shotScale ?? null,
+    subjectFocus: framing.subjectFocus ?? null,
+    cameraAngle: framing.cameraAngle ?? null,
+    primarySubjectKind: subject.primarySubjectKind ?? null,
+    primarySubjectId: subject.primarySubjectId ?? null,
+    actorVisible: actor.actorVisible,
+    primaryActorId: actor.primaryActorId ?? null,
+  };
+  const sceneKey = buildSceneKey(identity);
 
   const basePrompt = buildBaseScenePrompt({
     locationText: locationId,
@@ -89,38 +103,49 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   const subjectText = subject.primarySubjectLabel
     ? `${subject.primarySubjectKind} ${subject.primarySubjectLabel}`
     : subject.primarySubjectKind;
-  const actor = input.actorState;
   const actorLabel = actor.actorVisible && actor.primaryActorLabel ? actor.primaryActorLabel : null;
   if (focusLabelRaw) {
     visualTags.push(`focus:${focusLabelRaw}`);
   }
 
   const shotIntent = input.shotIntent ?? "observe";
+  const focusLabel = focusLabelRaw ?? focusState.focusType;
+  const cameraGrammarParts = [
+    `camera ${framing.frameKind}`,
+    `shot ${framing.shotScale}`,
+    focusLabel ? `focus ${focusLabel}` : null,
+    `angle ${framing.cameraAngle}`,
+    `intent ${shotIntent}`,
+  ].filter(Boolean);
 
-  const renderPrompt = buildRenderScenePrompt({
-    basePrompt,
-    stylePreset,
-    appearanceCues: [
-      ...visualTags,
-      ...promptCompositionNotes,
-      `framing ${framing.frameKind}`,
-      `shot ${framing.shotScale}`,
-      `focus ${focusLabelRaw ?? focusState.focusType}`,
-      `angle ${framing.cameraAngle}`,
-      `subject ${subjectText}`,
-      actorLabel ? `actor ${actorLabel}` : null,
-      `intent ${shotIntent}`,
-    ]
-      .filter(Boolean)
-      .map((tag) => tag.replace(":", " ")),
-  });
+  const environmentDetails = [
+    `wear ${input.visualState.environmentWear}`,
+    `threat ${input.visualState.threatPresence}`,
+    ...majorTags,
+    ...promptCompositionNotes,
+    ...(input.npcCues ?? []).map((cue) => `npc ${cue}`),
+    actorLabel ? `actor ${actorLabel}` : null,
+  ].filter(Boolean);
+
+  const renderPromptSegments = [
+    locationId,
+    `${timeText} ${pressureStage}`,
+    `subject ${subjectText}`,
+    cameraGrammarParts.join(", "),
+    `lighting ${input.visualState.lightingState}`,
+    `atmosphere ${input.visualState.atmosphereState}`,
+    environmentDetails.length ? `environment ${environmentDetails.join(", ")}` : null,
+    STYLE_PRESETS[stylePreset],
+  ];
+
+  const renderPrompt = buildRenderScenePrompt({ segments: renderPromptSegments });
 
   visualTags.push(`framing:${framing.frameKind}`);
   visualTags.push(`shot:${framing.shotScale}`);
   visualTags.push(`focus:${framing.subjectFocus}`);
   visualTags.push(`angle:${framing.cameraAngle}`);
   visualTags.push(`subject:${subject.primarySubjectKind}`);
-  visualTags.push(`focus-label:${focusLabelRaw ?? focusState.focusType}`);
+  visualTags.push(`focus-label:${focusLabel}`);
   if (subject.primarySubjectLabel) {
     visualTags.push(`subject-label:${subject.primarySubjectLabel}`);
   }
@@ -135,6 +160,15 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
 
   return {
     sceneKey,
+    identity,
+    promptMetadata: {
+      latestTurnScene: input.title ?? "",
+      timeValue: input.visualState.timeValue ?? null,
+      directorDecision: {
+        emphasis: input.directorDecision?.emphasis ?? null,
+        compositionBias: input.directorDecision?.compositionBias ?? null,
+      },
+    },
     title: input.title,
     basePrompt,
     renderPrompt,

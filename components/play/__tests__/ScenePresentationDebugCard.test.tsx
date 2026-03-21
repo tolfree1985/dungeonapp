@@ -33,6 +33,13 @@ describe("ScenePresentationDebugCard", () => {
         depth: "layered",
         density: "balanced",
       },
+      directorDecision: {
+        shotScale: "medium",
+        cameraAngle: "eye",
+        focusSubject: "environment",
+        compositionBias: "centered",
+        emphasis: "inspect",
+      },
     };
     const transition: SceneTransition = {
       type: "advance",
@@ -65,5 +72,9 @@ describe("ScenePresentationDebugCard", () => {
     expect(screen.getByText("Transition")).toBeTruthy();
     expect(screen.getByText("advance")).toBeTruthy();
     expect(screen.getByText("Cue: Focus Shift")).toBeTruthy();
+    expect(screen.getByText("Director")).toBeTruthy();
+    expect(screen.getByText("inspect · centered · environment")).toBeTruthy();
+    expect(screen.getByText("Camera")).toBeTruthy();
+    expect(screen.getByText("medium / eye")).toBeTruthy();
   });
 });

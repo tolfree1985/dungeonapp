@@ -1,3 +1,19 @@
+import type { FailForwardComplication } from "@/lib/fail-forward-complication";
+import type { FinalizedEffectSummary } from "@/lib/finalized-effects";
+import type { OpportunityWindowState } from "@/lib/opportunity-window";
+import type { OpportunityResolutionModifier } from "@/lib/opportunity-resolution-modifier";
+import type { WatchfulnessActionFlags } from "@/lib/watchfulness-action-flags";
+import type { PositionActionFlags } from "@/lib/position-action-flags";
+import type { NoiseActionFlags } from "@/lib/noise-action-flags";
+import type { ActionConstraints } from "@/lib/action-constraints";
+import type { OutcomeSeverity } from "@/server/scene/outcome-severity";
+import type { ConsequenceEntry } from "@/server/scene/consequence-bundle";
+import type { FinalizedConsequenceNarration } from "@/server/scene/finalized-consequence-narration";
+import type { LedgerPresentationEntry } from "@/server/scene/ledger-presentation";
+import type { TurnResolutionPresentation } from "@/server/scene/turn-resolution-presentation";
+
+export type PressureStage = "calm" | "tension" | "danger" | "crisis";
+
 export type PlayTurn = {
   id: string;
   turnIndex: number;
@@ -8,6 +24,47 @@ export type PlayTurn = {
   ledgerAdds: unknown[];
   createdAt: string;
   resolutionJson?: unknown;
+  failForwardComplication?: FailForwardComplication | null;
+  effectSummaries?: FinalizedEffectSummary[];
+  opportunityWindow?: OpportunityWindowState;
+  opportunityResolutionModifier?: OpportunityResolutionModifier | null;
+  opportunityCost?: string | null;
+  finalizedComplications?: string[];
+  complicationApplied?: boolean;
+  finalizedComplicationDeltas?: Record<string, number>;
+  complicationDeltaApplied?: boolean;
+  npcStance?: string | null;
+  watchfulness?: string | null;
+  watchfulnessCostDelta?: number | null;
+  watchfulnessEffect?: FinalizedEffectSummary | null;
+  watchfulnessActionFlags?: WatchfulnessActionFlags | null;
+  positionActionFlags?: PositionActionFlags | null;
+  noiseActionFlags?: NoiseActionFlags | null;
+  actionConstraints?: ActionConstraints | null;
+  constraintPressure?: number | null;
+  constraintPressureActive?: string[] | null;
+  actionRiskDelta?: number | null;
+  actionRiskTier?: "none" | "elevated" | "high" | null;
+  complicationWeightDelta?: number | null;
+  complicationTier?: "none" | "light" | "heavy" | null;
+  forcedComplicationCount?: number | null;
+  complicationPolicyApplied?: boolean | null;
+  outcomeSeverity?: OutcomeSeverity | null;
+  consequenceBudgetExtraCostCount?: number | null;
+  consequenceComplicationEntries?: ConsequenceEntry[];
+  consequenceExtraCostEntries?: ConsequenceEntry[];
+  consequenceNarration?: {
+    headline: string;
+    lines: string[];
+  };
+  presentation: PlayTurnPresentation;
+  pressureStage?: PressureStage | null;
+};
+
+export type PlayTurnPresentation = {
+  resolution: TurnResolutionPresentation | null;
+  narration: FinalizedConsequenceNarration | null;
+  ledgerEntries: LedgerPresentationEntry[];
 };
 
 export type PlayStateValue = string | number | boolean | null;

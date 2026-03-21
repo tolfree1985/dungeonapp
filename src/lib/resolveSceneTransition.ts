@@ -4,7 +4,7 @@ import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneTransitionMemory } from "./sceneTypes";
-import type { SceneDirectorDecision } from "./resolveSceneDirectorDecision";
+import type { SceneDirectorBehavior } from "./resolveSceneDirectorBehavior";
 
 export type SceneComposition = {
   visual: SceneVisualState;
@@ -14,7 +14,7 @@ export type SceneComposition = {
   focus: SceneFocusState;
 };
 
-type SceneTransitionType = "hold" | "advance" | "cut";
+type SceneTransitionType = "hold" | "advance" | "cut" | "reset";
 
 export type SceneTransition = {
   type: SceneTransitionType;
@@ -73,7 +73,7 @@ export function resolveSceneTransition(args: {
   previous: SceneComposition | null;
   next: SceneComposition;
   memory?: SceneTransitionMemory | null;
-  directorDecision?: SceneDirectorDecision | null;
+  directorDecision?: SceneDirectorBehavior | null;
 }): SceneTransition {
   const { previous, next } = args;
   const memory = args.memory ?? null;

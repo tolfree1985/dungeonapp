@@ -4,7 +4,6 @@ import type { SceneActorState } from "@/lib/resolveSceneActorState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
-import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
 
 const framingState: SceneFramingState = {
@@ -33,13 +32,6 @@ const actorState: SceneActorState = {
   actorVisible: false,
 };
 
-const directorDecision: SceneDirectorDecision = {
-  preferThreatFraming: false,
-  allowCut: true,
-  forceHold: false,
-  escalateCamera: false,
-};
-
 describe("resolveSceneShotIntent", () => {
   it("returns threaten when pressure is high and focus is threat", () => {
     const transition: SceneTransition = {
@@ -57,7 +49,6 @@ describe("resolveSceneShotIntent", () => {
       subjectState: { ...subjectState, primarySubjectKind: "threat" },
       actorState: { ...actorState, primaryActorRole: "threat" },
       framingState,
-      directorDecision,
       sceneTransition: transition,
     });
 
@@ -80,7 +71,6 @@ describe("resolveSceneShotIntent", () => {
       subjectState,
       actorState: { ...actorState, actorVisible: true, primaryActorRole: "guide" },
       framingState: { ...framingState, shotScale: "close" },
-      directorDecision,
       sceneTransition: transition,
     });
 
@@ -103,7 +93,6 @@ describe("resolveSceneShotIntent", () => {
       subjectState: { ...subjectState, primarySubjectKind: "detail" },
       actorState,
       framingState,
-      directorDecision,
       sceneTransition: transition,
     });
 
@@ -126,7 +115,6 @@ describe("resolveSceneShotIntent", () => {
       subjectState,
       actorState,
       framingState,
-      directorDecision,
       sceneTransition: transition,
     });
 
@@ -149,7 +137,6 @@ describe("resolveSceneShotIntent", () => {
       subjectState,
       actorState,
       framingState,
-      directorDecision,
       sceneTransition: transition,
     });
 

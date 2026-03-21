@@ -73,6 +73,9 @@ export function SceneImagePanel({
   const finalImageUrl = displayedImage.imageUrl;
   const finalSource = displayedImage.source;
   const focusLabel = focusState?.focusLabel ? `Focus: ${focusState.focusLabel}` : undefined;
+  const normalizedStatus = status ?? "missing";
+  const shouldHideImage = pending && !(continuity?.shouldReuseImage ?? false);
+  const renderImageUrl = shouldHideImage ? null : finalImageUrl;
 
   const sourceLabel = () => {
     switch (finalSource) {
@@ -87,7 +90,7 @@ export function SceneImagePanel({
     }
   };
   const renderStateBadge =
-    status === "failed"
+    normalizedStatus === "failed"
       ? "Render failed"
       : pending
         ? "Rendering scene..."
@@ -99,7 +102,7 @@ export function SceneImagePanel({
               ? "Using location backdrop"
               : "Using fallback scene";
   const placeholderLabel =
-    status === "failed"
+    normalizedStatus === "failed"
       ? "Render failed"
       : pending
         ? "Rendering scene..."
@@ -110,10 +113,10 @@ export function SceneImagePanel({
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
       <div className="relative aspect-[16/9] w-full bg-stone-900">
-        {finalImageUrl ? (
-          <img src={finalImageUrl} alt={sourceLabel()} className="h-full w-full object-cover" />
+        {renderImageUrl ? (
+          <img src={renderImageUrl} alt={sourceLabel()} className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.35em] text-stone-500">
+          <div className="scene-placeholder flex h-full items-center justify-center text-xs uppercase tracking-[0.35em] text-stone-500">
             {placeholderLabel}
           </div>
         )}

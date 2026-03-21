@@ -20,8 +20,39 @@ export const SCENE_ART_HIGH_VALUE_TAGS = [
   "search",
 ] as const;
 
+export type CanonicalSceneIdentity = {
+  locationId: string | null;
+  pressureStage: string | null;
+  lightingState: string | null;
+  atmosphereState: string | null;
+  environmentWear: string | null;
+  threatPresence: string | null;
+
+  frameKind: string | null;
+  shotScale: string | null;
+  subjectFocus: string | null;
+  cameraAngle: string | null;
+
+  primarySubjectKind: string | null;
+  primarySubjectId: string | null;
+
+  actorVisible: boolean;
+  primaryActorId: string | null;
+};
+
+export type CanonicalScenePromptMetadata = {
+  latestTurnScene: string;
+  timeValue: string | null;
+  directorDecision: {
+    emphasis: string | null;
+    compositionBias: string | null;
+  };
+};
+
 export type SceneArtPayload = {
   sceneKey: string;
+  identity: CanonicalSceneIdentity;
+  promptMetadata: CanonicalScenePromptMetadata;
   title?: string;
   basePrompt: string;
   renderPrompt: string;
@@ -34,7 +65,7 @@ export type ResolvedSceneImage = {
   source: "scene" | "previous" | "location" | "default";
   pending: boolean;
   sceneKey: string | null;
-  status: SceneArtStatus | null;
+  status: SceneArtStatus;
 };
 
 function normalizeToken(value: string): string {
@@ -45,24 +76,22 @@ function normalizeToken(value: string): string {
     .replace(/\s+/g, "-");
 }
 
-function normalizeList(values: string[], cap?: number): string[] {
-  const normalized = [...new Set(values.map(normalizeToken).filter(Boolean))].sort();
-  return typeof cap === "number" ? normalized.slice(0, cap) : normalized;
-}
-
-export function buildSceneKey(input: {
-  locationId: string;
-  timeBucket: string;
-  pressureStage: string;
-  npcState: string[];
-  majorTags: string[];
-}): string {
+export function buildSceneKey(identity: CanonicalSceneIdentity): string {
   const canonical = {
-    locationId: normalizeToken(input.locationId),
-    timeBucket: normalizeToken(input.timeBucket),
-    pressureStage: normalizeToken(input.pressureStage),
-    npcState: normalizeList(input.npcState),
-    majorTags: normalizeList(input.majorTags, 6),
+    locationId: normalizeToken(identity.locationId ?? ""),
+    pressureStage: normalizeToken(identity.pressureStage ?? ""),
+    lightingState: normalizeToken(identity.lightingState ?? ""),
+    atmosphereState: normalizeToken(identity.atmosphereState ?? ""),
+    environmentWear: normalizeToken(identity.environmentWear ?? ""),
+    threatPresence: normalizeToken(identity.threatPresence ?? ""),
+    frameKind: normalizeToken(identity.frameKind ?? ""),
+    shotScale: normalizeToken(identity.shotScale ?? ""),
+    subjectFocus: normalizeToken(identity.subjectFocus ?? ""),
+    cameraAngle: normalizeToken(identity.cameraAngle ?? ""),
+    primarySubjectKind: normalizeToken(identity.primarySubjectKind ?? ""),
+    primarySubjectId: normalizeToken(identity.primarySubjectId ?? ""),
+    actorVisible: identity.actorVisible ? "true" : "false",
+    primaryActorId: normalizeToken(identity.primaryActorId ?? ""),
   };
 
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
@@ -86,18 +115,8 @@ export function buildBaseScenePrompt(input: {
     .join(", ");
 }
 
-export function buildRenderScenePrompt(input: {
-  basePrompt: string;
-  stylePreset: keyof typeof STYLE_PRESETS;
-  appearanceCues?: string[];
-}): string {
-  return [
-    input.basePrompt,
-    ...(input.appearanceCues ?? []),
-    STYLE_PRESETS[input.stylePreset],
-  ]
-    .filter(Boolean)
-    .join(", ");
+export function buildRenderScenePrompt(input: { segments: Array<string | null | undefined> }): string {
+  return input.segments.filter(Boolean).join("\n");
 }
 
 export function resolveDisplayedSceneImage(input: {
@@ -107,7 +126,7 @@ export function resolveDisplayedSceneImage(input: {
   previousSceneImageUrl: string | null;
   locationBackdropUrl: string | null;
   defaultImageUrl: string;
-  sceneStatus: SceneArtStatus | null;
+  sceneStatus: SceneArtStatus;
 }): ResolvedSceneImage {
   if (input.currentSceneImageUrl) {
     return {

@@ -23,6 +23,7 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
   const revealStructureTags = presentation?.revealStructureTags ?? [];
   const spatialHierarchy = presentation?.spatialHierarchy;
   const compositionBias = presentation?.compositionBias;
+  const directorDecision = presentation?.directorDecision;
 
   return (
     <section className="rounded-2xl border border-white/5 bg-white/5 p-4 text-[11px] text-white/70">
@@ -39,6 +40,22 @@ export function ScenePresentationDebugCard({ presentation, transition, transitio
               {grammar ? `${grammar.emphasis} / ${grammar.compositionBias} / ${grammar.revealLevel}` : "—"}
             </span>
           </div>
+          {directorDecision ? (
+            <div className="flex items-center justify-between text-[11px] text-white/60">
+              <span>Director</span>
+              <span className="whitespace-nowrap font-semibold text-white">
+                {directorDecision.emphasis} · {directorDecision.compositionBias} · {directorDecision.focusSubject}
+              </span>
+            </div>
+          ) : null}
+          {directorDecision ? (
+            <div className="flex items-center justify-between text-[11px] text-white/60">
+              <span>Camera</span>
+              <span className="whitespace-nowrap font-semibold text-white">
+                {directorDecision.shotScale} / {directorDecision.cameraAngle}
+              </span>
+            </div>
+          ) : null}
           {motif ? (
             <div className="flex items-center justify-between text-[11px] text-white/60">
               <span>Motif</span>

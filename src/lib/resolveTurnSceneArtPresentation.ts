@@ -1,19 +1,21 @@
 import type { PlayTurn } from "@/app/play/types";
 import type { SceneArtPayload } from "@/lib/sceneArt";
 import type { SceneArtStatus } from "@/generated/prisma";
+import type { RenderMode } from "@/lib/sceneArtRepo";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
+import type { SceneDeltaKind } from "@/lib/resolveSceneDeltaKind";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
-import type { SceneTransitionMemory } from "@/lib/sceneTypes";
+import type { SceneCameraMemory, SceneShotIntent, SceneTransitionMemory } from "@/lib/sceneTypes";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
-import { resolveSceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
+import { resolveSceneDirectorBehavior } from "@/lib/resolveSceneDirectorBehavior";
 import { resolveSceneRefreshDecision, type SceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { resolveSceneTransition } from "@/lib/resolveSceneTransition";
 import { resolveSceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
-import { resolveSceneShotIntent, type SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import { resolveSceneShotIntent } from "@/lib/resolveSceneShotIntent";
 import { resolveSceneShotGrammar, type SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
 import { resolveScenePromptFraming, type ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
 import { resolveSceneMotif, buildMotifTags, type SceneMotif } from "@/lib/resolveSceneMotif";
@@ -22,6 +24,7 @@ import { resolveSceneSpatialHierarchy, type SceneSpatialHierarchy } from "@/lib/
 import { resolveSceneCompositionBias, type SceneCompositionBias } from "@/lib/resolveSceneCompositionBias";
 import { resolveSceneThreatFraming, buildThreatFramingTags, type SceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
 import { buildSceneCanonicalTags, DEFAULT_SCENE_CANONICAL_TAG_POLICY, type SceneCanonicalTagPolicy } from "@/lib/sceneCanonicalTagPolicy";
+import { resolveSceneDirectorDecision, type SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -32,9 +35,19 @@ type SceneComposition = {
 };
 
 export type SceneArtRow = {
+  id?: string;
   sceneKey: string;
   status: SceneArtStatus;
   imageUrl: string | null;
+  renderMode?: RenderMode;
+};
+
+export type PreviousSceneContinuity = {
+  sceneKey: string | null;
+  canonicalPayload: SceneArtPayload | null;
+  sceneArt: SceneArtRow | null;
+  sceneArtKeyMismatch?: boolean;
+  shotKey?: string | null;
 };
 
 export type ResolveTurnSceneArtPresentationArgs = {
@@ -49,13 +62,15 @@ export type ResolveTurnSceneArtPresentationArgs = {
   };
   previousSceneComposition: SceneComposition | null;
   previousSceneArt: SceneArtRow | null;
-  previousSceneArtForPreviousKey: SceneArtRow | null;
   previousTransitionMemory: SceneTransitionMemory | null;
-  previousSceneKey: string | null;
   pressureStage?: string | null;
   overrideMotif?: SceneMotif | null;
   tagPolicy?: SceneCanonicalTagPolicy;
   modelStatus: "ok" | "MODEL_ERROR";
+  sceneDeltaKind?: SceneDeltaKind | null;
+  cameraMemory?: SceneCameraMemory | null;
+  previousDirectorDecision?: SceneDirectorDecision | null;
+  previousSceneContinuity: PreviousSceneContinuity | null;
 };
 
 export type ScenePresentation = {
@@ -69,6 +84,7 @@ export type ScenePresentation = {
   revealStructureTags: string[];
   spatialHierarchy: SceneSpatialHierarchy | null;
   compositionBias: SceneCompositionBias | null;
+  directorDecision: SceneDirectorDecision | null;
 };
 
 export type ResolveTurnSceneArtPresentationResult = {
@@ -82,6 +98,7 @@ export type ResolveTurnSceneArtPresentationResult = {
   shotGrammar: SceneShotGrammar | null;
   promptFraming: ScenePromptFraming | null;
   scenePresentation: ScenePresentation | null;
+  sceneDeltaKind: SceneDeltaKind | null;
 };
 
 export function resolveTurnSceneArtPresentation(
@@ -92,11 +109,19 @@ export function resolveTurnSceneArtPresentation(
     resolvedSceneState,
     previousSceneComposition,
     previousSceneArt,
-    previousSceneArtForPreviousKey,
     previousTransitionMemory,
-    previousSceneKey,
+    previousSceneContinuity,
     pressureStage,
   } = args;
+
+  const previousSceneContinuitySafe: PreviousSceneContinuity = previousSceneContinuity ?? {
+    sceneKey: null,
+    canonicalPayload: null,
+    sceneArt: null,
+  };
+  const previousSceneKey = previousSceneContinuitySafe.sceneKey;
+  const previousSceneArtForPreviousKey = previousSceneContinuitySafe.sceneArt;
+  const previousSceneArtKeyMismatch = previousSceneContinuitySafe.sceneArtKeyMismatch ?? false;
 
   const transitionMemory = resolveSceneTransitionMemory({
     previousMemory: previousTransitionMemory,
@@ -121,7 +146,7 @@ export function resolveTurnSceneArtPresentation(
       previousSceneComposition.visual.locationId !== resolvedSceneState.visualState.locationId
   );
 
-  const directorDecision = resolveSceneDirectorDecision({
+  const directorBehavior = resolveSceneDirectorBehavior({
     transitionMemory,
     visualState: { locationChanged },
     framingState: resolvedSceneState.framingState,
@@ -139,7 +164,7 @@ export function resolveTurnSceneArtPresentation(
       focus: resolvedSceneState.focusState,
     },
     memory: transitionMemory,
-    directorDecision,
+    directorDecision: directorBehavior,
   });
 
   const shotIntent = resolveSceneShotIntent({
@@ -148,13 +173,12 @@ export function resolveTurnSceneArtPresentation(
     subjectState: resolvedSceneState.subjectState,
     actorState: resolvedSceneState.actorState,
     framingState: resolvedSceneState.framingState,
-    directorDecision,
     sceneTransition,
     transitionMemory,
   });
   const shotGrammar = resolveSceneShotGrammar({
     shotIntent,
-    directorDecision,
+    directorDecision: directorBehavior,
     framingState: resolvedSceneState.framingState,
     focusState: resolvedSceneState.focusState,
     subjectState: resolvedSceneState.subjectState,
@@ -164,7 +188,7 @@ export function resolveTurnSceneArtPresentation(
   const promptFraming = resolveScenePromptFraming({
     shotIntent,
     shotGrammar,
-    directorDecision,
+    directorDecision: directorBehavior,
     framingState: resolvedSceneState.framingState,
     focusState: resolvedSceneState.focusState,
     subjectState: resolvedSceneState.subjectState,
@@ -182,7 +206,7 @@ export function resolveTurnSceneArtPresentation(
     shotIntent,
     shotGrammar,
     motif,
-    directorDecision,
+    directorDecision: directorBehavior,
     pressureStage: pressureStage ?? resolvedSceneState.visualState.pressureStage,
     focusState: resolvedSceneState.focusState,
     sceneTransition,
@@ -208,6 +232,23 @@ export function resolveTurnSceneArtPresentation(
     focusState: resolvedSceneState.focusState,
   });
 
+  const directorPresentation = shotIntent
+    ? resolveSceneDirectorDecision({
+        shotIntent,
+        threatFraming,
+        revealStructure,
+        spatialHierarchy,
+        compositionBias,
+        pressureStage: pressureStage ?? resolvedSceneState.visualState.pressureStage,
+        focusState: resolvedSceneState.focusState,
+        sceneTransitionType: sceneTransition.type,
+        framingState: resolvedSceneState.framingState,
+        cameraMemory: args.cameraMemory ?? null,
+        previousDirectorDecision: args.previousDirectorDecision ?? null,
+        sceneDeltaKind: args.sceneDeltaKind ?? null,
+      })
+    : null;
+
   const motifInput = args.overrideMotif ?? motif;
   const motifTags = motifInput ? buildMotifTags(motifInput) : [];
   const threatFramingTags = buildThreatFramingTags(threatFraming);
@@ -232,6 +273,7 @@ export function resolveTurnSceneArtPresentation(
         revealStructureTags,
         spatialHierarchy,
         compositionBias,
+        directorDecision: directorPresentation,
       }
     : null;
 
@@ -243,9 +285,16 @@ export function resolveTurnSceneArtPresentation(
     motifTags: canonicalTagResult.motifTags,
     threatFramingTags: canonicalTagResult.threatFramingTags,
     revealStructureTags: canonicalTagResult.revealStructureTags,
+    directorDecision: directorPresentation,
   });
 
-  const refreshDecision = canonicalPayload
+  const adjustedDeltaKind = adjustDeltaKindForHold(
+    args.sceneDeltaKind ?? null,
+    sceneTransition,
+    transitionMemory,
+  );
+
+  let refreshDecision = canonicalPayload
     ? resolveSceneRefreshDecision({
         transitionType: sceneTransition.type,
         currentSceneKey: canonicalPayload.sceneKey,
@@ -253,8 +302,36 @@ export function resolveTurnSceneArtPresentation(
         currentReady: previousSceneArt?.status === "ready",
         previousReady: previousSceneArtForPreviousKey?.status === "ready",
         transitionMemory,
+        sceneDeltaKind: adjustedDeltaKind,
       })
-      : null;
+    : null;
+  const previousContinuity = args.previousSceneContinuity;
+  const missingCanonical = Boolean(previousContinuity && !previousContinuity.canonicalPayload);
+  const missingSceneArt = Boolean(previousContinuity && !previousContinuity.sceneArt);
+  const keyMismatch = Boolean(previousContinuity?.sceneArtKeyMismatch);
+  const degradedReason = keyMismatch
+    ? "KEY_MISMATCH"
+    : missingCanonical
+    ? "NO_PREVIOUS_CANONICAL_PAYLOAD"
+    : missingSceneArt
+    ? "NO_PREVIOUS_SCENE_ART"
+    : null;
+  const shouldForceQueueForDegradedContinuity =
+    refreshDecision?.renderPlan === "reuse-current" && degradedReason !== null;
+  if (refreshDecision && shouldForceQueueForDegradedContinuity) {
+    console.warn("scene.render.degraded_enqueue", {
+      sceneKey: canonicalPayload?.sceneKey ?? null,
+      previousSceneKey,
+      degradedReason,
+    });
+    refreshDecision = {
+      ...refreshDecision,
+      shouldQueueRender: true,
+      shouldReuseCurrentImage: false,
+      shouldSwapImmediatelyWhenReady: false,
+      renderPlan: "queue-full-render",
+    };
+  }
 
   const shouldCreateSceneArt = Boolean(refreshDecision?.shouldQueueRender && !previousSceneArt);
   let sceneArtResult: SceneArtRow | null = previousSceneArt
@@ -278,5 +355,24 @@ export function resolveTurnSceneArtPresentation(
     shotGrammar,
     promptFraming,
     scenePresentation,
+    sceneDeltaKind: adjustedDeltaKind,
   };
+}
+
+function adjustDeltaKindForHold(
+  deltaKind: SceneDeltaKind | null,
+  sceneTransition: SceneTransition,
+  transitionMemory: SceneTransitionMemory,
+): SceneDeltaKind | null {
+  if (
+    deltaKind === "full" &&
+    sceneTransition.type === "hold" &&
+    transitionMemory.preserveFraming &&
+    transitionMemory.preserveSubject &&
+    transitionMemory.preserveActor &&
+    transitionMemory.preserveFocus
+  ) {
+    return "none";
+  }
+  return deltaKind;
 }

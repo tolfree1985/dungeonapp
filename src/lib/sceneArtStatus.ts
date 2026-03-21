@@ -1,4 +1,4 @@
-export type SceneArtStatus = "queued" | "ready" | "failed";
+export type SceneArtStatus = "queued" | "ready" | "failed" | "missing";
 
 export type SceneArtStatusRecord = {
   sceneKey: string;

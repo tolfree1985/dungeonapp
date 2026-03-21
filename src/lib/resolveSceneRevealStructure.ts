@@ -1,5 +1,5 @@
 import type { SceneMotif } from "@/lib/resolveSceneMotif";
-import type { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import type { SceneShotIntent } from "@/lib/sceneTypes";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
 

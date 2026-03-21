@@ -2,9 +2,9 @@ import type { SceneActorState } from "@/lib/resolveSceneActorState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
-import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
+import type { SceneDirectorBehavior } from "@/lib/resolveSceneDirectorBehavior";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
-import type { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import type { SceneShotIntent } from "@/lib/sceneTypes";
 
 export type SceneShotGrammar = {
   emphasis: "environment" | "subject" | "threat" | "detail";
@@ -14,7 +14,7 @@ export type SceneShotGrammar = {
 
 type ResolveSceneShotGrammarArgs = {
   shotIntent: SceneShotIntent;
-  directorDecision: SceneDirectorDecision | null;
+  directorDecision: SceneDirectorBehavior | null;
   framingState: SceneFramingState;
   focusState: SceneFocusState;
   subjectState: SceneSubjectState;

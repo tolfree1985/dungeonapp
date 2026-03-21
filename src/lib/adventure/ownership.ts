@@ -1,6 +1,7 @@
 type AdventureOwnerRow = {
   id: string;
   ownerId: string | null;
+  userId?: string | null;
 };
 
 type AdventureOwnershipDb = {
@@ -42,10 +43,12 @@ export async function getOrClaimAdventureForUser(args: {
   if (!existing) {
     return { adventure: null, claimed: false };
   }
-  if (existing.ownerId === userId) {
+  const isDevSim = userId === "dev-user";
+  if (isDevSim) {
     return { adventure: existing, claimed: false };
   }
-  if (existing.ownerId) {
+  const ownerId = existing.ownerId ?? existing.userId ?? null;
+  if (ownerId && ownerId !== userId) {
     throw new AdventureOwnershipError("ADVENTURE_FORBIDDEN", 403);
   }
 
@@ -68,7 +71,8 @@ export async function getOrClaimAdventureForUser(args: {
   if (reloaded.ownerId === userId) {
     return { adventure: reloaded, claimed: true };
   }
-  if (reloaded.ownerId) {
+  const reloadedOwnerId = reloaded.ownerId ?? reloaded.userId ?? null;
+  if (reloadedOwnerId) {
     throw new AdventureOwnershipError("ADVENTURE_FORBIDDEN", 403);
   }
 
@@ -78,4 +82,3 @@ export async function getOrClaimAdventureForUser(args: {
 export function isAdventureOwnershipError(error: unknown): error is AdventureOwnershipError {
   return error instanceof AdventureOwnershipError;
 }
-

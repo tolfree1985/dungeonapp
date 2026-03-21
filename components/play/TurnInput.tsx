@@ -3,6 +3,8 @@
 import { FormEvent, useMemo, useState } from "react";
 import { cardPadding, cardShell, sectionHeading } from "./cardStyles";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
+import type { PressureStage } from "@/app/play/types";
+import { getPressureClasses } from "@/lib/ui/pressure-style";
 
 type TurnMode = "DO" | "SAY" | "LOOK";
 
@@ -35,9 +37,12 @@ type TurnInputProps = {
   isSubmitting: boolean;
   error: string | null;
   onSubmitTurn: (input: { mode: TurnMode; playerText: string }) => Promise<boolean>;
+  pressureStage?: PressureStage | null;
 };
 
-export default function TurnInput({ adventureId, isSubmitting, error, onSubmitTurn }: TurnInputProps) {
+export default function TurnInput({ adventureId, isSubmitting, error, onSubmitTurn, pressureStage }: TurnInputProps) {
+  const composerStage = pressureStage ?? "calm";
+  const composerStyle = getPressureClasses(composerStage);
   const [mode, setMode] = useState<TurnMode>("DO");
   const [playerText, setPlayerText] = useState("");
 
@@ -82,7 +87,7 @@ export default function TurnInput({ adventureId, isSubmitting, error, onSubmitTu
       onSubmit={handleSubmit}
       className={`${cardShell} ${cardPadding} space-y-4 transition-opacity duration-200 ${
         isSubmitting ? "opacity-70 pointer-events-none" : "opacity-100"
-      }`}
+      } ${composerStyle.inputBorder} ${composerStage === "crisis" ? composerStyle.glow : ""}`}
     >
       <div className="space-y-1">
         <div className={sectionHeading}>Mode</div>
@@ -102,7 +107,9 @@ export default function TurnInput({ adventureId, isSubmitting, error, onSubmitTu
         onChange={(event) => setPlayerText(event.target.value)}
         placeholder={modeConfig[mode].placeholder}
         disabled={isSubmitting}
-        className="mt-2 min-h-[130px] w-full rounded-[18px] border border-white/10 bg-black/20 px-4 py-3 text-base text-[#f3efe6] placeholder:text-[#7e786d] focus:border-amber-300/30 focus:outline-none focus:ring-2 focus:ring-amber-300/15 disabled:cursor-not-allowed disabled:opacity-60"
+        className={`mt-2 min-h-[130px] w-full rounded-[18px] border border-white/10 bg-black/20 px-4 py-3 text-base text-[#f3efe6] placeholder:text-[#7e786d] focus:border-amber-300/30 focus:outline-none focus:ring-1 ${
+          composerStage === "danger" ? "focus:ring-amber-400/30" : composerStage === "crisis" ? "focus:ring-rose-400/40" : "focus:ring-white/20"
+        } disabled:cursor-not-allowed disabled:opacity-60`}
       />
 
       <div className="flex flex-col gap-2 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">
@@ -112,12 +119,12 @@ export default function TurnInput({ adventureId, isSubmitting, error, onSubmitTu
         <button
           type="submit"
           disabled={!canSubmit}
-          className={`inline-flex items-center justify-center rounded-full border border-amber-300/20 px-5 py-2.5 text-sm font-medium uppercase tracking-[0.2em] transition duration-150 ${
+          className={`inline-flex items-center justify-center rounded-full border px-5 py-2.5 text-sm font-medium uppercase tracking-[0.2em] transition duration-150 ${
             isSubmitting
               ? "bg-amber-400/20 text-amber-200 cursor-wait pointer-events-none shadow-[0_0_25px_rgba(201,163,90,0.4)]"
               : canSubmit
-              ? "bg-amber-400/10 text-amber-200 hover:bg-amber-400/15"
-              : "bg-amber-400/5 text-amber-100/80 cursor-not-allowed"
+              ? `bg-amber-400/10 text-amber-200 ${composerStage === "danger" ? "border-amber-400/30" : composerStage === "crisis" ? "border-rose-400/30" : "border-amber-300/20"}`
+              : "bg-amber-400/5 text-amber-100/80 cursor-not-allowed"}
           }`}
           >
             {isSubmitting ? "Resolving..." : "Take Turn"}

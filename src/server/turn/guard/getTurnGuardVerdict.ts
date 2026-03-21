@@ -19,6 +19,8 @@ export type TurnGuardInputs = {
 
 export function getTurnGuardVerdict(inputs: TurnGuardInputs): TurnGuardVerdict {
   const { request, context } = inputs;
+  const isLocalDevSim =
+    process.env.NODE_ENV !== "production" && inputs.userId === "dev-user";
 
   if (typeof request.inputChars === "number" && request.inputChars <= 0) {
     return {
@@ -38,7 +40,7 @@ export function getTurnGuardVerdict(inputs: TurnGuardInputs): TurnGuardVerdict {
     };
   }
 
-  if (request.softRate && !request.softRate.allowed) {
+  if (!isLocalDevSim && request.softRate && !request.softRate.allowed) {
     return {
       allowed: false,
       code: "SOFT_RATE",
@@ -48,7 +50,7 @@ export function getTurnGuardVerdict(inputs: TurnGuardInputs): TurnGuardVerdict {
     };
   }
 
-  if (context?.usageVerdict && !context.usageVerdict.allowed) {
+  if (!isLocalDevSim && context?.usageVerdict && !context.usageVerdict.allowed) {
     return {
       allowed: false,
       code: "USAGE_LIMIT",

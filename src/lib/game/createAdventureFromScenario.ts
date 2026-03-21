@@ -25,6 +25,14 @@ export async function createAdventureFromScenarioId(args: {
 }) {
   const { tx, adventureId, scenarioId, ownerId = null, seed } = args;
 
+  if (process.env.NODE_ENV === "development") {
+    console.log("CREATE ADVENTURE INPUT", {
+      ownerId,
+      scenarioId,
+      adventureId,
+    });
+  }
+
   const existing = await tx.adventure.findUnique({
     where: { id: adventureId },
     select: { state: true, ownerId: true },
@@ -57,7 +65,33 @@ export async function createAdventureFromScenarioId(args: {
   }
 
   const scenario = await loadScenarioFromDb(tx, scenarioId);
-  const { state, openingPrompt } = buildAdventureStateFromScenario(scenario);
+  console.log(
+    "BOOTSTRAP SCENARIO CONTENT",
+    JSON.stringify(
+      {
+        scenarioId,
+        title: scenario.title ?? null,
+        slug: (scenario as any).slug ?? null,
+        content: scenario,
+      },
+      null,
+      2,
+    ),
+  );
+  const initialState = buildAdventureStateFromScenario(scenario);
+  const openingPrompt = initialState._meta?.openingPrompt ?? null;
+
+  if (!initialState.currentScene?.key || !initialState.currentScene?.text) {
+    throw new Error("Bootstrap failed: missing currentScene");
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("BOOTSTRAP INITIAL STATE", {
+      currentScene: initialState.currentScene,
+      meta: initialState._meta,
+    });
+    console.log("FINAL STATE BEFORE WRITE", JSON.stringify(initialState, null, 2));
+  }
 
   const isFreshCreate = !existing;
 
@@ -67,7 +101,7 @@ export async function createAdventureFromScenarioId(args: {
       ? {
           seed: seed ?? undefined,
           ownerId,
-          state: state as any,
+          state: initialState as any,
         }
       : {},
     create: {
@@ -75,7 +109,7 @@ export async function createAdventureFromScenarioId(args: {
       latestTurnIndex: 0,
       seed: seed ?? undefined,
       ownerId,
-      state: state as any,
+      state: initialState as any,
     },
     select: { id: true, state: true },
   });
@@ -86,7 +120,7 @@ export async function createAdventureFromScenarioId(args: {
         adventureId: adv.id,
         turnIndex: 0,
         playerInput: "",
-        scene: openingPrompt,
+        scene: initialState.currentScene?.text ?? openingPrompt ?? "",
         resolution: {},
         stateDeltas: {},
         ledgerAdds: [],
@@ -94,6 +128,22 @@ export async function createAdventureFromScenarioId(args: {
         debug: null,
         intentJson: null,
       },
+    });
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("CREATE ADVENTURE TURN 0", {
+        adventureId: adv.id,
+        turnIndex: 0,
+        scene: openingPrompt,
+      });
+    }
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("CREATE ADVENTURE RESULT", {
+      adventureId: adv.id,
+      ownerId,
+      latestTurnIndex: isFreshCreate ? 0 : null,
     });
   }
 

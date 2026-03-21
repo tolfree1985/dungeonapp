@@ -15,6 +15,7 @@ describe("resolveSceneRefreshDecision", () => {
       shouldQueueRender: false,
       shouldReuseCurrentImage: true,
       shouldSwapImmediatelyWhenReady: false,
+      renderPlan: "reuse-current",
     });
   });
 
@@ -29,6 +30,7 @@ describe("resolveSceneRefreshDecision", () => {
     expect(decision.shouldQueueRender).toBe(true);
     expect(decision.shouldReuseCurrentImage).toBe(true);
     expect(decision.shouldSwapImmediatelyWhenReady).toBe(false);
+    expect(decision.renderPlan).toBe("queue-full-render");
   });
 
   it("advances only when the key differs", () => {
@@ -56,6 +58,7 @@ describe("resolveSceneRefreshDecision", () => {
       shouldQueueRender: true,
       shouldReuseCurrentImage: false,
       shouldSwapImmediatelyWhenReady: true,
+      renderPlan: "queue-full-render",
     });
   });
 
@@ -76,5 +79,32 @@ describe("resolveSceneRefreshDecision", () => {
     });
     expect(decision.shouldQueueRender).toBe(false);
     expect(decision.shouldReuseCurrentImage).toBe(true);
+    expect(decision.renderPlan).toBe("reuse-current");
+  });
+
+  it("reuses the current image when delta says none", () => {
+    const decision = resolveSceneRefreshDecision({
+      transitionType: "cut",
+      currentSceneKey: "scene-42",
+      previousSceneKey: "scene-43",
+      currentReady: true,
+      previousReady: true,
+      sceneDeltaKind: "none",
+    });
+    expect(decision.renderPlan).toBe("reuse-current");
+    expect(decision.shouldQueueRender).toBe(false);
+  });
+
+  it("reuses the current image when delta says motif", () => {
+    const decision = resolveSceneRefreshDecision({
+      transitionType: "cut",
+      currentSceneKey: "scene-42",
+      previousSceneKey: "scene-42",
+      currentReady: true,
+      previousReady: true,
+      sceneDeltaKind: "motif",
+    });
+    expect(decision.renderPlan).toBe("reuse-current");
+    expect(decision.shouldQueueRender).toBe(false);
   });
 });

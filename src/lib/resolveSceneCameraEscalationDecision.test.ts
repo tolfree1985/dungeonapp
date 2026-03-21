@@ -32,7 +32,11 @@ const holdMemory: SceneTransitionMemory = {
   preserveFocus: true,
 };
 
-const previousState: SceneCameraContinuityState = { consecutiveAdvances: 2 };
+const previousState: SceneCameraContinuityState = {
+  consecutiveAdvances: 2,
+  cameraMemory: null,
+  directorMemory: null,
+};
 
 describe("resolveSceneCameraEscalationDecision", () => {
   it("resets the continuity counter when transition is not advance", () => {
@@ -54,7 +58,7 @@ describe("resolveSceneCameraEscalationDecision", () => {
       currentFraming: baseFraming,
       currentFocus: baseFocus,
       pressureStage: "calm",
-      previousContinuityState: { consecutiveAdvances: 1 },
+      previousContinuityState: { consecutiveAdvances: 1, cameraMemory: null, directorMemory: null },
       transitionMemory: advanceMemory,
     });
 
@@ -73,7 +77,7 @@ describe("resolveSceneCameraEscalationDecision", () => {
         focusLabel: "Loose Stone",
       },
       pressureStage: "danger",
-      previousContinuityState: { consecutiveAdvances: 1 },
+      previousContinuityState: { consecutiveAdvances: 1, cameraMemory: null, directorMemory: null },
       transitionMemory: advanceMemory,
     });
 
@@ -88,7 +92,7 @@ describe("resolveSceneCameraEscalationDecision", () => {
       currentFraming: baseFraming,
       currentFocus: baseFocus,
       pressureStage: "danger",
-      previousContinuityState: { consecutiveAdvances: 2 },
+      previousContinuityState: { consecutiveAdvances: 2, cameraMemory: null, directorMemory: null },
       transitionMemory: holdMemory,
     });
 

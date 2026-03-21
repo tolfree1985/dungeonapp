@@ -58,17 +58,43 @@ function buildPresentationArgs(turn: PlayTurn, state: Record<string, unknown> | 
     },
     previousSceneComposition: null,
     previousSceneArt: null,
-    previousSceneArtForPreviousKey: null,
     previousTransitionMemory: null,
-    previousSceneKey: null,
     pressureStage: visual.pressureStage,
     modelStatus: "ok",
+    cameraMemory: null,
+    previousDirectorDecision: null,
+    previousSceneContinuity: {
+      sceneKey: null,
+      canonicalPayload: null,
+      sceneArt: null,
+    },
   };
 }
 
 describe("POST /api/turn helpers", () => {
   const payload: SceneArtPayload = {
     sceneKey: "scene-test-key",
+    identity: {
+      locationId: null,
+      pressureStage: null,
+      lightingState: null,
+      atmosphereState: null,
+      environmentWear: null,
+      threatPresence: null,
+      frameKind: null,
+      shotScale: null,
+      subjectFocus: null,
+      cameraAngle: null,
+      primarySubjectKind: null,
+      primarySubjectId: null,
+      actorVisible: false,
+      primaryActorId: null,
+    },
+    promptMetadata: {
+      latestTurnScene: "",
+      timeValue: null,
+      directorDecision: { emphasis: null, compositionBias: null },
+    },
     basePrompt: "test prompt",
     renderPrompt: "test render",
     stylePreset: "victorian-gothic-cinematic",
@@ -81,6 +107,7 @@ describe("POST /api/turn helpers", () => {
       shouldQueueRender: true,
       shouldReuseCurrentImage: false,
       shouldSwapImmediatelyWhenReady: false,
+      renderPlan: "queue-full-render",
     };
 
     const result = await orchestrateLegacySceneArtDecision({
@@ -90,7 +117,7 @@ describe("POST /api/turn helpers", () => {
       queueSceneArt,
     });
 
-    expect(queueSceneArt).toHaveBeenCalledWith(payload, ENGINE_VERSION, "normal");
+    expect(queueSceneArt).toHaveBeenCalledWith(payload, ENGINE_VERSION, "normal", "full");
     expect(result).toEqual({ sceneKey: payload.sceneKey, status: "queued", imageUrl: "/queued.png" });
     expect(result?.sceneKey).toBe(payload.sceneKey);
   });
@@ -102,6 +129,7 @@ describe("POST /api/turn helpers", () => {
       shouldQueueRender: false,
       shouldReuseCurrentImage: true,
       shouldSwapImmediatelyWhenReady: false,
+      renderPlan: "reuse-current",
     };
 
     const result = await orchestrateLegacySceneArtDecision({
@@ -157,7 +185,10 @@ describe("POST /api/turn helpers", () => {
       preserveFraming: true,
       preserveSubject: true,
     };
-    const continuityState: SceneCameraContinuityState = { consecutiveAdvances: 2 };
+    const continuityState: SceneCameraContinuityState = {
+      consecutiveAdvances: 2,
+      cameraMemory: null,
+    };
 
     await persistSceneTransitionMemory({
       db: db as any,

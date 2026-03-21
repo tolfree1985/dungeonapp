@@ -2,7 +2,7 @@ import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
-import type { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import type { SceneShotIntent } from "@/lib/sceneTypes";
 
 export type ScenePromptFraming = {
   visualTags: string[];

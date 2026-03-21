@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SceneArtStatus } from "@/generated/prisma";
+import type { SceneArtPayload } from "@/lib/sceneArt";
 import type { PlayTurn } from "@/app/play/types";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
@@ -10,6 +11,7 @@ import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
 import { buildMotifTags } from "@/lib/resolveSceneMotif";
 import {
   resolveTurnSceneArtPresentation,
+  type PreviousSceneContinuity,
   type ResolveTurnSceneArtPresentationResult,
 } from "./resolveTurnSceneArtPresentation";
 import { intentVisualTagMap, emphasisTagMap, revealTagMap } from "@/lib/resolveScenePromptFraming";
@@ -61,7 +63,13 @@ function buildSceneComposition(turn: PlayTurn, state: SceneStateRecord) {
   };
 }
 
-function presentationArgs(overrides: Partial<Parameters<typeof resolveTurnSceneArtPresentation>[0]> = {}) {
+type PresentationArgOverrides = Partial<
+  Omit<Parameters<typeof resolveTurnSceneArtPresentation>[0], "previousSceneContinuity">
+> & {
+  previousSceneContinuity?: PreviousSceneContinuity | null;
+};
+
+function presentationArgs(overrides: PresentationArgOverrides = {}) {
   const turn = overrides.turn ?? makeTurn("base", "You stand in the stone gallery.");
   const state = overrides.state ?? makeState();
   const resolvedSceneState = overrides.resolvedSceneState ?? buildResolvedSceneState(turn, state);
@@ -69,24 +77,32 @@ function presentationArgs(overrides: Partial<Parameters<typeof resolveTurnSceneA
   const previousState = overrides.previousState ?? state;
   const previousComposition = overrides.previousSceneComposition ?? buildSceneComposition(previousTurn, previousState);
   const canonicalPayload = buildCanonicalSceneArtPayload({ turn, state });
-  const previousSceneKey = overrides.previousSceneKey ?? canonicalPayload?.sceneKey ?? null;
+  const previousCanonical = buildCanonicalSceneArtPayload({ turn: previousTurn, state: previousState });
+  const previousSceneContinuity =
+    overrides.previousSceneContinuity ??
+    ({
+      sceneKey: previousCanonical?.sceneKey ?? null,
+      canonicalPayload: previousCanonical ?? null,
+      sceneArt: null,
+    } as PreviousSceneContinuity);
 
   
-  return {
-    turn,
-    state,
-    resolvedSceneState,
-    previousSceneComposition: previousComposition,
-    previousSceneArt: overrides.previousSceneArt ?? null,
-    previousSceneArtForPreviousKey: overrides.previousSceneArtForPreviousKey ?? null,
-    previousTransitionMemory: overrides.previousTransitionMemory ?? null,
-    previousSceneKey,
-    pressureStage: resolvedSceneState.visualState.pressureStage,
-    modelStatus: overrides.modelStatus ?? "ok",
-    tagPolicy: overrides.tagPolicy,
-    overrideMotif: overrides.overrideMotif ?? null,
-  };
-}
+    return {
+      turn,
+      state,
+      resolvedSceneState,
+      previousSceneComposition: previousComposition,
+      previousSceneArt: overrides.previousSceneArt ?? null,
+      previousTransitionMemory: overrides.previousTransitionMemory ?? null,
+      pressureStage: resolvedSceneState.visualState.pressureStage,
+      modelStatus: overrides.modelStatus ?? "ok",
+      tagPolicy: overrides.tagPolicy,
+      overrideMotif: overrides.overrideMotif ?? null,
+      cameraMemory: overrides.cameraMemory ?? null,
+      previousDirectorDecision: overrides.previousDirectorDecision ?? null,
+      previousSceneContinuity,
+    };
+  }
 
 describe("resolveTurnSceneArtPresentation", () => {
   it("handles hold scenarios without queuing", () => {
@@ -102,8 +118,13 @@ describe("resolveTurnSceneArtPresentation", () => {
       previousTurn: turn,
       previousState: state,
       previousSceneArt: existingRow,
-      previousSceneArtForPreviousKey: existingRow,
-      previousSceneKey: canonical?.sceneKey ?? null,
+      previousSceneContinuity: canonical
+        ? {
+            sceneKey: canonical.sceneKey,
+            canonicalPayload: canonical,
+            sceneArt: existingRow,
+          }
+        : null,
     });
     const result = resolveTurnSceneArtPresentation(args);
 
@@ -126,10 +147,13 @@ describe("resolveTurnSceneArtPresentation", () => {
       previousTurn,
       previousState,
       previousSceneArt: null,
-      previousSceneArtForPreviousKey: previousCanonical
-        ? { sceneKey: previousCanonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" }
+      previousSceneContinuity: previousCanonical
+        ? {
+            sceneKey: previousCanonical.sceneKey,
+            canonicalPayload: previousCanonical,
+            sceneArt: { sceneKey: previousCanonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" },
+          }
         : null,
-      previousSceneKey: previousCanonical?.sceneKey ?? null,
     });
     const result = resolveTurnSceneArtPresentation(args);
 
@@ -156,10 +180,13 @@ describe("resolveTurnSceneArtPresentation", () => {
       previousTurn,
       previousState,
       previousSceneArt: null,
-      previousSceneArtForPreviousKey: previousCanonical
-        ? { sceneKey: previousCanonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" }
+      previousSceneContinuity: previousCanonical
+        ? {
+            sceneKey: previousCanonical.sceneKey,
+            canonicalPayload: previousCanonical,
+            sceneArt: { sceneKey: previousCanonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" },
+          }
         : null,
-      previousSceneKey: previousCanonical?.sceneKey ?? null,
     });
     const result = resolveTurnSceneArtPresentation(args);
 
@@ -182,8 +209,13 @@ describe("resolveTurnSceneArtPresentation", () => {
       previousTurn: turn,
       previousState: state,
       previousSceneArt: existingRow,
-      previousSceneArtForPreviousKey: existingRow,
-      previousSceneKey: canonical?.sceneKey ?? null,
+      previousSceneContinuity: canonical
+        ? {
+            sceneKey: canonical.sceneKey,
+            canonicalPayload: canonical,
+            sceneArt: existingRow,
+          }
+        : null,
       modelStatus: "MODEL_ERROR",
     });
     const result = resolveTurnSceneArtPresentation(args);
@@ -205,10 +237,13 @@ describe("resolveTurnSceneArtPresentation", () => {
       previousSceneArt: canonical
         ? { sceneKey: canonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" }
         : null,
-      previousSceneArtForPreviousKey: canonical
-        ? { sceneKey: canonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" }
+      previousSceneContinuity: canonical
+        ? {
+            sceneKey: canonical.sceneKey,
+            canonicalPayload: canonical,
+            sceneArt: { sceneKey: canonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" },
+          }
         : null,
-      previousSceneKey: canonical?.sceneKey ?? null,
     });
     const first = resolveTurnSceneArtPresentation(args);
     const second = resolveTurnSceneArtPresentation({
@@ -227,10 +262,13 @@ describe("resolveTurnSceneArtPresentation", () => {
       state,
       previousSceneComposition: buildSceneComposition(turn, state),
       previousSceneArt: canonical ? { sceneKey: canonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" } : null,
-      previousSceneArtForPreviousKey: canonical
-        ? { sceneKey: canonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" }
+      previousSceneContinuity: canonical
+        ? {
+            sceneKey: canonical.sceneKey,
+            canonicalPayload: canonical,
+            sceneArt: { sceneKey: canonical.sceneKey, status: "ready" as SceneArtStatus, imageUrl: "/cached.png" },
+          }
         : null,
-      previousSceneKey: canonical?.sceneKey ?? null,
     });
     const result = resolveTurnSceneArtPresentation(args);
 
@@ -414,5 +452,17 @@ describe("resolveTurnSceneArtPresentation", () => {
       presentationArgs({ turn, state, tagPolicy: { includeThreatFramingInCanonical: true } })
     );
     expect(base.canonicalPayload?.sceneKey).not.toEqual(withThreat.canonicalPayload?.sceneKey);
+  });
+
+  it("publishes director decision metadata on the presentation", () => {
+    const args = presentationArgs();
+    const result = resolveTurnSceneArtPresentation(args);
+    const director = result.scenePresentation?.directorDecision;
+    expect(director).toBeDefined();
+    expect(director?.emphasis).toBe(result.scenePresentation?.shotIntent);
+    expect(director?.shotScale).toBe(args.resolvedSceneState.framingState.shotScale);
+    expect(director?.cameraAngle).toBe("eye");
+    expect(director?.focusSubject).toBe("object");
+    expect(director?.compositionBias).toBe(result.scenePresentation?.compositionBias?.balance ?? "centered");
   });
 });

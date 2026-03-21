@@ -4,7 +4,6 @@ import AdventureHistoryRow from "@/components/play/AdventureHistoryRow";
 import HistorySlotCard from "@/components/play/HistorySlotCard";
 import { formatPlayTimestamp } from "~/components/play/formatTimestamp";
 import LatestTurnCard from "@/components/play/LatestTurnCard";
-import PressureMeter from "@/components/play/PressureMeter";
 import StatePanel from "@/components/play/StatePanel";
 import { SceneImagePanel } from "@/components/play/SceneImagePanel";
 import {
@@ -20,7 +19,6 @@ import { cardPadding, cardShell, emptyState, sectionHeading } from "@/components
 import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
-import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
@@ -30,10 +28,10 @@ import type { SceneContinuityState } from "@/lib/sceneContinuity";
 import type { SceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { resolveSceneContinuityState } from "@/lib/sceneContinuity";
 import TurnInput from "@/components/play/TurnInput";
-import { ScenePresentationDebugCard } from "@/components/play/ScenePresentationDebugCard";
-import type { ScenePresentation } from "@/lib/resolveTurnSceneArtPresentation";
 import type { SceneArtStatus, SceneArtStatusResponse } from "@/lib/sceneArtStatus";
 import type { TurnApiResponse, TurnInputPayload } from "@/lib/turnApi";
+import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";
+import { useRouter } from "next/navigation";
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
 
@@ -44,53 +42,6 @@ export function deriveSceneTransitionCue(transition: SceneTransition | null): st
     if (!transition.focusHeld) return "Focus Shift";
   }
   return null;
-}
-
-function pressureBadgeTone(stage: string | null | undefined) {
-  const normalized = typeof stage === "string" ? stage.toLowerCase() : "calm";
-  if (normalized === "crisis") return "border-red-300 bg-red-50 text-red-800";
-  if (normalized === "danger") return "border-orange-300 bg-orange-50 text-orange-800";
-  if (normalized === "tension") return "border-amber-300 bg-amber-50 text-amber-800";
-  return "border-slate-300 bg-slate-50 text-slate-700";
-}
-
-const pressureStatKeys = ["alert", "heat", "noise", "time"] as const;
-type PressureStatKey = (typeof pressureStatKeys)[number];
-
-type PressureSnapshot = {
-  stage: string;
-  alert: string;
-  heat: string;
-  noise: string;
-  time: string;
-};
-
-const formatPressureValue = (value: unknown) => {
-  if (value === undefined || value === null) return "";
-  if (typeof value === "object") {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-};
-
-function findPressureStatValue(stats: PlayStatePanel["stats"], key: PressureStatKey) {
-  const normalizedKey = key.toLowerCase();
-  const entry = stats.find((stat) => stat.key.toLowerCase() === normalizedKey);
-  return formatPressureValue(entry?.value);
-}
-
-function buildPressureSnapshot(stage: string, stats: PlayStatePanel["stats"]): PressureSnapshot {
-  return {
-    stage,
-    alert: findPressureStatValue(stats, "alert"),
-    heat: findPressureStatValue(stats, "heat"),
-    noise: findPressureStatValue(stats, "noise"),
-    time: findPressureStatValue(stats, "time"),
-  };
 }
 
 const previewLatestTurn: PlayTurn & { rollTotal: number; pressureStage: string } = {
@@ -132,7 +83,7 @@ function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
       {rows.length === 0 ? (
         <div className={emptyState}>No resolution entries recorded yet.</div>
       ) : (
-        <div className="space-y-0">
+        <div className="space-y-4">
           {rows.map((row) => (
             <AdventureHistoryRow key={`${row.turnIndex}-${row.timestampLabel}`} model={row} />
           ))}
@@ -142,96 +93,6 @@ function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
   );
 }
 
-function VisualStatePanel({
-  sceneVisualState,
-  framingState,
-  subjectState,
-  sceneActorState,
-  sceneFocusState,
-  sceneTransition,
-}: {
-  sceneVisualState: SceneVisualState;
-  framingState: SceneFramingState;
-  subjectState: SceneSubjectState;
-  sceneActorState: SceneActorState;
-  sceneFocusState: SceneFocusState;
-  sceneTransition?: SceneTransition | null;
-}) {
-  const details = [
-    { label: "Lighting", value: sceneVisualState.lightingState },
-    { label: "Atmosphere", value: sceneVisualState.atmosphereState },
-    { label: "Wear", value: sceneVisualState.environmentWear },
-    { label: "Threat", value: sceneVisualState.threatPresence },
-  ];
-  const framingDetails = [
-    { label: "Frame", value: framingState.frameKind.replace(/_/g, " ") },
-    { label: "Shot", value: framingState.shotScale },
-    { label: "Focus", value: framingState.subjectFocus },
-    { label: "Angle", value: framingState.cameraAngle },
-  ];
-  const subjectLabel = subjectState.primarySubjectLabel ?? subjectState.primarySubjectKind;
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">Visual State</div>
-      <div className="mt-2 space-y-1">
-        {details.map((detail) => (
-          <div key={detail.label} className="flex justify-between text-xs text-white/60">
-            <span>{detail.label}</span>
-            <span className="font-semibold text-white">{detail.value}</span>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.35em] text-white/60">
-        <span className="rounded-full border border-white/20 px-2 py-0.5">{sceneVisualState.locationId}</span>
-        <span className="rounded-full border border-white/20 px-2 py-0.5">{sceneVisualState.timeValue}</span>
-        <span className="rounded-full border border-white/20 px-2 py-0.5">{sceneVisualState.pressureStage}</span>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-        {framingDetails.map((detail) => (
-          <div key={detail.label} className="rounded-full border border-white/10 px-2 py-1 text-center text-xs">
-            {detail.label}: {detail.value}
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 text-[11px] uppercase tracking-[0.3em] text-white/60">
-        <div className="text-xs text-white/40">Subject kind</div>
-        <div className="text-sm font-semibold text-white">{subjectState.primarySubjectKind}</div>
-        <div className="text-xs text-white/40">Subject</div>
-        <div className="text-sm font-semibold text-white">
-          {subjectState.primarySubjectLabel ?? "(unknown)"}
-        </div>
-        <div className="text-xs text-white/40">Actor role</div>
-        <div className="text-sm font-semibold text-white">
-          {sceneActorState.primaryActorRole ?? "none"}
-        </div>
-        <div className="text-xs text-white/40">Actor</div>
-        <div className="text-sm font-semibold text-white">
-          {sceneActorState.primaryActorLabel ?? "(none visible)"}
-        </div>
-        <div className="text-xs text-white/40">Visible</div>
-        <div className="text-sm font-semibold text-white">
-          {sceneActorState.actorVisible ? "yes" : "no"}
-        </div>
-      </div>
-      {sceneTransition ? (
-        <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/70">
-          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
-            <span>Scene transition</span>
-            <span className="text-xs uppercase tracking-[0.35em] text-white/40">{sceneTransition.type}</span>
-          </div>
-          <div className="mt-1 text-[10px] text-white/40">
-            framing {sceneTransition.preserveFraming ? "preserved" : "reset"} · subject {sceneTransition.preserveSubject ? "preserved" : "reset"} · actor {sceneTransition.preserveActor ? "preserved" : "reset"} · focus {sceneTransition.preserveFocus ? "held" : "shifted"}
-          </div>
-        </div>
-      ) : null}
-      <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/70">
-        <div className="text-xs uppercase tracking-[0.3em] text-white/60">Focus</div>
-        <div className="mt-1 text-xs text-white/40">Type: {sceneFocusState.focusType}</div>
-        <div className="text-sm font-semibold text-white">{sceneFocusState.focusLabel ?? "(none)"}</div>
-      </div>
-    </div>
-  );
-}
 function TopBar() {
   return (
     <header className={ui.topBar}>
@@ -268,18 +129,13 @@ export type PlayClientProps = {
   dbOffline?: boolean;
   sceneImage?: ResolvedSceneImage | null;
   sceneImageCaption?: string | null;
-  sceneVisualState: SceneVisualState;
   sceneFramingState: SceneFramingState;
   sceneSubjectState: SceneSubjectState;
   sceneActorState: SceneActorState;
   sceneFocusState: SceneFocusState;
   sceneTransition?: SceneTransition | null;
   sceneRefreshDecision?: SceneRefreshDecision | null;
-  scenePresentation?: ScenePresentation | null;
-};
-
-type PlayTurnWithPresentation = PlayTurn & {
-  scenePresentation?: ScenePresentation | null;
+  sceneContinuity?: SceneContinuityInfo | null;
 };
 
 export default function PlayClient({
@@ -292,21 +148,22 @@ export default function PlayClient({
   sceneImage,
   sceneImageCaption,
   sceneFocusState,
-  sceneVisualState,
   sceneFramingState,
   sceneSubjectState,
   sceneActorState,
   sceneTransition = null,
   sceneRefreshDecision,
-  scenePresentation,
+  sceneContinuity = null,
 }: PlayClientProps) {
   const [liveSceneArt, setLiveSceneArt] = useState<ResolvedSceneImage | null>(sceneImage ?? null);
+  const router = useRouter();
   const [liveSceneTransition, setLiveSceneTransition] = useState<SceneTransition | null>(sceneTransition ?? null);
-  const [liveScenePresentation, setLiveScenePresentation] = useState<ScenePresentation | null>(scenePresentation ?? null);
+  const [liveSceneContinuity, setLiveSceneContinuity] = useState<SceneContinuityInfo | null>(sceneContinuity ?? null);
+  const formatSceneKey = (value: string | null | undefined) =>
+    value ? `${value.slice(0, 8)}…` : "—";
   const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
   const [turnError, setTurnError] = useState<string | null>(null);
   const HISTORY_KEY = "creator:recentAdventures";
-  const latestTurnWithPresentation = turns[0] as PlayTurnWithPresentation | undefined;
   type HistoryEntry = {
     adventureId: string;
     scenarioId?: string | null;
@@ -319,11 +176,18 @@ export default function PlayClient({
     setLiveSceneTransition(sceneTransition ?? null);
   }, [sceneTransition]);
   useEffect(() => {
-    setLiveScenePresentation(scenePresentation ?? null);
-  }, [scenePresentation]);
-  useEffect(() => {
     setLiveSceneArt(sceneImage ?? null);
   }, [sceneImage]);
+  useEffect(() => {
+    if (!liveSceneArt?.pending) return;
+    const timer = setTimeout(() => {
+      router.refresh();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [liveSceneArt?.pending, router]);
+  useEffect(() => {
+    setLiveSceneContinuity(sceneContinuity ?? null);
+  }, [sceneContinuity]);
   const currentId = adventureId;
   const sortHistory = (entries: HistoryEntry[]) =>
     [...entries].sort((a, b) => {
@@ -362,52 +226,108 @@ export default function PlayClient({
   );
   const displayedSceneImageCaption = sceneImageCaption && continuityState.shouldShowCaption ? sceneImageCaption : null;
   const sceneTransitionCue = useMemo(() => deriveSceneTransitionCue(liveSceneTransition), [liveSceneTransition]);
-  const pollingStatusRef = useRef<SceneArtStatus | "missing" | null>(null);
+  const lastLoggedStatusRef = useRef<SceneArtStatus | null>(null);
+  const lastSceneKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const sceneKey = liveSceneArt?.sceneKey;
-    const currentStatus = liveSceneArt?.status ?? null;
-    if (!sceneKey || currentStatus !== "queued") {
-      pollingStatusRef.current = currentStatus;
+    const currentStatus = liveSceneArt?.status ?? "missing";
+    if (sceneKey !== lastSceneKeyRef.current) {
+      lastSceneKeyRef.current = sceneKey;
+      lastLoggedStatusRef.current = null;
+    }
+
+    if (!sceneKey) {
       return;
     }
 
     let cancelled = false;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const pollingStartedAt = Date.now();
+    const getPollingInterval = (elapsed: number) => {
+      if (elapsed < 5000) return 1000;
+      if (elapsed < 15000) return 2000;
+      if (elapsed < 30000) return 4000;
+      return null;
+    };
     const fallbackImageUrl = liveSceneArt?.imageUrl ?? null;
     const fallbackSource = liveSceneArt?.source === "scene" ? "default" : liveSceneArt?.source ?? "default";
+    const logSceneArtStatus = (nextStatus: SceneArtStatus) => {
+      if (lastLoggedStatusRef.current === nextStatus) return;
+      const payload: { sceneKey: string; status: SceneArtStatus; transition?: string } = {
+        sceneKey,
+        status: nextStatus,
+      };
+      if (lastLoggedStatusRef.current === "queued" && nextStatus !== "queued") {
+        payload.transition = `queued->${nextStatus}`;
+        console.info("[scene-art] transition", payload);
+      } else {
+        console.info("[scene-art] status", payload);
+      }
+      lastLoggedStatusRef.current = nextStatus;
+    };
 
-    pollingStatusRef.current = "queued";
+    if (currentStatus !== "queued") {
+      logSceneArtStatus(currentStatus);
+      return;
+    }
+
+    logSceneArtStatus("queued");
 
     const stopPolling = () => {
       cancelled = true;
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
       }
     };
 
-    const reportTransition = (nextStatus: SceneArtStatus | "missing") => {
-      const prevStatus = pollingStatusRef.current;
-      if (prevStatus === "queued" && nextStatus !== "queued") {
-        const label = nextStatus === "ready" ? "ready" : nextStatus === "failed" ? "failed" : "missing";
-        console.info(`[scene-art] ${sceneKey} queued -> ${label}`);
+    const scheduleNextPoll = () => {
+      if (cancelled) return;
+      const elapsed = Date.now() - pollingStartedAt;
+      const interval = getPollingInterval(elapsed);
+      if (interval === null) {
+        stopPolling();
+        return;
       }
-      pollingStatusRef.current = nextStatus;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null;
+        pollSceneArt();
+      }, interval);
     };
 
-    const handleFailure = (nextStatus: SceneArtStatus | "missing") => {
+    const handleFailure = (nextStatus: SceneArtStatus) => {
+      logSceneArtStatus(nextStatus);
       setLiveSceneArt({
         imageUrl: fallbackImageUrl,
         source: fallbackSource,
         pending: false,
         sceneKey,
-        status: nextStatus === "missing" ? "failed" : nextStatus,
+        status: nextStatus,
       });
-      reportTransition(nextStatus);
+      stopPolling();
+    };
+
+    const logAndSetReady = (nextStatus: SceneArtStatus, imageUrl: string | null) => {
+      logSceneArtStatus(nextStatus);
+      setLiveSceneArt({
+        imageUrl,
+        source: imageUrl ? "scene" : fallbackSource,
+        pending: false,
+        sceneKey,
+        status: nextStatus,
+      });
       stopPolling();
     };
 
     const pollSceneArt = async () => {
+      const elapsed = Date.now() - pollingStartedAt;
+      if (elapsed > 30000) {
+        stopPolling();
+        return;
+      }
       try {
         const response = await fetch(`/api/scene-art?sceneKey=${encodeURIComponent(sceneKey)}`);
         if (cancelled) return;
@@ -427,24 +347,21 @@ export default function PlayClient({
           return;
         }
 
-        const nextStatus = sceneArt.status;
+        const nextStatus = sceneArt.status ?? "missing";
+        logSceneArtStatus(nextStatus);
         if (nextStatus !== "queued") {
-          setLiveSceneArt({
-            imageUrl: nextStatus === "ready" ? sceneArt.imageUrl : fallbackImageUrl,
-            source: nextStatus === "ready" ? "scene" : fallbackSource,
-            pending: false,
-            sceneKey,
-            status: nextStatus,
-          });
-          reportTransition(nextStatus);
-          stopPolling();
+          if (nextStatus === "ready") {
+            logAndSetReady("ready", sceneArt.imageUrl ?? fallbackImageUrl);
+          } else {
+            handleFailure(nextStatus);
+          }
           return;
         }
 
         setLiveSceneArt((prev) => {
           if (cancelled) return prev;
           if (
-            prev?.imageUrl === sceneArt.imageUrl &&
+            prev?.imageUrl === (sceneArt.imageUrl ?? fallbackImageUrl) &&
             prev?.pending &&
             prev?.status === "queued" &&
             prev?.sceneKey === sceneKey
@@ -459,7 +376,8 @@ export default function PlayClient({
             status: "queued",
           };
         });
-        pollingStatusRef.current = "queued";
+        logSceneArtStatus("queued");
+        scheduleNextPoll();
       } catch {
         if (!cancelled) {
           handleFailure("missing");
@@ -467,8 +385,8 @@ export default function PlayClient({
       }
     };
 
+    logSceneArtStatus("queued");
     pollSceneArt();
-    intervalId = setInterval(pollSceneArt, 3000);
     return () => stopPolling();
   }, [liveSceneArt?.sceneKey, liveSceneArt?.status]);
   useEffect(() => {
@@ -531,6 +449,10 @@ export default function PlayClient({
       return false;
     }
 
+    if (isSubmittingTurn) {
+      return false;
+    }
+
     setIsSubmittingTurn(true);
     setTurnError(null);
 
@@ -553,7 +475,6 @@ export default function PlayClient({
 
       const result = (payload ?? {}) as TurnApiResponse;
       handleSceneTransitionUpdate(result.sceneTransition ?? null);
-      setLiveScenePresentation(result.scenePresentation ?? null);
 
       if (result.sceneArt) {
         setLiveSceneArt({
@@ -564,6 +485,7 @@ export default function PlayClient({
           status: result.sceneArt.status,
         });
       }
+      setLiveSceneContinuity(result.sceneContinuity ?? null);
 
       return true;
     } catch (error) {
@@ -591,19 +513,12 @@ export default function PlayClient({
   const latestDisplayTurn = hasTurns ? latestTurn : showPreview ? previewLatestTurn : null;
   const recentDisplayTurns = hasTurns ? previousTurns : showPreview ? previewTurns.slice(1) : [];
   const displayPressureStage = (showPreview ? previewLatestTurn.pressureStage : pressureStage) ?? "calm";
-  const pressureSnapshot = useMemo(
-    () => buildPressureSnapshot(displayPressureStage, statePanel.stats),
-    [displayPressureStage, statePanel.stats]
-  );
   const [highlightLatestTurn, setHighlightLatestTurn] = useState(false);
   const [showTurnDivider, setShowTurnDivider] = useState(false);
-  const [isPressurePulsing, setIsPressurePulsing] = useState(false);
   const latestTurnRef = useRef<HTMLDivElement | null>(null);
   const prevLatestTurnIndexRef = useRef<number | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const turnDividerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pressurePulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevPressureSnapshotRef = useRef<PressureSnapshot | null>(null);
   const ambienceByPressure: Record<string, string> = {
     calm: "ambience-calm",
     tension: "ambience-tension",
@@ -671,32 +586,15 @@ export default function PlayClient({
     prevLatestTurnIndexRef.current = currentIndex;
   }, [latestDisplayTurn?.turnIndex, hasTurns]);
 
-  useEffect(() => {
-    const prevSnapshot = prevPressureSnapshotRef.current;
-    if (prevSnapshot) {
-      const statsChanged = pressureStatKeys.some((key) => prevSnapshot[key] !== pressureSnapshot[key]);
-      if (prevSnapshot.stage !== pressureSnapshot.stage || statsChanged) {
-        setIsPressurePulsing(true);
-        if (pressurePulseTimeoutRef.current) {
-          clearTimeout(pressurePulseTimeoutRef.current);
-        }
-        pressurePulseTimeoutRef.current = setTimeout(() => {
-          setIsPressurePulsing(false);
-          pressurePulseTimeoutRef.current = null;
-        }, 450);
-      }
-    }
-    prevPressureSnapshotRef.current = pressureSnapshot;
-  }, [pressureSnapshot]);
   useEffect(() => () => {
     if (highlightTimeoutRef.current) {
       clearTimeout(highlightTimeoutRef.current);
     }
   }, []);
   useEffect(() => () => {
-    if (pressurePulseTimeoutRef.current) {
-      clearTimeout(pressurePulseTimeoutRef.current);
-      pressurePulseTimeoutRef.current = null;
+    if (turnDividerTimeoutRef.current) {
+      clearTimeout(turnDividerTimeoutRef.current);
+      turnDividerTimeoutRef.current = null;
     }
   }, []);
   useEffect(() => () => {
@@ -723,9 +621,6 @@ export default function PlayClient({
           <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 font-semibold text-blue-600">Turn index: -</span>
           <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">Status: ready</span>
           <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-600">Tier: creator</span>
-          <span className={`rounded-full border px-2.5 py-1 font-semibold ${pressureBadgeTone(pressureStage)}`}>
-            Pressure: {pressureStage.toUpperCase()}
-          </span>
         </div>
         <div className="text-lg font-semibold text-slate-900">Current adventure</div>
         <p className="mt-2 text-sm text-slate-600">{currentScenario?.summary ?? "Live adventure streaming"}</p>
@@ -767,6 +662,59 @@ export default function PlayClient({
             <div>Scenario ID: {currentScenario?.id ?? scenarioId ?? "Unknown"}</div>
             <div>Scenario: {currentScenario?.title ?? "Untitled"}</div>
           </div>
+          {liveSceneContinuity ? (
+            <div className="mt-2 space-y-1 text-[9px] text-slate-500">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+                Scene continuity
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-200">
+                <span>Shot key</span>
+                <span className="font-semibold text-slate-100">{formatSceneKey(liveSceneContinuity.shotKey)}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-200">
+                <span>Shot duration</span>
+                <span className="font-semibold text-slate-100">{liveSceneContinuity.shotDuration ?? 0} turns</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-200">
+                <span>Scene key</span>
+                <span className="font-semibold text-slate-100">{formatSceneKey(liveSceneContinuity.sceneKey)}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-200">
+                <span>Previous key</span>
+                <span className="font-semibold text-slate-100">
+                  {formatSceneKey(liveSceneContinuity.previousSceneKey)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-200">
+                <span>Delta kind</span>
+                <span className="font-semibold text-slate-100">{liveSceneContinuity.deltaKind ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-200">
+                <span>Render plan</span>
+                <span className="font-semibold text-slate-100">{liveSceneContinuity.renderPlan}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-200">
+                <span>Continuity</span>
+                <span className="font-semibold text-slate-100">{liveSceneContinuity.continuityReason}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-200">
+                <span>Bucket</span>
+                <span className="font-semibold text-slate-100">{liveSceneContinuity.continuityBucket}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-200">
+                <span>Reuse rate</span>
+                <span className="font-semibold text-slate-100">
+                  {`${Math.round((liveSceneContinuity.reuseRate ?? 0) * 100)}%`}
+                </span>
+              </div>
+              {liveSceneContinuity.previousSceneArtKeyMismatch ? (
+                <div className="flex items-center justify-between text-[11px] text-rose-200">
+                  <span>Key mismatch</span>
+                  <span className="font-semibold text-rose-100">Yes</span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </details>
       </div>
       </section>
@@ -865,22 +813,6 @@ export default function PlayClient({
       <div className={ui.pageWrap}>
         <div className={ui.playSurface}>
             <TopBar />
-            <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-[11px] uppercase tracking-[0.3em] text-white/70">
-            <span className="text-emerald-300">{displayPressureStage?.toUpperCase() ?? "CALM"}</span>
-            <span className="text-white/40">•</span>
-            <span>
-              Alert {statePanel.stats.find((stat) => stat.key.toLowerCase() === "alert")?.value ?? "—"}
-            </span>
-            <span className="text-white/40">•</span>
-            <span>
-              Heat {statePanel.stats.find((stat) => stat.key.toLowerCase() === "heat")?.value ?? "—"}
-            </span>
-            <span className="text-white/40">•</span>
-            <span>
-              Time {statePanel.stats.find((stat) => stat.key.toLowerCase() === "time")?.value ?? "—"}
-            </span>
-          </div>
-
           {dbOffline ? (
             <div className="chronicle-card mt-6 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100 shadow-inner">
               <p className="font-semibold text-amber-100">Database connection unavailable</p>
@@ -914,7 +846,7 @@ export default function PlayClient({
                       source: "default",
                       pending: false,
                       sceneKey: null,
-                      status: null,
+                      status: "missing",
                     }
                   }
                   caption={displayedSceneImageCaption ?? undefined}
@@ -923,14 +855,15 @@ export default function PlayClient({
                   transitionCue={sceneTransitionCue}
                 />
               </div>
-            {adventureId ? (
-              <TurnInput
-                adventureId={adventureId}
-                isSubmitting={isSubmittingTurn}
-                error={turnError}
-                onSubmitTurn={handleSubmitTurn}
-              />
-            ) : null}
+          {adventureId ? (
+            <TurnInput
+              adventureId={adventureId}
+              isSubmitting={isSubmittingTurn}
+              error={turnError}
+              onSubmitTurn={handleSubmitTurn}
+              pressureStage={displayPressureStage}
+            />
+          ) : null}
           </section>
 
             <aside className={ui.rightColumn}>
@@ -943,24 +876,9 @@ export default function PlayClient({
                     ambience={statePanel.ambience ?? "Cold / Quiet"}
                     tags={statePanel.contextTags ?? []}
                   />
-                  <VisualStatePanel
-                    sceneVisualState={sceneVisualState}
-                    framingState={sceneFramingState}
-                    subjectState={sceneSubjectState}
-                    sceneActorState={sceneActorState}
-                    sceneFocusState={sceneFocusState}
-                    sceneTransition={liveSceneTransition}
-                  />
-                  <ScenePresentationDebugCard
-                    presentation={liveScenePresentation}
-                    transition={liveSceneTransition}
-                    transitionCue={sceneTransitionCue}
-                  />
                   <StatePanel viewModel={statePanelViewModel} />
                 </section>
                 <section className="space-y-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">System</div>
-                  <PressureMeter currentStage={displayPressureStage} isPulsing={isPressurePulsing} />
                   <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
                 </section>
                 <section className="space-y-4">

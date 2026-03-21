@@ -1,7 +1,28 @@
 "use client";
 
-import type { PlayTurn, PlayStatePanel } from "@/app/play/types";
+import type { PlayTurn, PlayStatePanel, PlayTurnPresentation, PressureStage } from "@/app/play/types";
+import type { StateTier } from "@/lib/ui/present-state-tier";
+import {
+  presentAlertTier,
+  presentHeatTier,
+  presentNoiseTier,
+  presentOverallRiskTier,
+  presentTrustTier,
+} from "@/lib/ui/present-state-tier";
+import type { FailForwardComplication } from "@/lib/fail-forward-complication";
+import type { FinalizedEffectSummary } from "@/lib/finalized-effects";
+import type { OpportunityResolutionModifier } from "@/lib/opportunity-resolution-modifier";
+import type { OpportunityWindowState } from "@/lib/opportunity-window";
+import type { WatchfulnessActionFlags } from "@/lib/watchfulness-action-flags";
+import type { PositionActionFlags } from "@/lib/position-action-flags";
+import type { NoiseActionFlags } from "@/lib/noise-action-flags";
+import type { ActionConstraints } from "@/lib/action-constraints";
 import { formatTurnTimestamp } from "@/lib/ui/formatters";
+import { flattenNarrationLines } from "@/server/scene/finalized-consequence-narration";
+import type { ConsequenceEntry } from "@/server/scene/consequence-bundle";
+import { projectLedgerEntries, type LedgerPresentationEntry } from "@/server/scene/ledger-presentation";
+import { buildPlayTurnPresentation } from "@/app/play/normalizeTurnPresentation";
+import type { TurnResolutionPresentation } from "@/server/scene/turn-resolution-presentation";
 
 type ResolvedResolution = Record<string, unknown>;
 
@@ -178,6 +199,39 @@ export type LatestTurnViewModel = {
   outcomeTierLabel?: string | null;
   intentLabel?: string | null;
   notesLabel?: string | null;
+  presentation: PlayTurnPresentation;
+  failForwardComplication: FailForwardComplication | null;
+  effectSummaries: FinalizedEffectSummary[];
+  watchfulness?: string | null;
+  watchfulnessCostDelta?: number | null;
+  watchfulnessEffect?: FinalizedEffectSummary | null;
+  watchfulnessActionFlags?: WatchfulnessActionFlags | null;
+  positionActionFlags?: PositionActionFlags | null;
+  noiseActionFlags?: NoiseActionFlags | null;
+  actionConstraints?: ActionConstraints | null;
+  constraintPressure?: number | null;
+  constraintPressureActive?: string[] | null;
+  actionRiskDelta?: number | null;
+  actionRiskTier?: "none" | "elevated" | "high" | null;
+  complicationWeightDelta?: number | null;
+  complicationTier?: "none" | "light" | "heavy" | null;
+  forcedComplicationCount?: number | null;
+  outcomeSeverity?: OutcomeSeverity | null;
+  consequenceBudgetExtraCostCount?: number | null;
+  consequenceComplicationEntries?: ConsequenceEntry[] | null;
+  consequenceExtraCostEntries?: ConsequenceEntry[] | null;
+  consequenceNarration?: { headline: string; lines: string[] } | null;
+  narrationLines: string[];
+  consequenceLedgerEntries: LedgerPresentationEntry[];
+  opportunityWindow: OpportunityWindowState;
+  opportunityResolutionModifier?: OpportunityResolutionModifier | null;
+  opportunityCost?: string | null;
+  finalizedComplications?: string[];
+  complicationApplied?: boolean;
+  finalizedComplicationDeltas?: Record<string, number>;
+  complicationDeltaApplied?: boolean;
+  npcStance?: string | null;
+  pressureStage: PressureStage;
 };
 
 export type StateItemCategory = "world" | "quest" | "inventory" | "status" | "relation";
@@ -189,12 +243,27 @@ export type StateItemViewModel = {
   emphasis?: "normal" | "high";
 };
 
+export type PresentedStateMetric = {
+  raw: number;
+  label: string;
+};
+
 export type StatePanelViewModel = {
   status: StateItemViewModel[];
   world: StateItemViewModel[];
   quests: StateItemViewModel[];
   inventory: StateItemViewModel[];
   relations: StateItemViewModel[];
+  metrics: {
+    alert: PresentedStateMetric | null;
+    noise: PresentedStateMetric | null;
+    heat: PresentedStateMetric | null;
+    trust: PresentedStateMetric | null;
+  };
+  time: number | null;
+  turns: number | null;
+  risk: StateTier | null;
+  pressureStage: PressureStage;
 };
 
 export type AdventureHistoryRowViewModel = {
@@ -242,6 +311,15 @@ function describeValue(value: unknown): string {
   return String(value);
 }
 
+function parseNumericStateValue(value: PlayStatePanel["stats"][number]["value"]): number | null {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return null;
+}
+
 function describeStateDelta(delta: unknown): LatestTurnViewModel["stateDeltas"][number] | null {
   if (!delta) return null;
   if (typeof delta === "string") {
@@ -274,6 +352,15 @@ function describeStateDelta(delta: unknown): LatestTurnViewModel["stateDeltas"][
     return { key: "State change", value: flattened };
   }
   return null;
+}
+
+function normalizePressureStage(stage?: string | null): PressureStage {
+  if (!stage) return "calm";
+  const normalized = stage.trim().toLowerCase();
+  if (normalized === "tension") return "tension";
+  if (normalized === "danger") return "danger";
+  if (normalized === "crisis") return "crisis";
+  return "calm";
 }
 
 const statusStatKeys = new Set([
@@ -310,37 +397,6 @@ function buildStateItem(label: string | undefined, value: unknown, category: Sta
 
 function normalizeLabel(label: string): string {
   return label.trim();
-}
-
-function buildStatePanelViewModelFromStats(state: PlayStatePanel): StatePanelViewModel {
-  const seenLabels = new Set<string>();
-  const statusItems: StateItemViewModel[] = [];
-  const worldItems: StateItemViewModel[] = [];
-
-  state.stats.forEach((stat) => {
-    const label = normalizeLabel(stat.key);
-    if (!label) return;
-    const normalized = label.toLowerCase();
-    if (seenLabels.has(normalized)) return;
-    seenLabels.add(normalized);
-    const category = classifyStatCategory(normalized);
-    const emphasis = normalized.includes("alert") || normalized.includes("pressure") ? "high" : "normal";
-    const item = buildStateItem(label, stat.value, category, emphasis);
-    if (!item) return;
-    if (category === "world") {
-      worldItems.push(item);
-    } else {
-      statusItems.push(item);
-    }
-  });
-
-  return {
-    status: statusItems,
-    world: worldItems,
-    quests: [],
-    inventory: [],
-    relations: [],
-  };
 }
 
 function normalizeLedger(entry: unknown) {
@@ -475,7 +531,8 @@ export function buildLatestTurnViewModel(
   turn: PlayTurn,
   pressureStage: string | null | undefined
 ): LatestTurnViewModel {
-  const pressureLabel = (pressureStage ?? "calm").toUpperCase();
+  const resolvedPressureStage = normalizePressureStage(pressureStage ?? null);
+  const pressureLabel = resolvedPressureStage.toUpperCase();
   const ledgerEntries = formatLedgerDisplay(turn.ledgerAdds ?? []);
   const deltas = Array.isArray(turn.stateDeltas)
     ? turn.stateDeltas.map((delta) => describeStateDelta(delta)).filter(Boolean)
@@ -490,6 +547,39 @@ export function buildLatestTurnViewModel(
   const outcomeLabel = describeResolutionOutcome(normalizedResolution, fallbackPlainOutcome);
   const intentLabel = describeResolutionAction(normalizedResolution);
   const notesLabel = describeResolutionNotes(normalizedResolution);
+  const opportunityWindow =
+    turn.opportunityWindow ?? { windowNarrowed: false, opportunityTier: "normal" };
+  const opportunityResolutionModifier = turn.opportunityResolutionModifier ?? null;
+  const opportunityCost = turn.opportunityCost ?? null;
+  const finalizedComplications = turn.finalizedComplications ?? [];
+  const complicationApplied = Boolean(turn.complicationApplied);
+  const finalizedComplicationDeltas = (turn.finalizedComplicationDeltas ?? {}) as Record<string, number>;
+  const complicationDeltaApplied = Boolean(turn.complicationDeltaApplied);
+  const npcStance = turn.npcStance ?? "calm";
+  const watchfulness = turn.watchfulness ?? null;
+  const watchfulnessCostDelta = typeof turn.watchfulnessCostDelta === "number" ? turn.watchfulnessCostDelta : null;
+  const watchfulnessEffect = turn.watchfulnessEffect ?? null;
+  const watchfulnessActionFlags = turn.watchfulnessActionFlags ?? null;
+  const positionActionFlags = turn.positionActionFlags ?? null;
+  const noiseActionFlags = turn.noiseActionFlags ?? null;
+  const actionConstraints = turn.actionConstraints ?? null;
+  const constraintPressure = typeof turn.constraintPressure === "number" ? turn.constraintPressure : null;
+  const constraintPressureActive = turn.constraintPressureActive ?? null;
+  const actionRiskDelta = typeof turn.actionRiskDelta === "number" ? turn.actionRiskDelta : null;
+  const actionRiskTier = turn.actionRiskTier ?? null;
+  const complicationWeightDelta = typeof turn.complicationWeightDelta === "number" ? turn.complicationWeightDelta : null;
+  const complicationTier = turn.complicationTier ?? null;
+  const forcedComplicationCount = typeof turn.forcedComplicationCount === "number" ? turn.forcedComplicationCount : null;
+  const complicationPolicyApplied = Boolean(turn.complicationPolicyApplied);
+  const outcomeSeverity = turn.outcomeSeverity ?? null;
+  const consequenceBudgetExtraCostCount = typeof turn.consequenceBudgetExtraCostCount === "number" ? turn.consequenceBudgetExtraCostCount : null;
+  const consequenceComplicationEntries = turn.consequenceComplicationEntries ?? [];
+  const consequenceExtraCostEntries = turn.consequenceExtraCostEntries ?? [];
+  const normalizedPresentation = buildPlayTurnPresentation(turn);
+  const turnPresentation: PlayTurnPresentation = turn.presentation ?? normalizedPresentation;
+  const consequenceNarration = turnPresentation.narration;
+  const narrationLines = consequenceNarration ? flattenNarrationLines(consequenceNarration) : [];
+  const consequenceLedgerEntries = turnPresentation.ledgerEntries;
   return {
     turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
     mode: parseIntentMode(turn.playerInput),
@@ -504,6 +594,40 @@ export function buildLatestTurnViewModel(
     outcomeTierLabel,
     intentLabel,
     notesLabel,
+    failForwardComplication: turn.failForwardComplication ?? null,
+    effectSummaries: turn.effectSummaries ?? [],
+    watchfulness,
+    watchfulnessCostDelta,
+    watchfulnessEffect,
+    watchfulnessActionFlags,
+    positionActionFlags,
+    noiseActionFlags,
+    actionConstraints,
+    constraintPressure,
+    constraintPressureActive,
+    actionRiskDelta,
+    actionRiskTier,
+    complicationWeightDelta,
+    complicationTier,
+    forcedComplicationCount,
+    complicationPolicyApplied,
+    outcomeSeverity,
+    consequenceBudgetExtraCostCount,
+    consequenceComplicationEntries,
+    consequenceExtraCostEntries,
+    consequenceNarration,
+    narrationLines,
+    consequenceLedgerEntries,
+    presentation: turnPresentation,
+    opportunityWindow,
+    opportunityResolutionModifier,
+    opportunityCost,
+    finalizedComplications,
+    complicationApplied,
+    finalizedComplicationDeltas,
+    complicationDeltaApplied,
+    npcStance,
+    pressureStage: resolvedPressureStage,
   };
 }
 
@@ -676,11 +800,31 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
   const seenLabels = new Set<string>();
   const statusItems: StateItemViewModel[] = [];
   const worldItems: StateItemViewModel[] = [];
+  let alertValue: number | null = null;
+  let noiseValue: number | null = null;
+  let heatValue: number | null = null;
+  let trustValue: number | null = null;
+  let timeValue: number | null = null;
+  const resolvedPressureStage = normalizePressureStage(state.pressureStage ?? null);
 
   state.stats.forEach((stat) => {
     const label = normalizeLabel(stat.key);
     if (!label) return;
     const normalized = label.toLowerCase();
+    const numericValue = parseNumericStateValue(stat.value);
+    if (numericValue !== null) {
+      if (normalized === "alert" && alertValue === null) {
+        alertValue = numericValue;
+      } else if (normalized === "noise" && noiseValue === null) {
+        noiseValue = numericValue;
+      } else if (normalized === "heat" && heatValue === null) {
+        heatValue = numericValue;
+      } else if (normalized === "trust" && trustValue === null) {
+        trustValue = numericValue;
+      } else if (normalized === "time" && timeValue === null) {
+        timeValue = numericValue;
+      }
+    }
     if (seenLabels.has(normalized)) return;
     seenLabels.add(normalized);
     const category = classifyStatCategory(normalized);
@@ -699,6 +843,24 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
   const quests = buildStateItemsFromQuest(state);
   const inventory = buildInventoryItems(state);
   const relations = buildRelationItems(state);
+  const metrics = {
+    alert: alertValue !== null ? { raw: alertValue, label: presentAlertTier(alertValue) } : null,
+    noise: noiseValue !== null ? { raw: noiseValue, label: presentNoiseTier(noiseValue) } : null,
+    heat: heatValue !== null ? { raw: heatValue, label: presentHeatTier(heatValue) } : null,
+    trust: trustValue !== null ? { raw: trustValue, label: presentTrustTier(trustValue) } : null,
+  };
+  const risk =
+    alertValue !== null && noiseValue !== null && heatValue !== null
+      ? presentOverallRiskTier({ alert: alertValue, noise: noiseValue, heat: heatValue })
+      : null;
+  const inputTurnsValue =
+    typeof (state as PlayStatePanel & { latestTurnIndex?: number }).latestTurnIndex === "number"
+      ? (state as PlayStatePanel & { latestTurnIndex?: number }).latestTurnIndex
+      : null;
+  const stateTurnsValue = Array.isArray((state as PlayStatePanel & { turns?: unknown[] }).turns)
+    ? ((state as PlayStatePanel & { turns?: unknown[] }).turns as unknown[]).length
+    : null;
+  const turnsValue = inputTurnsValue ?? stateTurnsValue ?? 0;
 
   return {
     status: statusItems,
@@ -706,5 +868,10 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     quests,
     inventory,
     relations,
+    metrics,
+    time: timeValue,
+    turns: turnsValue,
+    risk,
+    pressureStage: resolvedPressureStage,
   };
 }

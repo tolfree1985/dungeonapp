@@ -202,9 +202,15 @@ enum SceneArtPriority {
   critical
 }
 
+enum RenderMode {
+  full
+  partial
+}
+
 model SceneArt {
   id            String         @id @default(cuid())
-  sceneKey      String         @unique
+  sceneKey      String
+  promptHash    String
   title         String?
   basePrompt    String
   renderPrompt  String
@@ -213,11 +219,27 @@ model SceneArt {
   status        SceneArtStatus @default(queued)
   imageUrl      String?
   engineVersion String?
+  renderMode    RenderMode     @default(full)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   renderPriority SceneArtPriority @default(normal)
+  sceneArtShotCaches SceneArtShotCache[]
 
   @@index([status])
+  @@unique([sceneKey, promptHash])
+}
+
+model SceneArtShotCache {
+  id         String    @id @default(cuid())
+  sceneKey   String
+  shotKey    String
+  sceneArt   SceneArt  @relation(fields: [sceneArtId], references: [id], onDelete: Cascade)
+  sceneArtId String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([sceneKey, shotKey])
+  @@index([sceneKey])
 }
 
 enum Tier {

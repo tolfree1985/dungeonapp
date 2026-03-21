@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveSceneThreatFraming, buildThreatFramingTags } from "@/lib/resolveSceneThreatFraming";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
-import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
+import type { SceneDirectorBehavior } from "@/lib/resolveSceneDirectorBehavior";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
 import type { SceneTransitionMemory } from "@/lib/sceneTypes";
 
@@ -12,7 +12,7 @@ const baseGrammar: SceneShotGrammar = {
   revealLevel: "low",
 };
 
-const baseDirector: SceneDirectorDecision = {
+const baseDirector: SceneDirectorBehavior = {
   preferThreatFraming: false,
   allowCut: false,
   forceHold: false,
@@ -47,7 +47,7 @@ function resolve(args: {
   motif?: { tone: string; lighting: string } | null;
   pressureStage?: string;
   focus?: SceneFocusState;
-  director?: SceneDirectorDecision;
+  director?: SceneDirectorBehavior;
   transition?: SceneTransition;
   memory?: SceneTransitionMemory;
 }) {

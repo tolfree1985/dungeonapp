@@ -1,4 +1,4 @@
-import type { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import type { SceneShotIntent } from "@/lib/sceneTypes";
 import type { SceneTransitionMemory } from "@/lib/sceneTypes";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 

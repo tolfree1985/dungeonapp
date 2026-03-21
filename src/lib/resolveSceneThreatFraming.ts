@@ -1,8 +1,8 @@
-import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
+import type { SceneDirectorBehavior } from "@/lib/resolveSceneDirectorBehavior";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneMotif } from "@/lib/resolveSceneMotif";
 import type { SceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
-import type { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import type { SceneShotIntent } from "@/lib/sceneTypes";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
 import type { SceneTransitionMemory } from "@/lib/sceneTypes";
 
@@ -20,7 +20,7 @@ type ResolveSceneThreatFramingArgs = {
   shotIntent: SceneShotIntent;
   shotGrammar: SceneShotGrammar;
   motif: SceneMotif | null;
-  directorDecision: SceneDirectorDecision | null;
+  directorDecision: SceneDirectorBehavior | null;
   pressureStage?: string | null;
   focusState: SceneFocusState;
   sceneTransition: SceneTransition | null;

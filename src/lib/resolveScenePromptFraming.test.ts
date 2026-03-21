@@ -11,9 +11,9 @@ import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import type { SceneActorState } from "@/lib/resolveSceneActorState";
-import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
+import type { SceneDirectorBehavior } from "@/lib/resolveSceneDirectorBehavior";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
-import type { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import type { SceneShotIntent } from "@/lib/sceneTypes";
 import { resolveSceneShotGrammar } from "@/lib/resolveSceneShotGrammar";
 
 const framingState: SceneFramingState = {
@@ -42,7 +42,7 @@ const actor: SceneActorState = {
   actorVisible: true,
 };
 
-const director: SceneDirectorDecision = {
+const director: SceneDirectorBehavior = {
   preferThreatFraming: false,
   allowCut: true,
   forceHold: false,

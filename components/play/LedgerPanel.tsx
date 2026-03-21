@@ -8,7 +8,7 @@ type LedgerPanelProps = {
 };
 
 const categoryLabels: Record<string, string> = {
-  pressure: "Pressure",
+  pressure: "State",
   world: "World",
   quest: "Quest",
   inventory: "Inventory",

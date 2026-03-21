@@ -41,7 +41,11 @@ export function resolveSceneCameraEscalationDecision(
   if (!isAdvance) {
     return {
       shouldEscalateCamera: false,
-      nextContinuityState: { consecutiveAdvances: 0 },
+    nextContinuityState: {
+      consecutiveAdvances: 0,
+      cameraMemory: previousContinuityState?.cameraMemory ?? null,
+      directorMemory: previousContinuityState?.directorMemory ?? null,
+    },
       preferredScaleDelta: 0,
     };
   }
@@ -65,7 +69,11 @@ export function resolveSceneCameraEscalationDecision(
 
   return {
     shouldEscalateCamera,
-    nextContinuityState: { consecutiveAdvances: nextCounter },
+    nextContinuityState: {
+      consecutiveAdvances: nextCounter,
+      cameraMemory: previousContinuityState?.cameraMemory ?? null,
+      directorMemory: previousContinuityState?.directorMemory ?? null,
+    },
     preferredScaleDelta: shouldEscalateCamera ? 1 : 0,
   };
 }

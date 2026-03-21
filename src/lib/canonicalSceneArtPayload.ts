@@ -6,7 +6,8 @@ import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import { ScenePromptFraming } from "@/lib/resolveScenePromptFraming";
-import { SceneShotIntent } from "@/lib/resolveSceneShotIntent";
+import type { SceneShotIntent } from "@/lib/sceneTypes";
+import type { SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
 import {
   presentMajorSceneTags,
   presentNpcCuesForPrompt,
@@ -22,6 +23,7 @@ type CanonicalSceneArtParams = {
   motifTags?: string[];
   threatFramingTags?: string[];
   revealStructureTags?: string[];
+  directorDecision?: SceneDirectorDecision | null;
 };
 
 export function buildCanonicalSceneArtPayload({
@@ -32,6 +34,7 @@ export function buildCanonicalSceneArtPayload({
   motifTags,
   threatFramingTags,
   revealStructureTags,
+  directorDecision,
 }: CanonicalSceneArtParams): SceneArtPayload | null {
   if (!turn?.scene) return null;
 
@@ -55,13 +58,6 @@ export function buildCanonicalSceneArtPayload({
     subject: subjectState,
     actor: actorState,
     framing: framingState,
-  });
-  console.log("sceneArt canonical inputs", {
-    latestTurnScene: turn.scene,
-    visualState,
-    framing: framingState,
-    subject: subjectState,
-    actor: actorState,
   });
 
   const visualTags = [
@@ -87,6 +83,7 @@ export function buildCanonicalSceneArtPayload({
     motifTags,
     threatFramingTags,
     revealStructureTags,
+    directorDecision: directorDecision ?? null,
   });
 }
 

@@ -1,5 +1,6 @@
 import type { SceneArtRow } from "@/lib/resolveTurnSceneArtPresentation";
 import type { ScenePresentation } from "@/lib/resolveTurnSceneArtPresentation";
+import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
 import type { PlayTurn } from "@/app/play/types";
 
@@ -14,4 +15,5 @@ export type TurnApiResponse = {
   sceneTransition?: SceneTransition | null;
   scenePresentation?: ScenePresentation | null;
   sceneArt?: SceneArtRow | null;
+  sceneContinuity?: SceneContinuityInfo | null;
 };
