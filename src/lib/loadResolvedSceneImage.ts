@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { resolveDisplayedSceneImage } from "@/lib/sceneArt";
+import type { ResolvedSceneImage } from "@/lib/sceneArt";
 import type { SceneArtStatus } from "@/lib/sceneArtStatus";
 import { buildScenePrompt, buildSceneArtPromptInput } from "@/lib/sceneArtGenerator";
 import type { SceneArt } from "@prisma/client";
@@ -40,9 +41,6 @@ export async function loadResolvedSceneImage({
     : null;
   const promptResult = promptInput ? buildScenePrompt(promptInput) : null;
   const promptHash = promptResult?.promptHash ?? null;
-  if (promptInput && promptResult) {
-    console.log("SCENE ART PROMPT HASH", promptResult.promptHash);
-  }
   const uniqueWhere = sceneKey && promptHash
     ? {
         sceneKey_promptHash: {
@@ -51,33 +49,28 @@ export async function loadResolvedSceneImage({
         },
       }
     : null;
+
   const [currentScene, previousScene] = await Promise.all([
     uniqueWhere
       ? prisma.sceneArt.findUnique({ where: uniqueWhere })
       : Promise.resolve(null),
-    previousSceneKey ? prisma.sceneArt.findUnique({ where: { sceneKey: previousSceneKey } }) : Promise.resolve(null),
+    previousSceneKey
+      ? prisma.sceneArt.findUnique({ where: { sceneKey: previousSceneKey } })
+      : Promise.resolve(null),
   ]);
 
-  if (currentScene || previousScene) {
-    const reportedStatus = (currentScene?.status ?? previousScene?.status) as SceneArtStatus | undefined;
-    console.log("sceneArt loader row", {
-      sceneKey,
-      status: reportedStatus ?? "missing",
-      imageUrl: currentScene?.imageUrl ?? previousScene?.imageUrl ?? null,
-    });
-  }
-
-
-  console.log("loadResolvedSceneImage", {
+  const fallbackSceneStatus = (currentScene?.status ?? previousScene?.status) as SceneArtStatus | undefined;
+  const fallbackImage = resolveDisplayedSceneImage({
     sceneKey,
-    previousSceneKey,
-    currentScene,
-    currentSceneState,
+    currentSceneImageUrl: null,
+    currentScenePending: currentScene?.status === "queued",
+    previousSceneImageUrl: previousScene?.imageUrl ?? null,
+    locationBackdropUrl,
+    defaultImageUrl,
+    sceneStatus: fallbackSceneStatus ?? "missing",
   });
 
-  const currentReady = currentScene?.status === "ready" && currentScene.imageUrl;
-  const previousReady = previousScene?.status === "ready" && previousScene.imageUrl;
-  if (currentReady) {
+  if (currentScene?.status === "ready" && currentScene.imageUrl) {
     return {
       image: {
         imageUrl: currentScene.imageUrl,
@@ -85,73 +78,58 @@ export async function loadResolvedSceneImage({
         pending: false,
         sceneKey,
         status: "ready",
+        sceneArtStatus: "ready",
+        provider: extractProvider(currentScene),
+        promptHash,
       },
       currentScene,
       previousScene,
     };
   }
 
-  if (previousReady) {
-    return {
-      image: {
-        imageUrl: previousScene.imageUrl,
-        source: "scene",
-        pending: currentScene?.status === "queued",
-        sceneKey,
-        status: "ready",
-      },
-      currentScene,
-      previousScene,
-    };
-  }
-
-  const generatorParams = {
-    sceneKey,
-    sceneText,
-    locationKey,
-    timeKey,
-    stylePreset,
-  };
-
-  if (!currentReady && !previousReady && sceneKey) {
-    triggerSceneArtGeneration(generatorParams);
-    return {
-      image: {
-        imageUrl: `/api/scene-art/fallback/${sceneKey}`,
-        source: "deterministic-fallback",
-        pending: true,
-        sceneKey,
-        status: "pending",
-      },
-      currentScene,
-      previousScene,
-    };
-  }
-
-    const image = resolveDisplayedSceneImage({
-      sceneStatus: (currentScene?.status as SceneArtStatus) ?? "missing",
+  const shouldTriggerGeneration = !!sceneKey && !currentScene;
+  if (shouldTriggerGeneration) {
+    triggerSceneArtGeneration({
       sceneKey,
-      currentSceneImageUrl: null,
-      currentScenePending: !!currentScene && currentScene.status === "queued",
-      previousSceneImageUrl: null,
-      locationBackdropUrl,
-      defaultImageUrl,
+      promptHash,
+      sceneText: currentState.text,
+      locationKey: currentState.locationKey,
+      timeKey: currentState.timeKey,
+      stylePreset,
     });
-    return {
-      image,
-      currentScene,
-      previousScene,
-    };
   }
 
-function triggerSceneArtGeneration(params: {
+  const lifecycleStatus = currentScene
+    ? currentScene.status === "failed"
+      ? "failed"
+      : "generating"
+    : "generating";
+  const provider = currentScene ? extractProvider(currentScene) : "fallback";
+
+  return {
+    image: {
+      ...fallbackImage,
+      pending: lifecycleStatus === "generating",
+      sceneArtStatus: lifecycleStatus,
+      provider,
+      promptHash,
+    },
+    currentScene,
+    previousScene,
+  };
+}
+
+type SceneArtLifecycleQueryParams = {
   sceneKey: string;
+  promptHash: string | null;
   sceneText?: string | null;
   locationKey?: string | null;
   timeKey?: string | null;
   stylePreset?: string | null;
   engineVersion?: string | null;
-}) {
+};
+
+function triggerSceneArtGeneration(params: SceneArtLifecycleQueryParams) {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3001";
   const url = new URL(`/api/scene-art/generate/${params.sceneKey}`, baseUrl);
   if (params.sceneText) url.searchParams.set("sceneText", params.sceneText);
@@ -159,7 +137,22 @@ function triggerSceneArtGeneration(params: {
   if (params.timeKey) url.searchParams.set("timeKey", params.timeKey);
   if (params.stylePreset) url.searchParams.set("stylePreset", params.stylePreset);
   if (params.engineVersion) url.searchParams.set("engineVersion", params.engineVersion);
-  void fetch(url).catch((error) => {
-    console.warn("Scene art generation trigger failed", { sceneKey: params.sceneKey, error });
+  if (params.promptHash) url.searchParams.set("promptHash", params.promptHash);
+  void fetch(url, { method: "GET", cache: "no-store" }).catch(() => {
+    console.warn("Scene art generation trigger failed", { sceneKey: params.sceneKey });
   });
+}
+
+function extractProvider(row: SceneArt): "remote" | "fallback" | "none" {
+  if (!row) return "none";
+  if (row.tagsJson) {
+    try {
+      const parsed = JSON.parse(row.tagsJson);
+      if (parsed?.provider === "fallback") return "fallback";
+      if (parsed?.provider === "remote") return "remote";
+    } catch {
+      // ignore
+    }
+  }
+  return row.status === "ready" ? "remote" : "fallback";
 }

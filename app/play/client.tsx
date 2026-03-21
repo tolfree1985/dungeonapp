@@ -179,12 +179,12 @@ export default function PlayClient({
     setLiveSceneArt(sceneImage ?? null);
   }, [sceneImage]);
   useEffect(() => {
-    if (!liveSceneArt?.pending) return;
+    if (liveSceneArt?.sceneArtStatus !== "generating") return;
     const timer = setTimeout(() => {
       router.refresh();
     }, 1500);
     return () => clearTimeout(timer);
-  }, [liveSceneArt?.pending, router]);
+  }, [liveSceneArt?.sceneArtStatus, router]);
   useEffect(() => {
     setLiveSceneContinuity(sceneContinuity ?? null);
   }, [sceneContinuity]);

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma } from "@/src/lib/prisma";
 import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
 import { buildSceneArtPromptInput, buildScenePrompt } from "@/lib/sceneArtGenerator";
@@ -6,6 +6,10 @@ import { buildSceneArtPromptInput, buildScenePrompt } from "@/lib/sceneArtGenera
 describe("loadResolvedSceneImage", () => {
   beforeEach(async () => {
     await prisma.sceneArt.deleteMany({ where: { sceneKey: "dock_office" } });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("resolves the row whose prompt hash matches the scene text", async () => {
@@ -58,10 +62,33 @@ describe("loadResolvedSceneImage", () => {
       previousSceneKey: null,
       locationBackdropUrl: null,
       defaultImageUrl: "/scene-art/fallback.jpg",
-      currentSceneState: { currentScene: currentSceneState },
+      currentSceneState: currentSceneState,
     });
 
     expect(result.currentScene?.promptHash).toBe(prompt.promptHash);
     expect(result.image.imageUrl).toBe("/scene-art/dock_office.jpg");
+    expect(result.image.sceneArtStatus).toBe("ready");
+  });
+
+  it("returns generating status and triggers generation when no matching row exists", async () => {
+    const sceneKey = "dock_office";
+    const currentSceneState = {
+      text: "Looking for clues in the servants' hall.",
+      locationKey: "servants_wing",
+      timeKey: "late_night",
+    };
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({} as never);
+
+    const result = await loadResolvedSceneImage({
+      sceneKey,
+      previousSceneKey: null,
+      locationBackdropUrl: null,
+      defaultImageUrl: "/scene-art/fallback.jpg",
+      currentSceneState,
+    });
+
+    expect(result.image.sceneArtStatus).toBe("generating");
+    expect(result.image.provider).toBe("fallback");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

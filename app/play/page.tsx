@@ -612,7 +612,7 @@ let persistedAdventureOwnerId: string | null = null;
   const sceneImageCaption =
     resolvedSceneImage.source === "scene" &&
     resolvedSceneImage.imageUrl &&
-    !resolvedSceneImage.pending &&
+    resolvedSceneImage.sceneArtStatus === "ready" &&
     visualDeltas.length > 0
       ? getSceneImageUpdateCaption(visualDeltas)
       : null;

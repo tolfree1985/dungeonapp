@@ -60,12 +60,17 @@ export type SceneArtPayload = {
   tags: string[];
 };
 
+export type SceneArtLifecycleStatus = "missing" | "generating" | "ready" | "failed";
+
 export type ResolvedSceneImage = {
   imageUrl: string | null;
   source: "scene" | "previous" | "location" | "default";
   pending: boolean;
   sceneKey: string | null;
   status: SceneArtStatus;
+  sceneArtStatus?: SceneArtLifecycleStatus;
+  provider?: "remote" | "fallback" | "none";
+  promptHash?: string | null;
 };
 
 function normalizeToken(value: string): string {

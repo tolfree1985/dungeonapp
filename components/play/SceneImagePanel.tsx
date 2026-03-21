@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ResolvedSceneImage } from "@/lib/sceneArt";
+import type { ResolvedSceneImage, SceneArtLifecycleStatus } from "@/lib/sceneArt";
 import type { SceneContinuityState } from "@/lib/sceneContinuity";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
@@ -44,6 +44,7 @@ export function SceneImagePanel({
   source,
   pending,
   status,
+  sceneArtStatus,
   caption,
   transition,
   continuity,
@@ -73,9 +74,8 @@ export function SceneImagePanel({
   const finalImageUrl = displayedImage.imageUrl;
   const finalSource = displayedImage.source;
   const focusLabel = focusState?.focusLabel ? `Focus: ${focusState.focusLabel}` : undefined;
-  const normalizedStatus = status ?? "missing";
-  const shouldHideImage = pending && !(continuity?.shouldReuseImage ?? false);
-  const renderImageUrl = shouldHideImage ? null : finalImageUrl;
+  const normalizedLifecycle: SceneArtLifecycleStatus = sceneArtStatus ?? (pending ? "generating" : "ready");
+  const renderImageUrl = finalImageUrl;
 
   const sourceLabel = () => {
     switch (finalSource) {
@@ -89,26 +89,22 @@ export function SceneImagePanel({
         return "Default Backdrop";
     }
   };
-  const renderStateBadge =
-    normalizedStatus === "failed"
-      ? "Render failed"
-      : pending
-        ? "Rendering scene..."
-        : finalSource === "scene"
-          ? null
-          : finalSource === "previous"
-            ? "Using previous scene"
-            : finalSource === "location"
-              ? "Using location backdrop"
-              : "Using fallback scene";
-  const placeholderLabel =
-    normalizedStatus === "failed"
-      ? "Render failed"
-      : pending
-        ? "Rendering scene..."
-        : finalSource === "default"
-          ? "Default Chronicle Scene"
-          : "No scene image available";
+  const renderStateBadge = (() => {
+    if (normalizedLifecycle === "failed") return "Render failed";
+    if (normalizedLifecycle === "generating") return "Rendering scene...";
+    if (normalizedLifecycle === "missing") return "Missing scene art";
+    if (finalSource === "scene") return null;
+    if (finalSource === "previous") return "Using previous scene";
+    if (finalSource === "location") return "Using location backdrop";
+    return "Using fallback scene";
+  })();
+  const placeholderLabel = normalizedLifecycle === "failed"
+    ? "Render failed"
+    : normalizedLifecycle === "generating"
+      ? "Rendering scene..."
+      : finalSource === "default"
+        ? "Default Chronicle Scene"
+        : "No scene image available";
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
