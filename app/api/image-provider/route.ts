@@ -34,7 +34,6 @@ export async function POST(request: NextRequest) {
         model: "gpt-image-1",
         prompt,
         size: "1024x1024",
-        promptHash,
       }),
       cache: "no-store",
     });
