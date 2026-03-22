@@ -62,21 +62,21 @@ export async function GET(
   const existing = await prisma.sceneArt.findUnique({
     where: uniqueWhere,
   });
-  if (existing?.status === SceneArtStatus.ready && existing.imageUrl) {
+  if (existing && existing.status === SceneArtStatus.ready && existing.imageUrl) {
     return NextResponse.json({
       ...existing,
       promptHash,
       provider: "remote",
     });
   }
-  if (existing?.status === SceneArtStatus.generating) {
+  if (existing && existing.status === SceneArtStatus.generating) {
     return NextResponse.json({
       ...existing,
       promptHash,
-      provider: providerLabel(sceneKey, promptHash, existing.imageUrl),
+      provider: providerLabel(sceneKey, promptHash, existing.imageUrl ?? null),
     });
   }
-  if (existing?.status === SceneArtStatus.queued) {
+  if (existing && existing.status === SceneArtStatus.queued) {
     if (existing.imageUrl) {
       return NextResponse.json({
         ...existing,
