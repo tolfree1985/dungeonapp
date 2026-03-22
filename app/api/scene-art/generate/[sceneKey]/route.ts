@@ -1,7 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { buildScenePrompt, buildPromptHash, buildSceneArtPromptInput, SceneArtPromptInput, generateImage } from "@/lib/sceneArtGenerator";
+import { buildScenePrompt, SceneArtPromptInput, generateImage } from "@/lib/sceneArtGenerator";
 import { SceneArtStatus } from "@/generated/prisma";
+
+const fallbackImages = new Set(["/scene-art/dock_office.jpg", "/scene-art/generated-placeholder.jpg"]);
+
+function isFallbackImage(imageUrl: string | null): boolean {
+  return imageUrl !== null && fallbackImages.has(imageUrl);
+}
+
+function isGeneratedImage(sceneKey: string, promptHash: string, imageUrl: string | null): boolean {
+  if (!imageUrl) return false;
+  return imageUrl === `/scene-art/${sceneKey}-${promptHash}.png`;
+}
+
+function providerLabel(sceneKey: string, promptHash: string, imageUrl: string | null): "remote" | "fallback" {
+  if (isGeneratedImage(sceneKey, promptHash, imageUrl)) {
+    return "remote";
+  }
+  return "fallback";
+}
 
 function parseQueryParams(request: Request) {
   const url = new URL(request.url);
@@ -90,6 +108,28 @@ export async function GET(
     promptHash,
   });
   const generated = await generateImage(prompt.renderPrompt, sceneKey, promptHash);
+  const nextIsGenerated = isGeneratedImage(sceneKey, promptHash, generated.imageUrl);
+  const nextIsFallback = isFallbackImage(generated.imageUrl);
+  const existingIsGenerated = existing?.imageUrl
+    ? isGeneratedImage(sceneKey, promptHash, existing.imageUrl)
+    : false;
+
+  if (existingIsGenerated && nextIsFallback) {
+    return NextResponse.json({
+      ...existing,
+      promptHash,
+      provider: "remote",
+    });
+  }
+
+  const shouldPersist = !existing || nextIsGenerated;
+  if (!shouldPersist && existing) {
+    return NextResponse.json({
+      ...existing,
+      promptHash,
+      provider: providerLabel(sceneKey, promptHash, existing.imageUrl),
+    });
+  }
 
   const updated = await prisma.sceneArt.update({
     where: uniqueWhere,
@@ -98,13 +138,13 @@ export async function GET(
       status: SceneArtStatus.ready,
       basePrompt: prompt.basePrompt,
       renderPrompt: prompt.renderPrompt,
-      tagsJson: JSON.stringify({ provider: generated.provider }),
+      tagsJson: JSON.stringify({ provider: providerLabel(sceneKey, promptHash, generated.imageUrl) }),
     },
   });
 
   return NextResponse.json({
     ...updated,
     promptHash,
-    provider: generated.provider,
+    provider: providerLabel(sceneKey, promptHash, updated.imageUrl),
   });
 }
