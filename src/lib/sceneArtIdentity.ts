@@ -1,37 +1,64 @@
 import { buildSceneArtPromptInput, buildScenePrompt } from "@/lib/sceneArtGenerator";
-import type { SceneArtPromptInput } from "@/lib/sceneArtGenerator";
+import type { SceneArtPromptInput, ScenePromptResult } from "@/lib/sceneArtGenerator";
 
 export type SceneArtIdentityInput = {
   sceneKey: string;
   sceneText?: string | null;
-  locationKey?: string | null;
-  timeKey?: string | null;
   stylePreset?: string | null;
+  renderMode?: "full" | "partial" | null;
   engineVersion?: string | null;
 };
 
 export type SceneArtIdentity = {
+  sceneKey: string;
+  sceneText: string | null;
+  stylePreset: string;
+  renderMode: "full" | "partial";
+  engineVersion: string | null;
   promptInput: SceneArtPromptInput;
-  prompt: ReturnType<typeof buildScenePrompt>;
+  prompt: ScenePromptResult;
+  basePrompt: string;
+  renderPrompt: string;
   promptHash: string;
   fileName: string;
   imageUrl: string;
 };
 
 export function getSceneArtIdentity(input: SceneArtIdentityInput): SceneArtIdentity {
+  const resolvedStyle = input.stylePreset ?? "victorian-gothic-cinematic";
+  const resolvedRenderMode = input.renderMode ?? "full";
   const promptInput = buildSceneArtPromptInput({
     sceneKey: input.sceneKey,
     currentSceneState: {
       text: input.sceneText ?? null,
-      locationKey: input.locationKey ?? null,
-      timeKey: input.timeKey ?? null,
     },
-    stylePreset: input.stylePreset ?? null,
+    stylePreset: resolvedStyle,
     engineVersion: input.engineVersion ?? null,
   });
-  const prompt = buildScenePrompt(promptInput);
+  const prompt = buildScenePrompt({
+    sceneKey: promptInput.sceneKey,
+    visualState: promptInput.visualState,
+    stylePreset: promptInput.stylePreset,
+    engineVersion: promptInput.engineVersion,
+  });
+  const basePrompt = prompt.basePrompt;
+  const renderPrompt = prompt.renderPrompt;
   const promptHash = prompt.promptHash;
-  const fileName = `${input.sceneKey}-${promptHash}.png`;
+  const fileName = `${promptInput.sceneKey}-${promptHash}.png`;
   const imageUrl = `/scene-art/${fileName}`;
-  return { promptInput, prompt, promptHash, fileName, imageUrl };
+
+  return {
+    sceneKey: promptInput.sceneKey,
+    sceneText: input.sceneText ?? null,
+    stylePreset: resolvedStyle,
+    renderMode: resolvedRenderMode,
+    engineVersion: promptInput.engineVersion,
+    promptInput,
+    prompt,
+    basePrompt,
+    renderPrompt,
+    promptHash,
+    fileName,
+    imageUrl,
+  };
 }

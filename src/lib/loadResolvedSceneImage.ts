@@ -1,29 +1,104 @@
 import { prisma } from "@/lib/prisma";
-import { resolveDisplayedSceneImage } from "@/lib/sceneArt";
-import type { ResolvedSceneImage } from "@/lib/sceneArt";
-import type { SceneArtStatus } from "@/lib/sceneArtStatus";
-import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 import type { SceneArt } from "@prisma/client";
+import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
+import { sceneArtFileExists } from "@/lib/scene-art/fileSystem";
+import type { ResolvedSceneImage } from "@/lib/scene-art/types";
 
-export type ResolvedSceneImageResult = {
-  image: ResolvedSceneImage;
-  currentScene: SceneArt | null;
-  previousScene: SceneArt | null;
+type SceneArtRow = {
+  status: string;
+  imageUrl: string | null;
+  promptHash: string | null;
+  errorMessage?: string | null;
 };
+
+function mapSceneArtRowStatus(rawStatus: string): "pending" | "generating" | "ready" | "failed" {
+  switch (rawStatus) {
+    case "queued":
+    case "pending":
+      return "pending";
+    case "generating":
+      return "generating";
+    case "ready":
+      return "ready";
+    case "failed":
+      return "failed";
+    default:
+      throw new Error(`SCENE_ART_UNKNOWN_STATUS:${rawStatus}`);
+  }
+}
+
+function toMissing(promptHash: string | null): ResolvedSceneImage {
+  return {
+    status: "missing",
+    imageUrl: null,
+    promptHash,
+    errorCode: "SCENE_ART_READY_FILE_MISSING",
+  };
+}
+
+async function mapPresentation(row: SceneArtRow | null): Promise<ResolvedSceneImage> {
+  if (!row) {
+    return {
+      status: "pending",
+      imageUrl: null,
+      promptHash: null,
+    };
+  }
+
+  const normalized = mapSceneArtRowStatus(row.status);
+
+  if (normalized === "ready") {
+    if (!row.imageUrl) {
+      return toMissing(row.promptHash ?? null);
+    }
+
+    const exists = await sceneArtFileExists(row.imageUrl);
+    if (!exists) {
+      return toMissing(row.promptHash ?? null);
+    }
+
+    return {
+      status: "ready",
+      imageUrl: row.imageUrl,
+      promptHash: row.promptHash ?? "",
+    };
+  }
+
+  if (normalized === "generating") {
+    return {
+      status: "generating",
+      imageUrl: null,
+      promptHash: row.promptHash ?? null,
+    };
+  }
+
+  if (normalized === "failed") {
+    return {
+      status: "failed",
+      imageUrl: null,
+      promptHash: row.promptHash ?? null,
+      errorCode: row.errorMessage ?? "SCENE_ART_FAILED",
+    };
+  }
+
+  return {
+    status: "pending",
+    imageUrl: null,
+    promptHash: row.promptHash ?? null,
+  };
+}
 
 export async function loadResolvedSceneImage({
   sceneKey,
-  previousSceneKey,
   locationBackdropUrl,
   defaultImageUrl,
   currentSceneState,
 }: {
   sceneKey: string | null;
-  previousSceneKey: string | null;
   locationBackdropUrl: string | null;
   defaultImageUrl: string;
   currentSceneState: Record<string, unknown> | null;
-}): Promise<ResolvedSceneImageResult> {
+}): Promise<ResolvedSceneImage> {
   const sceneRecord = (currentSceneState ?? null) as Record<string, unknown> | null;
   const currentState = {
     text: typeof sceneRecord?.text === "string" ? sceneRecord.text : null,
@@ -35,9 +110,8 @@ export async function loadResolvedSceneImage({
     ? getSceneArtIdentity({
         sceneKey,
         sceneText: currentState.text ?? null,
-        locationKey: currentState.locationKey ?? null,
-        timeKey: currentState.timeKey ?? null,
-        stylePreset: "victorian-gothic-cinematic",
+        stylePreset,
+        renderMode: "full",
         engineVersion: null,
       })
     : null;
@@ -51,42 +125,9 @@ export async function loadResolvedSceneImage({
       }
     : null;
 
-  const [currentScene, previousScene] = await Promise.all([
-    uniqueWhere
-      ? prisma.sceneArt.findUnique({ where: uniqueWhere })
-      : Promise.resolve(null),
-    previousSceneKey
-      ? prisma.sceneArt.findUnique({ where: { sceneKey: previousSceneKey } })
-      : Promise.resolve(null),
-  ]);
-
-  const fallbackSceneStatus = (currentScene?.status ?? previousScene?.status) as SceneArtStatus | undefined;
-  const fallbackImage = resolveDisplayedSceneImage({
-    sceneKey,
-    currentSceneImageUrl: null,
-    currentScenePending: currentScene?.status === "queued",
-    previousSceneImageUrl: previousScene?.imageUrl ?? null,
-    locationBackdropUrl,
-    defaultImageUrl,
-    sceneStatus: fallbackSceneStatus ?? "missing",
-  });
-
-  if (currentScene?.status === "ready" && currentScene.imageUrl) {
-    return {
-      image: {
-        imageUrl: currentScene.imageUrl,
-        source: "scene",
-        pending: false,
-        sceneKey,
-        status: "ready",
-        sceneArtStatus: "ready",
-        provider: extractProvider(currentScene),
-        promptHash,
-      },
-      currentScene,
-      previousScene,
-    };
-  }
+  const currentScene = uniqueWhere
+    ? await prisma.sceneArt.findUnique({ where: uniqueWhere })
+    : null;
 
   const shouldTriggerGeneration = !!sceneKey && !!identity && !currentScene;
   if (shouldTriggerGeneration) {
@@ -94,38 +135,24 @@ export async function loadResolvedSceneImage({
       sceneKey,
       promptHash: identity?.promptHash ?? null,
       sceneText: currentState.text,
-      locationKey: currentState.locationKey,
-      timeKey: currentState.timeKey,
       stylePreset,
     });
   }
 
-  const lifecycleStatus = currentScene
-    ? currentScene.status === "failed"
-      ? "failed"
-      : "generating"
-    : "generating";
-  const provider = currentScene ? extractProvider(currentScene) : "fallback";
-
-  return {
-    image: {
-      ...fallbackImage,
-      pending: lifecycleStatus === "generating",
-      sceneArtStatus: lifecycleStatus,
-      provider,
-      promptHash,
-    },
-    currentScene,
-    previousScene,
-  };
+  const presentation = await mapPresentation(currentScene);
+  if (shouldTriggerGeneration && presentation.status === "pending") {
+    return {
+      ...presentation,
+      status: "generating",
+    };
+  }
+  return presentation;
 }
 
 type SceneArtLifecycleQueryParams = {
   sceneKey: string;
   promptHash: string | null;
   sceneText?: string | null;
-  locationKey?: string | null;
-  timeKey?: string | null;
   stylePreset?: string | null;
   engineVersion?: string | null;
 };
@@ -134,8 +161,6 @@ function triggerSceneArtGeneration(params: SceneArtLifecycleQueryParams) {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3001";
   const url = new URL(`/api/scene-art/generate/${params.sceneKey}`, baseUrl);
   if (params.sceneText) url.searchParams.set("sceneText", params.sceneText);
-  if (params.locationKey) url.searchParams.set("locationKey", params.locationKey);
-  if (params.timeKey) url.searchParams.set("timeKey", params.timeKey);
   if (params.stylePreset) url.searchParams.set("stylePreset", params.stylePreset);
   if (params.engineVersion) url.searchParams.set("engineVersion", params.engineVersion);
   if (params.promptHash) url.searchParams.set("promptHash", params.promptHash);

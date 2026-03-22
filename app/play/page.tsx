@@ -17,8 +17,7 @@ import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import { resolveSceneVisualState, type VisualStateDelta } from "@/lib/resolveSceneVisualState";
-import { ResolvedSceneImage } from "@/lib/sceneArt";
-import { loadResolvedSceneImage, type ResolvedSceneImageResult } from "@/lib/loadResolvedSceneImage";
+import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
 import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { buildPlayTurnPresentation } from "./normalizeTurnPresentation";
 import { randomUUID } from "node:crypto";
@@ -578,19 +577,15 @@ let persistedAdventureOwnerId: string | null = null;
     subject: sceneSubjectState,
     actor: sceneActorState,
   });
-  const resolvedSceneImageResult = await loadResolvedSceneImage({
+  const resolvedSceneImage = await loadResolvedSceneImage({
     sceneKey: sceneArtKey,
-    previousSceneKey: null,
     locationBackdropUrl: null,
     defaultImageUrl: DEFAULT_SCENE_FALLBACK_URL,
     currentSceneState: currentScene ?? null,
   });
-  const resolvedSceneImage = resolvedSceneImageResult.image;
-  const currentSceneRow = resolvedSceneImageResult.currentScene;
-  const previousSceneRow = resolvedSceneImageResult.previousScene;
   const shouldReuseResolvedSceneArt =
-    resolvedSceneImage.source === "scene" &&
     resolvedSceneImage.status === "ready" &&
+    !!resolvedSceneImage.imageUrl &&
     !!sceneArtKey;
   const sceneArt = shouldReuseResolvedSceneArt
     ? {
@@ -603,16 +598,21 @@ let persistedAdventureOwnerId: string | null = null;
       });
   const sceneRefreshDecision = resolveSceneRefreshDecision({
     transitionType: null,
-    currentSceneKey: sceneArt?.sceneKey ?? null,
-    previousSceneKey: previousSceneRow?.sceneKey ?? null,
-    currentReady: currentSceneRow?.status === "ready",
-    previousReady: previousSceneRow?.status === "ready",
+    currentSceneKey: currentScene?.sceneKey ?? null,
+    previousSceneKey: null,
+    currentReady: resolvedSceneImage.status === "ready",
+    previousReady: false,
+  });
+  console.log("scene.art.presentation", {
+    currentSceneKey: currentScene?.sceneKey ?? null,
+    artStatus: resolvedSceneImage.status,
+    promptHash: resolvedSceneImage.promptHash ?? null,
+    ready: resolvedSceneImage.status === "ready",
   });
   const visualDeltas = buildVisualDeltasFromLedger(latestTurn?.ledgerAdds ?? []);
   const sceneImageCaption =
-    resolvedSceneImage.source === "scene" &&
+    resolvedSceneImage.status === "ready" &&
     resolvedSceneImage.imageUrl &&
-    resolvedSceneImage.sceneArtStatus === "ready" &&
     visualDeltas.length > 0
       ? getSceneImageUpdateCaption(visualDeltas)
       : null;

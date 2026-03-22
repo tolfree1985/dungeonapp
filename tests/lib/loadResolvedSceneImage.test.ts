@@ -59,15 +59,14 @@ describe("loadResolvedSceneImage", () => {
 
     const result = await loadResolvedSceneImage({
       sceneKey,
-      previousSceneKey: null,
       locationBackdropUrl: null,
       defaultImageUrl: "/scene-art/fallback.jpg",
       currentSceneState: currentSceneState,
     });
 
-    expect(result.currentScene?.promptHash).toBe(prompt.promptHash);
-    expect(result.image.imageUrl).toBe("/scene-art/dock_office.jpg");
-    expect(result.image.sceneArtStatus).toBe("ready");
+    expect(result.status).toBe("ready");
+    expect(result.promptHash).toBe(prompt.promptHash);
+    expect(result.imageUrl).toBe("/scene-art/dock_office.jpg");
   });
 
   it("returns generating status and triggers generation when no matching row exists", async () => {
@@ -81,14 +80,13 @@ describe("loadResolvedSceneImage", () => {
 
     const result = await loadResolvedSceneImage({
       sceneKey,
-      previousSceneKey: null,
       locationBackdropUrl: null,
       defaultImageUrl: "/scene-art/fallback.jpg",
       currentSceneState,
     });
 
-    expect(result.image.sceneArtStatus).toBe("generating");
-    expect(result.image.provider).toBe("fallback");
+    expect(result.status).toBe("generating");
+    expect(result.promptHash).toBeNull();
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

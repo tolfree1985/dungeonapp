@@ -75,8 +75,7 @@ export function SceneImagePanel({
   const finalSource = displayedImage.source;
   const focusLabel = focusState?.focusLabel ? `Focus: ${focusState.focusLabel}` : undefined;
   const normalizedLifecycle: SceneArtLifecycleStatus = sceneArtStatus ?? (pending ? "generating" : "ready");
-  const fallbackImageUrl = finalImageUrl ?? "/scene-art/generated-placeholder.jpg";
-  const renderImageUrl = fallbackImageUrl;
+  const showImage = normalizedLifecycle === "ready" && Boolean(finalImageUrl);
 
   const sourceLabel = () => {
     switch (finalSource) {
@@ -91,27 +90,32 @@ export function SceneImagePanel({
     }
   };
   const renderStateBadge = (() => {
-    if (normalizedLifecycle === "failed") return "Render failed";
-    if (normalizedLifecycle === "generating") return "Rendering scene...";
-    if (normalizedLifecycle === "missing") return "Missing scene art";
-    if (finalSource === "scene") return null;
-    if (finalSource === "previous") return "Using previous scene";
-    if (finalSource === "location") return "Using location backdrop";
-    return "Using fallback scene";
+    switch (normalizedLifecycle) {
+      case "pending":
+        return "Preparing scene art";
+      case "generating":
+        return "Rendering scene art";
+      case "missing":
+        return "Scene art missing";
+      case "failed":
+        return "Scene art failed";
+      default:
+        return null;
+    }
   })();
   const placeholderLabel = normalizedLifecycle === "failed"
     ? "Render failed"
     : normalizedLifecycle === "generating"
       ? "Rendering scene..."
-      : finalSource === "default"
-        ? "Default Chronicle Scene"
-        : "No scene image available";
+      : normalizedLifecycle === "missing"
+        ? "Scene art artifact missing"
+        : "Preparing scene art...";
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
       <div className="relative aspect-[16/9] w-full bg-stone-900">
-        {renderImageUrl ? (
-          <img src={renderImageUrl} alt={sourceLabel()} className="h-full w-full object-cover" />
+        {showImage ? (
+          <img src={finalImageUrl as string} alt={sourceLabel()} className="h-full w-full object-cover" />
         ) : (
           <div className="scene-placeholder flex h-full items-center justify-center text-xs uppercase tracking-[0.35em] text-stone-500">
             {placeholderLabel}

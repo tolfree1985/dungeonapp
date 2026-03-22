@@ -1,41 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { buildScenePrompt, buildSceneArtPromptInput, generateImage } from "@/lib/sceneArtGenerator";
 import { SceneArtStatus } from "@/generated/prisma";
-import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
+import { generateImage } from "@/lib/sceneArtGenerator";
+import { loadOrCreateSceneArt } from "@/lib/scene-art/loadOrCreateSceneArt";
 
-const fallbackImages = new Set(["/scene-art/dock_office.jpg", "/scene-art/generated-placeholder.jpg"]);
+const FAILURE_COOLDOWN_MS = 60_000;
 
-function isFallbackImage(imageUrl: string | null): boolean {
-  return imageUrl !== null && fallbackImages.has(imageUrl);
-}
-
-function isGeneratedImage(sceneKey: string, promptHash: string, imageUrl: string | null): boolean {
-  if (!imageUrl) return false;
-  return imageUrl === `/scene-art/${sceneKey}-${promptHash}.png`;
-}
-
-function providerLabel(
-  sceneKey: string,
-  promptHash: string,
-  imageUrl: string | null | undefined,
-): "remote" | "fallback" {
-  if (!imageUrl) return "fallback";
-  if (imageUrl === "/scene-art/dock_office.jpg") return "fallback";
-  if (imageUrl === "/scene-art/generated-placeholder.jpg") return "fallback";
-  if (imageUrl === `/scene-art/${sceneKey}-${promptHash}.png`) return "remote";
-  return "fallback";
-}
-
-function parseQueryParams(request: Request) {
-  const url = new URL(request.url);
+function parseQueryParams(request: NextRequest) {
   return {
-    sceneText: url.searchParams.get("sceneText"),
-    locationKey: url.searchParams.get("locationKey"),
-    timeKey: url.searchParams.get("timeKey"),
-    stylePreset: url.searchParams.get("stylePreset") ?? undefined,
-    engineVersion: url.searchParams.get("engineVersion") ?? undefined,
+    sceneText: request.nextUrl.searchParams.get("sceneText") ?? null,
+    stylePreset: request.nextUrl.searchParams.get("stylePreset") ?? null,
+    engineVersion: request.nextUrl.searchParams.get("engineVersion") ?? null,
+    force: request.nextUrl.searchParams.get("force") === "true",
   };
+}
+
+function shouldThrottleFailed(row: { status: SceneArtStatus; updatedAt: Date }) {
+  return row.status === SceneArtStatus.failed && Date.now() - row.updatedAt.getTime() < FAILURE_COOLDOWN_MS;
 }
 
 export async function GET(
@@ -43,121 +24,61 @@ export async function GET(
   context: { params: Promise<{ sceneKey: string }> },
 ) {
   const { sceneKey } = await context.params;
-  const force = request.nextUrl.searchParams.get("force") === "true";
-  if (force) {
-    await prisma.sceneArt.deleteMany({ where: { sceneKey } });
-  }
   const query = parseQueryParams(request);
-  const decodedSceneText = query.sceneText ? decodeURIComponent(query.sceneText) : null;
-  const identity = getSceneArtIdentity({
+  const { identity, row } = await loadOrCreateSceneArt({
     sceneKey,
-    sceneText: decodedSceneText,
-    locationKey: query.locationKey ?? null,
-    timeKey: query.timeKey ?? null,
-    stylePreset: query.stylePreset ?? null,
-    engineVersion: query.engineVersion ?? null,
+    sceneText: query.sceneText,
+    stylePreset: query.stylePreset,
+    engineVersion: query.engineVersion,
+    renderMode: "full",
   });
   const promptHash = identity.promptHash;
-  const prompt = identity.prompt;
   const uniqueWhere = {
     sceneKey_promptHash: {
-      sceneKey,
+      sceneKey: identity.sceneKey,
       promptHash,
     },
   };
-  const existing = await prisma.sceneArt.findUnique({
-    where: uniqueWhere,
-  });
-  if (existing && existing.status === SceneArtStatus.ready) {
-    return NextResponse.json({
-      ...existing,
-      promptHash,
-      provider: providerLabel(sceneKey, promptHash, existing.imageUrl ?? null),
-    });
+
+  const shouldReturnCached = !query.force && (row.status === SceneArtStatus.ready || row.status === SceneArtStatus.queued);
+  if (shouldReturnCached) {
+    return NextResponse.json(row);
   }
-  if (existing && existing.status === SceneArtStatus.generating) {
-    return NextResponse.json({
-      ...existing,
-      promptHash,
-      provider: providerLabel(sceneKey, promptHash, existing.imageUrl ?? null),
-    });
+  if (query.force && row.status === SceneArtStatus.generating) {
+    return NextResponse.json(row);
   }
-  if (existing && existing.status === SceneArtStatus.queued) {
-    if (existing.imageUrl) {
-      return NextResponse.json({
-        ...existing,
-        provider: "pending",
-      });
-    }
-    console.log("[scene-art] continuing generation for pending row", { sceneKey });
+  if (!query.force && shouldThrottleFailed(row)) {
+    return NextResponse.json(row);
   }
 
-  const row = await prisma.sceneArt.upsert({
-    where: uniqueWhere,
-    update: {},
-    create: {
-      sceneKey,
-      promptHash,
-      status: SceneArtStatus.queued,
-      title: sceneKey,
-      basePrompt: "",
-      renderPrompt: "",
-      imageUrl: null,
-      tagsJson: JSON.stringify({ provider: "queued" }),
-    },
-  });
-
-  if (row.status === SceneArtStatus.ready && row.imageUrl) {
-    return NextResponse.json({
-      ...row,
-      promptHash,
-      provider: "pending",
-    });
-  }
-
-  console.log("sceneArt.generate.call", {
-    sceneKey,
-    providerUrl: process.env.IMAGE_PROVIDER_URL ?? null,
-    promptHash,
-  });
-  const generated = await generateImage(prompt.renderPrompt, sceneKey, promptHash);
-  const nextIsGenerated = isGeneratedImage(sceneKey, promptHash, generated.imageUrl);
-  const nextIsFallback = isFallbackImage(generated.imageUrl);
-  const existingIsGenerated = existing?.imageUrl
-    ? isGeneratedImage(sceneKey, promptHash, existing.imageUrl)
-    : false;
-
-  if (existingIsGenerated && nextIsFallback) {
-    return NextResponse.json({
-      ...existing,
-      promptHash,
-      provider: "remote",
-    });
-  }
-
-  const shouldPersist = !existing || nextIsGenerated;
-  if (!shouldPersist && existing) {
-    return NextResponse.json({
-      ...existing,
-      promptHash,
-      provider: providerLabel(sceneKey, promptHash, existing.imageUrl ?? null),
-    });
-  }
-
-  const updated = await prisma.sceneArt.update({
+  await prisma.sceneArt.update({
     where: uniqueWhere,
     data: {
-      imageUrl: generated.imageUrl,
-      status: SceneArtStatus.ready,
-      basePrompt: prompt.basePrompt,
-      renderPrompt: prompt.renderPrompt,
-      tagsJson: null,
+      status: SceneArtStatus.queued,
     },
   });
 
-  return NextResponse.json({
-    ...updated,
-    promptHash,
-    provider: providerLabel(sceneKey, promptHash, updated.imageUrl),
-  });
+  try {
+    const generated = await generateImage(identity.prompt.renderPrompt, identity.sceneKey, promptHash);
+    const updated = await prisma.sceneArt.update({
+      where: uniqueWhere,
+      data: {
+        imageUrl: generated.imageUrl,
+        status: SceneArtStatus.ready,
+        basePrompt: identity.basePrompt,
+        renderPrompt: identity.renderPrompt,
+        tagsJson: JSON.stringify({ provider: generated.provider }),
+      },
+    });
+    return NextResponse.json(updated);
+  } catch (error) {
+    await prisma.sceneArt.update({
+      where: uniqueWhere,
+      data: {
+        status: SceneArtStatus.failed,
+      },
+    });
+    const failed = await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
+    return NextResponse.json(failed, { status: 502 });
+  }
 }

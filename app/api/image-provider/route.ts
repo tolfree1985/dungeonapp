@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "node:fs";
+import { ensureSceneArtFile, sceneArtFileExists } from "@/lib/scene-art/fileSystem";
 
 const PROVIDER_URL = process.env.EXTERNAL_IMAGE_PROVIDER_URL;
 const PROVIDER_TOKEN = process.env.EXTERNAL_IMAGE_PROVIDER_AUTH_TOKEN;
@@ -54,12 +54,12 @@ export async function POST(request: NextRequest) {
     const json = await response.json();
     let imageUrl: string | null = null;
     const safeHash = promptHash;
+    const expectedImageUrl = `/scene-art/${sceneKey}-${safeHash}.png`;
     if (json?.data?.[0]?.b64_json) {
       const base64 = json.data[0].b64_json;
-      const fileName = `${sceneKey}-${safeHash}.png`;
-      const filePath = `public/scene-art/${fileName}`;
-      await fs.promises.writeFile(filePath, Buffer.from(base64, "base64"));
-      imageUrl = `/scene-art/${fileName}`;
+      const buffer = Buffer.from(base64, "base64");
+      await ensureSceneArtFile(expectedImageUrl, buffer);
+      imageUrl = expectedImageUrl;
     }
     if (!imageUrl) {
       imageUrl =
@@ -75,6 +75,10 @@ export async function POST(request: NextRequest) {
       throw new Error("Invalid imageUrl returned by provider");
     }
 
+    const imageExists = imageUrl ? await sceneArtFileExists(imageUrl) : false;
+    if (!imageExists) {
+      throw new Error("SCENE_ART_FILE_NOT_WRITTEN");
+    }
     return NextResponse.json({
       imageUrl,
       provider: "remote",
