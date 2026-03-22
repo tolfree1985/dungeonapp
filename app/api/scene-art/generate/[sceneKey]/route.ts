@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { buildScenePrompt, buildSceneArtPromptInput, generateImage } from "@/lib/sceneArtGenerator";
 import { SceneArtStatus } from "@/generated/prisma";
+import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 
 const fallbackImages = new Set(["/scene-art/dock_office.jpg", "/scene-art/generated-placeholder.jpg"]);
 
@@ -43,18 +44,15 @@ export async function GET(
   }
   const query = parseQueryParams(request);
   const decodedSceneText = query.sceneText ? decodeURIComponent(query.sceneText) : null;
-  const promptInput = buildSceneArtPromptInput({
+  const identity = getSceneArtIdentity({
     sceneKey,
-    currentSceneState: {
-      text: decodedSceneText,
-      locationKey: query.locationKey ?? null,
-      timeKey: query.timeKey ?? null,
-    },
+    sceneText: decodedSceneText,
+    locationKey: query.locationKey ?? null,
+    timeKey: query.timeKey ?? null,
     stylePreset: query.stylePreset ?? null,
     engineVersion: query.engineVersion ?? null,
   });
-  const prompt = buildScenePrompt(promptInput);
-  const promptHash = prompt.promptHash;
+  const promptHash = identity.promptHash;
   const uniqueWhere = {
     sceneKey_promptHash: {
       sceneKey,
@@ -69,6 +67,13 @@ export async function GET(
       ...existing,
       promptHash,
       provider: "remote",
+    });
+  }
+  if (existing?.status === SceneArtStatus.generating) {
+    return NextResponse.json({
+      ...existing,
+      promptHash,
+      provider: providerLabel(sceneKey, promptHash, existing.imageUrl),
     });
   }
   if (existing?.status === SceneArtStatus.queued) {

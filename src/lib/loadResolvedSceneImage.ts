@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveDisplayedSceneImage } from "@/lib/sceneArt";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
 import type { SceneArtStatus } from "@/lib/sceneArtStatus";
-import { buildScenePrompt, buildSceneArtPromptInput } from "@/lib/sceneArtGenerator";
+import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 import type { SceneArt } from "@prisma/client";
 
 export type ResolvedSceneImageResult = {
@@ -31,21 +31,23 @@ export async function loadResolvedSceneImage({
     timeKey: typeof sceneRecord?.timeKey === "string" ? sceneRecord.timeKey : null,
   };
   const stylePreset = "victorian-gothic-cinematic";
-  const promptInput = sceneKey
-    ? buildSceneArtPromptInput({
+  const identity = sceneKey
+    ? getSceneArtIdentity({
         sceneKey,
-        currentSceneState: currentState,
-        stylePreset,
+        sceneText: currentState.text ?? null,
+        locationKey: currentState.locationKey ?? null,
+        timeKey: currentState.timeKey ?? null,
+        stylePreset: "victorian-gothic-cinematic",
         engineVersion: null,
       })
     : null;
-  const promptResult = promptInput ? buildScenePrompt(promptInput) : null;
-  const promptHash = promptResult?.promptHash ?? null;
-  const uniqueWhere = sceneKey && promptHash
+  const promptHash = identity?.promptHash ?? null;
+  const promptHash = identity?.promptHash ?? null;
+  const uniqueWhere = identity
     ? {
         sceneKey_promptHash: {
           sceneKey,
-          promptHash,
+          promptHash: identity.promptHash,
         },
       }
     : null;
@@ -87,11 +89,11 @@ export async function loadResolvedSceneImage({
     };
   }
 
-  const shouldTriggerGeneration = !!sceneKey && !currentScene;
+  const shouldTriggerGeneration = !!sceneKey && !!identity && !currentScene;
   if (shouldTriggerGeneration) {
     triggerSceneArtGeneration({
       sceneKey,
-      promptHash,
+      promptHash: identity?.promptHash ?? null,
       sceneText: currentState.text,
       locationKey: currentState.locationKey,
       timeKey: currentState.timeKey,
