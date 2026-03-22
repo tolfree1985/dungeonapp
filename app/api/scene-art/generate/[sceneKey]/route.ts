@@ -151,7 +151,7 @@ export async function GET(
       status: SceneArtStatus.ready,
       basePrompt: prompt.basePrompt,
       renderPrompt: prompt.renderPrompt,
-      tagsJson: JSON.stringify({ provider: providerLabel(sceneKey, promptHash, generated.imageUrl) }),
+      tagsJson: null,
     },
   });
 
