@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { buildSceneArtPromptInput, buildScenePrompt } from "@/lib/sceneArtGenerator";
 import type { SceneArtStatusRecord } from "@/lib/sceneArtStatus";
 
 export async function GET(request: NextRequest) {
@@ -11,8 +12,32 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const sceneText = request.nextUrl.searchParams.get("sceneText") ?? null;
+  const locationKey = request.nextUrl.searchParams.get("locationKey") ?? null;
+  const timeKey = request.nextUrl.searchParams.get("timeKey") ?? null;
+  const stylePreset = request.nextUrl.searchParams.get("stylePreset") ?? null;
+  const engineVersion = request.nextUrl.searchParams.get("engineVersion") ?? null;
+
+  const promptInput = buildSceneArtPromptInput({
+    sceneKey,
+    currentSceneState: {
+      text: sceneText,
+      locationKey,
+      timeKey,
+    },
+    stylePreset,
+    engineVersion,
+  });
+  const prompt = buildScenePrompt(promptInput);
+  const promptHash = prompt.promptHash;
+
   const row = await prisma.sceneArt.findUnique({
-    where: { sceneKey },
+    where: {
+      sceneKey_promptHash: {
+        sceneKey,
+        promptHash,
+      },
+    },
   });
 
   if (!row) {
