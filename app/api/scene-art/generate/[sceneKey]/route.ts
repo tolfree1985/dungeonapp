@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { buildScenePrompt, SceneArtPromptInput, generateImage } from "@/lib/sceneArtGenerator";
+import { buildScenePrompt, buildSceneArtPromptInput, generateImage } from "@/lib/sceneArtGenerator";
 import { SceneArtStatus } from "@/generated/prisma";
 
 const fallbackImages = new Set(["/scene-art/dock_office.jpg", "/scene-art/generated-placeholder.jpg"]);
@@ -43,14 +43,16 @@ export async function GET(
   }
   const query = parseQueryParams(request);
   const decodedSceneText = query.sceneText ? decodeURIComponent(query.sceneText) : null;
-  const promptInput: SceneArtPromptInput = {
+  const promptInput = buildSceneArtPromptInput({
     sceneKey,
-    sceneText: decodedSceneText ?? "",
-    locationKey: query.locationKey ?? null,
-    timeKey: query.timeKey ?? null,
+    currentSceneState: {
+      text: decodedSceneText,
+      locationKey: query.locationKey ?? null,
+      timeKey: query.timeKey ?? null,
+    },
     stylePreset: query.stylePreset ?? null,
     engineVersion: query.engineVersion ?? null,
-  };
+  });
   const prompt = buildScenePrompt(promptInput);
   const promptHash = prompt.promptHash;
   const uniqueWhere = {
