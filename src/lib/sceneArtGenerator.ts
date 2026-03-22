@@ -1,19 +1,17 @@
 import { createHash } from "node:crypto";
+import type { SceneVisualState } from "@/lib/sceneArt";
+import { deriveSceneVisualState } from "@/lib/sceneArt";
 
 export type BuildScenePromptInput = {
   sceneKey: string;
-  sceneText?: string | null;
-  locationKey?: string | null;
-  timeKey?: string | null;
+  visualState: SceneVisualState;
   stylePreset?: string | null;
-  engineVersion?: string;
+  engineVersion?: string | null;
 };
 
 export type SceneArtPromptInput = {
   sceneKey: string;
-  sceneText: string;
-  locationKey: string | null;
-  timeKey: string | null;
+  visualState: SceneVisualState;
   stylePreset: string | null;
   engineVersion: string | null;
 };
@@ -33,11 +31,10 @@ export function buildSceneArtPromptInput({
   stylePreset?: string | null;
   engineVersion?: string | null;
 }): SceneArtPromptInput {
+  const visualState = deriveSceneVisualState(sceneKey, currentSceneState?.text ?? null);
   return {
     sceneKey,
-    sceneText: currentSceneState?.text ?? "",
-    locationKey: currentSceneState?.locationKey ?? null,
-    timeKey: currentSceneState?.timeKey ?? null,
+    visualState,
     stylePreset: stylePreset ?? null,
     engineVersion: engineVersion ?? null,
   };
@@ -50,33 +47,10 @@ function normalizeValue(value?: string | null): string | null {
 
 function titleCase(value: string): string {
   return value
-    .split(" ")
+    .split(/_|\s|-/)
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-const TIME_KEYWORDS = [
-  "dawn",
-  "sunrise",
-  "morning",
-  "noon",
-  "afternoon",
-  "evening",
-  "dusk",
-  "night",
-  "midnight",
-];
-
-function inferTimeKeyFromText(text?: string | null): string | null {
-  if (!text) return null;
-  const lower = text.toLowerCase();
-  for (const keyword of TIME_KEYWORDS) {
-    if (lower.includes(keyword)) {
-      return keyword;
-    }
-  }
-  return null;
 }
 
 export type ScenePromptResult = {
@@ -86,24 +60,10 @@ export type ScenePromptResult = {
 };
 
 export function buildScenePrompt(input: BuildScenePromptInput): ScenePromptResult {
-  const readable = input.sceneKey
-    .split(/_|-/)
-    .map((part) => titleCase(part))
-    .join(" ");
-  const locationLabel = titleCase(input.locationKey ?? readable);
-  const normalizedTimeKey =
-    normalizeValue(input.timeKey) ?? inferTimeKeyFromText(input.sceneText);
-  const timeLabel = normalizedTimeKey ? titleCase(normalizedTimeKey) : null;
-  const sceneText = normalizeValue(input.sceneText);
+  const locationLabel = titleCase(input.visualState.location);
+  const timeLabel = titleCase(input.visualState.timeOfDay);
   const style = input.stylePreset ?? "victorian-gothic-cinematic";
-  let description = locationLabel;
-  if (timeLabel) {
-    description += ` at ${timeLabel}`;
-  }
-  if (sceneText) {
-    description += `, ${sceneText}`;
-  }
-  const basePrompt = `${description}, ${style}, cinematic environment, moody lighting, high detail, dark fantasy`;
+  const basePrompt = `${locationLabel} at ${timeLabel}, ${input.visualState.weather}, ${input.visualState.condition}, ${style}, cinematic environment, moody lighting, high detail, dark fantasy`;
   const renderPrompt = basePrompt;
   const engineTag = normalizeValue(input.engineVersion) ?? "engine-v1";
   const promptHash = createHash("sha256").update(`${basePrompt}|${engineTag}`).digest("hex");

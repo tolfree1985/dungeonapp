@@ -60,6 +60,42 @@ export type SceneArtPayload = {
   tags: string[];
 };
 
+export type SceneVisualState = {
+  location: string;
+  timeOfDay: "dawn" | "day" | "dusk" | "night";
+  weather: "clear" | "fog" | "rain" | "storm";
+  condition: "intact" | "worn" | "damaged";
+};
+
+const TIME_OF_DAY_KEYWORDS: Record<SceneVisualState["timeOfDay"], string[]> = {
+  dawn: ["dawn", "sunrise"],
+  day: ["morning", "noon", "afternoon"],
+  dusk: ["dusk", "evening", "twilight"],
+  night: ["night", "midnight"],
+};
+
+function inferTimeOfDay(text?: string | null): SceneVisualState["timeOfDay"] {
+  if (!text) return "day";
+  const lower = text.toLowerCase();
+  for (const [label, keywords] of Object.entries(TIME_OF_DAY_KEYWORDS)) {
+    for (const keyword of keywords) {
+      if (lower.includes(keyword)) {
+        return label as SceneVisualState["timeOfDay"];
+      }
+    }
+  }
+  return "day";
+}
+
+export function deriveSceneVisualState(sceneKey: string, sceneText?: string | null): SceneVisualState {
+  return {
+    location: sceneKey,
+    timeOfDay: inferTimeOfDay(sceneText),
+    weather: "clear",
+    condition: "intact",
+  };
+}
+
 export type SceneArtLifecycleStatus = "missing" | "generating" | "ready" | "failed";
 
 export type ResolvedSceneImage = {
