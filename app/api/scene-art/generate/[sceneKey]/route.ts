@@ -15,10 +15,15 @@ function isGeneratedImage(sceneKey: string, promptHash: string, imageUrl: string
   return imageUrl === `/scene-art/${sceneKey}-${promptHash}.png`;
 }
 
-function providerLabel(sceneKey: string, promptHash: string, imageUrl: string | null): "remote" | "fallback" {
-  if (isGeneratedImage(sceneKey, promptHash, imageUrl)) {
-    return "remote";
-  }
+function providerLabel(
+  sceneKey: string,
+  promptHash: string,
+  imageUrl: string | null | undefined,
+): "remote" | "fallback" {
+  if (!imageUrl) return "fallback";
+  if (imageUrl === "/scene-art/dock_office.jpg") return "fallback";
+  if (imageUrl === "/scene-art/generated-placeholder.jpg") return "fallback";
+  if (imageUrl === `/scene-art/${sceneKey}-${promptHash}.png`) return "remote";
   return "fallback";
 }
 
@@ -62,11 +67,11 @@ export async function GET(
   const existing = await prisma.sceneArt.findUnique({
     where: uniqueWhere,
   });
-  if (existing && existing.status === SceneArtStatus.ready && existing.imageUrl) {
+  if (existing && existing.status === SceneArtStatus.ready) {
     return NextResponse.json({
       ...existing,
       promptHash,
-      provider: "remote",
+      provider: providerLabel(sceneKey, promptHash, existing.imageUrl ?? null),
     });
   }
   if (existing && existing.status === SceneArtStatus.generating) {
@@ -134,7 +139,7 @@ export async function GET(
     return NextResponse.json({
       ...existing,
       promptHash,
-      provider: providerLabel(sceneKey, promptHash, existing.imageUrl),
+      provider: providerLabel(sceneKey, promptHash, existing.imageUrl ?? null),
     });
   }
 
