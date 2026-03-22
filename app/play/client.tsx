@@ -136,6 +136,10 @@ export type PlayClientProps = {
   sceneTransition?: SceneTransition | null;
   sceneRefreshDecision?: SceneRefreshDecision | null;
   sceneContinuity?: SceneContinuityInfo | null;
+  sceneKey: string | null;
+  sceneText: string | null;
+  sceneStylePreset?: string | null;
+  sceneRenderMode?: "full" | "preview";
 };
 
 export default function PlayClient({
@@ -154,6 +158,10 @@ export default function PlayClient({
   sceneTransition = null,
   sceneRefreshDecision,
   sceneContinuity = null,
+  sceneKey,
+  sceneText,
+  sceneStylePreset,
+  sceneRenderMode = "full",
 }: PlayClientProps) {
   const [liveSceneArt, setLiveSceneArt] = useState<ResolvedSceneImage | null>(sceneImage ?? null);
   const router = useRouter();
@@ -853,6 +861,10 @@ export default function PlayClient({
                   transition={liveSceneTransition}
                   continuity={continuityState}
                   transitionCue={sceneTransitionCue}
+                  retrySceneKey={sceneKey}
+                  retrySceneText={sceneText ?? ""}
+                  retryStylePreset={sceneStylePreset ?? null}
+                  retryRenderMode={sceneRenderMode}
                 />
               </div>
           {adventureId ? (

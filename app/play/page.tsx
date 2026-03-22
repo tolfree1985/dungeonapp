@@ -649,17 +649,21 @@ let persistedAdventureOwnerId: string | null = null;
         </p>
       </section>
       <Suspense fallback={<div className="mt-6 text-sm text-gray-500">Loading play controls...</div>}>
-          <PlayClient
-            adventureId={adventureId}
-            scenarioId={scenarioId}
-            turns={turns}
-            statePanel={statePanel}
-            currentScenario={currentScenario}
-            dbOffline={dbOffline}
-            sceneImage={resolvedSceneImage}
-            sceneImageCaption={sceneImageCaption}
-            sceneRefreshDecision={sceneRefreshDecision}
-          />
+        <PlayClient
+          adventureId={adventureId}
+          scenarioId={scenarioId}
+          turns={turns}
+          statePanel={statePanel}
+          currentScenario={currentScenario}
+          dbOffline={dbOffline}
+          sceneImage={resolvedSceneImage}
+          sceneImageCaption={sceneImageCaption}
+          sceneRefreshDecision={sceneRefreshDecision}
+          sceneKey={resolvedSceneKey}
+          sceneText={resolvedSceneText ?? null}
+          sceneStylePreset={null}
+          sceneRenderMode="full"
+        />
       </Suspense>
     </main>
   );

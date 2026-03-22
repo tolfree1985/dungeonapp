@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SceneArtStatus } from "@/generated/prisma";
-import { generateImage } from "@/lib/sceneArtGenerator";
 import { loadOrCreateSceneArt } from "@/lib/scene-art/loadOrCreateSceneArt";
+import { generateSceneArtForIdentity } from "@/lib/scene-art/generateSceneArtForIdentity";
 
 const FAILURE_COOLDOWN_MS = 60_000;
 
@@ -51,33 +51,10 @@ export async function GET(
     return NextResponse.json(row);
   }
 
-  await prisma.sceneArt.update({
-    where: uniqueWhere,
-    data: {
-      status: SceneArtStatus.queued,
-    },
-  });
-
   try {
-    const generated = await generateImage(identity.prompt.renderPrompt, identity.sceneKey, promptHash);
-    const updated = await prisma.sceneArt.update({
-      where: uniqueWhere,
-      data: {
-        imageUrl: generated.imageUrl,
-        status: SceneArtStatus.ready,
-        basePrompt: identity.basePrompt,
-        renderPrompt: identity.renderPrompt,
-        tagsJson: JSON.stringify({ provider: generated.provider }),
-      },
-    });
+    const updated = await generateSceneArtForIdentity(identity, { force: query.force });
     return NextResponse.json(updated);
   } catch (error) {
-    await prisma.sceneArt.update({
-      where: uniqueWhere,
-      data: {
-        status: SceneArtStatus.failed,
-      },
-    });
     const failed = await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
     return NextResponse.json(failed, { status: 502 });
   }

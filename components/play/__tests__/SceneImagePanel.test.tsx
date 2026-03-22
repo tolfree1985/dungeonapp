@@ -46,8 +46,8 @@ describe("SceneImagePanel", () => {
         sceneArtStatus="missing"
       />
     );
-    expect(screen.getByText("Default Chronicle Scene")).toBeTruthy();
-    expect(screen.getByText("Missing scene art")).toBeTruthy();
+    expect(screen.getByText("Scene art artifact missing")).toBeTruthy();
+    expect(screen.getByText("Scene art missing")).toBeTruthy();
   });
 
   it("renders the image when imageUrl is present", () => {

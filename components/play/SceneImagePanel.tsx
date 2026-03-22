@@ -1,8 +1,10 @@
+"use client";
 import { useEffect, useState } from "react";
 import type { ResolvedSceneImage, SceneArtLifecycleStatus } from "@/lib/sceneArt";
 import type { SceneContinuityState } from "@/lib/sceneContinuity";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
+import SceneArtRetryButton from "@/components/play/SceneArtRetryButton";
 
 const transitionBadgeTone: Record<SceneTransition["type"], string> = {
   hold: "border-emerald-500/40 bg-emerald-950/50 text-emerald-200",
@@ -50,12 +52,20 @@ export function SceneImagePanel({
   continuity,
   focusState,
   transitionCue,
+  retrySceneKey,
+  retrySceneText,
+  retryStylePreset,
+  retryRenderMode = "full",
 }: ResolvedSceneImage & {
   caption?: string | null;
   transition?: SceneTransition | null;
   continuity?: SceneContinuityState | null;
   focusState?: SceneFocusState | null;
   transitionCue?: string | null;
+  retrySceneKey?: string | null;
+  retrySceneText?: string | null;
+  retryStylePreset?: string | null;
+  retryRenderMode?: "full" | "preview";
 }) {
   const [displayedImage, setDisplayedImage] = useState<DisplayedImage>({
     imageUrl: imageUrl ?? null,
@@ -111,6 +121,11 @@ export function SceneImagePanel({
         ? "Scene art artifact missing"
         : "Preparing scene art...";
 
+  const showRetryButton =
+    (normalizedLifecycle === "failed" || normalizedLifecycle === "missing") &&
+    !!retrySceneKey &&
+    !!retrySceneText;
+
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
       <div className="relative aspect-[16/9] w-full bg-stone-900">
@@ -160,6 +175,16 @@ export function SceneImagePanel({
         {continuity?.shouldRequestRefresh ? (
           <div className="absolute bottom-3 right-3 rounded-md border border-amber-500/40 bg-amber-950/70 px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-amber-200">
             refresh ready
+          </div>
+        ) : null}
+        {showRetryButton ? (
+          <div className="absolute bottom-3 right-3">
+            <SceneArtRetryButton
+              sceneKey={retrySceneKey}
+              sceneText={retrySceneText}
+              stylePreset={retryStylePreset}
+              renderMode={retryRenderMode}
+            />
           </div>
         ) : null}
       </div>
