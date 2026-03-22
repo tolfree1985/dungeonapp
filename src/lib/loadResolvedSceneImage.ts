@@ -42,7 +42,6 @@ export async function loadResolvedSceneImage({
       })
     : null;
   const promptHash = identity?.promptHash ?? null;
-  const promptHash = identity?.promptHash ?? null;
   const uniqueWhere = identity
     ? {
         sceneKey_promptHash: {
