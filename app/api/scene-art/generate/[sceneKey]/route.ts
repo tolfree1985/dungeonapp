@@ -58,6 +58,7 @@ export async function GET(
     engineVersion: query.engineVersion ?? null,
   });
   const promptHash = identity.promptHash;
+  const prompt = identity.prompt;
   const uniqueWhere = {
     sceneKey_promptHash: {
       sceneKey,
