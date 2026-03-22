@@ -101,12 +101,13 @@ export async function generateImage(
           "content-type": "application/json",
           ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({
-          model: "gpt-image-1",
-          prompt,
-          size: "1024x1024",
-          promptHash,
-        }),
+      body: JSON.stringify({
+        model: "gpt-image-1",
+        prompt,
+        size: "1024x1024",
+        sceneKey,
+        promptHash,
+      }),
       });
 
       if (!response.ok) {

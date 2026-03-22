@@ -16,6 +16,13 @@ function isAllowedImageUrl(url: string): boolean {
 export async function POST(request: NextRequest) {
   const { prompt, sceneKey, promptHash } = await request.json();
 
+  if (!sceneKey || !promptHash) {
+    return NextResponse.json(
+      { error: "Missing sceneKey or promptHash" },
+      { status: 400 }
+    );
+  }
+
   if (!PROVIDER_URL) {
     return NextResponse.json({
       imageUrl: sceneKey === "dock_office" ? "/scene-art/dock_office.jpg" : "/scene-art/generated-placeholder.jpg",
@@ -46,10 +53,10 @@ export async function POST(request: NextRequest) {
 
     const json = await response.json();
     let imageUrl: string | null = null;
-    const hash = promptHash ?? sceneKey;
+    const safeHash = promptHash;
     if (json?.data?.[0]?.b64_json) {
       const base64 = json.data[0].b64_json;
-      const fileName = `${sceneKey}-${hash}.png`;
+      const fileName = `${sceneKey}-${safeHash}.png`;
       const filePath = `public/scene-art/${fileName}`;
       await fs.promises.writeFile(filePath, Buffer.from(base64, "base64"));
       imageUrl = `/scene-art/${fileName}`;
