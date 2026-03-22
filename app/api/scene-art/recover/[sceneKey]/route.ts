@@ -5,7 +5,7 @@ import {
 } from "@/lib/scene-art/recoverSceneArt";
 
 type RecoverBody = {
-  action: "retry";
+  action: "retry" | "force-regenerate";
   sceneText: string;
   stylePreset?: string | null;
   renderMode?: "full" | "preview";

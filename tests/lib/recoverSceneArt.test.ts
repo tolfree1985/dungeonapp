@@ -4,6 +4,7 @@ import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 import { createSceneArtRow } from "@/lib/scene-art/sceneArtStore";
 import { recoverSceneArt, SceneArtRecoveryError } from "@/lib/scene-art/recoverSceneArt";
 import * as sceneArtFileSystem from "@/lib/scene-art/fileSystem";
+import * as deleteHelper from "@/lib/scene-art/deleteSceneArtFileIfPresent";
 import * as sceneArtGenerator from "@/lib/sceneArtGenerator";
 import { SceneArtStatus } from "@/generated/prisma";
 
@@ -80,7 +81,7 @@ describe("recoverSceneArt", () => {
     expect(result.status).toBe("ready");
   });
 
-  it("retry transitions missing to ready", async () => {
+  it("retry preserves promptHash for missing", async () => {
     await seedRow(SceneArtStatus.ready);
     vi.spyOn(sceneArtFileSystem, "sceneArtFileExists").mockResolvedValueOnce(false);
     const result = await recoverSceneArt({
@@ -100,6 +101,55 @@ describe("recoverSceneArt", () => {
         sceneText,
       }),
     ).rejects.toThrow(/Retry not allowed/);
+  });
+
+  it("force regenerate preserves promptHash", async () => {
+    await seedRow(SceneArtStatus.ready);
+    const result = await recoverSceneArt({ action: "force-regenerate", sceneKey, sceneText });
+    expect(result.promptHash).toBe(identity.promptHash);
+  });
+
+  it("force regenerate rejects generating", async () => {
+    await seedRow(SceneArtStatus.queued);
+    await expect(
+      recoverSceneArt({ action: "force-regenerate", sceneKey, sceneText }),
+    ).rejects.toThrow(/Force regenerate not allowed/);
+  });
+
+  it("clear-and-regenerate allows ready", async () => {
+    await seedRow(SceneArtStatus.ready);
+    const result = await recoverSceneArt({ action: "clear-and-regenerate", sceneKey, sceneText });
+    expect(result.promptHash).toBe(identity.promptHash);
+  });
+
+  it("clear-and-regenerate allows failed", async () => {
+    await seedRow(SceneArtStatus.failed);
+    const result = await recoverSceneArt({ action: "clear-and-regenerate", sceneKey, sceneText });
+    expect(result.promptHash).toBe(identity.promptHash);
+  });
+
+  it("clear-and-regenerate allows missing", async () => {
+    await seedRow(SceneArtStatus.ready);
+    vi.spyOn(sceneArtFileSystem, "sceneArtFileExists").mockResolvedValue(false);
+    const result = await recoverSceneArt({ action: "clear-and-regenerate", sceneKey, sceneText });
+    expect(result.promptHash).toBe(identity.promptHash);
+  });
+
+  it("clear-and-regenerate deletes file when present", async () => {
+    await seedRow(SceneArtStatus.ready);
+    const deleteSpy = vi.spyOn(sceneArtFileSystem, "sceneArtFileExists").mockResolvedValue(true);
+    const removeSpy = vi.spyOn(deleteHelper, "deleteSceneArtFileIfPresent").mockResolvedValue();
+    await recoverSceneArt({ action: "clear-and-regenerate", sceneKey, sceneText });
+    expect(removeSpy).toHaveBeenCalled();
+    deleteSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
+  it("clear-and-regenerate rejects generating", async () => {
+    await seedRow(SceneArtStatus.queued);
+    await expect(
+      recoverSceneArt({ action: "clear-and-regenerate", sceneKey, sceneText }),
+    ).rejects.toThrow(/Clear and regenerate not allowed/);
   });
 
   it("throws on identity mismatch", async () => {

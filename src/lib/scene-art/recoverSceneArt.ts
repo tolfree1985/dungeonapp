@@ -4,21 +4,16 @@ import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 import { assertStoredSceneArtMatchesIdentity } from "@/lib/scene-art/assertStoredSceneArtMatchesIdentity";
 import { sceneArtFileExists } from "@/lib/scene-art/fileSystem";
 import { generateSceneArtForIdentity } from "@/lib/scene-art/generateSceneArtForIdentity";
+import { deleteSceneArtFileIfPresent } from "@/lib/scene-art/deleteSceneArtFileIfPresent";
 
 /**
- * CRITICAL: RECOVERY MUST NOT BREAK DETERMINISM
- *
- * Allowed:
- * - status changes
- * - error clearing
- * - retrigger generation
- *
- * Forbidden:
- * - changing promptHash / prompts / identity
- * - deleting rows
- * - creating new identity rows
+ * Recovery rules:
+ * - identity fields must remain unchanged
+ * - clear-and-regenerate may delete only the deterministic artifact file
+ * - DB row must never be deleted
+ * - generation must reuse the shared generation helper
  */
-export type RecoverSceneArtAction = "retry";
+export type RecoverSceneArtAction = "retry" | "force-regenerate" | "clear-and-regenerate";
 
 export type RecoverSceneArtInput = {
   action: RecoverSceneArtAction;
@@ -48,7 +43,7 @@ export class SceneArtRecoveryError extends Error {
 export async function recoverSceneArt(
   input: RecoverSceneArtInput,
 ): Promise<RecoverSceneArtResult> {
-  if (input.action !== "retry") {
+  if (input.action !== "retry" && input.action !== "force-regenerate" && input.action !== "clear-and-regenerate") {
     throw new SceneArtRecoveryError(
       "SCENE_ART_UNSUPPORTED_RECOVERY_ACTION",
       `Unsupported recovery action: ${input.action}`,
@@ -82,16 +77,39 @@ export async function recoverSceneArt(
   assertStoredSceneArtMatchesIdentity(row, identity);
 
   const isFailed = row.status === SceneArtStatus.failed;
-  const isMissing =
-    row.status === SceneArtStatus.ready &&
-    (!row.imageUrl || !(await sceneArtFileExists(row.imageUrl)));
+  const isReady = row.status === SceneArtStatus.ready;
+  const missingFile = isReady && (!row.imageUrl || !(await sceneArtFileExists(row.imageUrl)));
+  const isMissing = missingFile;
 
-  if (!isFailed && !isMissing) {
-    throw new SceneArtRecoveryError(
-      "SCENE_ART_RECOVERY_INVALID_STATE",
-      `Retry not allowed from status: ${row.status}`,
-      409,
-    );
+  if (input.action === "retry") {
+    if (!isFailed && !isMissing) {
+      throw new SceneArtRecoveryError(
+        "SCENE_ART_RECOVERY_INVALID_STATE",
+        `Retry not allowed from status: ${row.status}`,
+        409,
+      );
+    }
+  }
+
+  if (input.action === "force-regenerate") {
+    if (!isFailed && !isMissing && !isReady) {
+      throw new SceneArtRecoveryError(
+        "SCENE_ART_RECOVERY_INVALID_STATE",
+        `Force regenerate not allowed from status: ${row.status}`,
+        409,
+      );
+    }
+  }
+
+  if (input.action === "clear-and-regenerate") {
+    if (!isFailed && !isMissing && !isReady) {
+      throw new SceneArtRecoveryError(
+        "SCENE_ART_RECOVERY_INVALID_STATE",
+        `Clear and regenerate not allowed from status: ${row.status}`,
+        409,
+      );
+    }
+    await deleteSceneArtFileIfPresent(identity.imageUrl);
   }
 
   await prisma.sceneArt.update({

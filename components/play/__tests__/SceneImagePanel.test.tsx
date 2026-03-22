@@ -50,6 +50,53 @@ describe("SceneImagePanel", () => {
     expect(screen.getByText("Scene art missing")).toBeTruthy();
   });
 
+  it("shows retry and force buttons for missing", () => {
+    render(
+      <SceneImagePanel
+        {...baseImage}
+        imageUrl={null}
+        pending={false}
+        source="default"
+        status="missing"
+        sceneArtStatus="missing"
+        retrySceneKey="dock_office"
+        retrySceneText="text"
+      />
+    );
+    expect(screen.getByText("Retry render")).toBeTruthy();
+    expect(screen.getByText("Force regenerate")).toBeTruthy();
+  });
+
+  it("hides force button for pending", () => {
+    render(
+      <SceneImagePanel
+        {...baseImage}
+        pending
+        sceneArtStatus="generating"
+        status="missing"
+        retrySceneKey="dock_office"
+        retrySceneText="text"
+      />
+    );
+    expect(screen.queryByText("Force regenerate")).toBeNull();
+  });
+
+  it("shows only force button for ready", () => {
+    render(
+      <SceneImagePanel
+        {...baseImage}
+        status="ready"
+        sceneArtStatus="ready"
+        imageUrl="/scene.png"
+        source="scene"
+        retrySceneKey="dock_office"
+        retrySceneText="text"
+      />
+    );
+    expect(screen.queryByText("Retry render")).toBeNull();
+    expect(screen.getByText("Force regenerate")).toBeTruthy();
+  });
+
   it("renders the image when imageUrl is present", () => {
     render(<SceneImagePanel {...baseImage} imageUrl="/scene.png" source="scene" status="ready" />);
     expect(screen.getByRole("img").getAttribute("src")).toBe("/scene.png");

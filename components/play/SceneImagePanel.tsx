@@ -4,7 +4,7 @@ import type { ResolvedSceneImage, SceneArtLifecycleStatus } from "@/lib/sceneArt
 import type { SceneContinuityState } from "@/lib/sceneContinuity";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
-import SceneArtRetryButton from "@/components/play/SceneArtRetryButton";
+import SceneArtActionButton from "@/components/play/SceneArtActionButton";
 
 const transitionBadgeTone: Record<SceneTransition["type"], string> = {
   hold: "border-emerald-500/40 bg-emerald-950/50 text-emerald-200",
@@ -125,6 +125,11 @@ export function SceneImagePanel({
     (normalizedLifecycle === "failed" || normalizedLifecycle === "missing") &&
     !!retrySceneKey &&
     !!retrySceneText;
+  const showForce =
+    (normalizedLifecycle === "ready" || normalizedLifecycle === "failed" || normalizedLifecycle === "missing") &&
+    !!retrySceneKey &&
+    !!retrySceneText;
+  const showActionButtons = (showRetryButton || showForce) && !!retrySceneKey && !!retrySceneText;
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
@@ -177,14 +182,28 @@ export function SceneImagePanel({
             refresh ready
           </div>
         ) : null}
-        {showRetryButton ? (
-          <div className="absolute bottom-3 right-3">
-            <SceneArtRetryButton
-              sceneKey={retrySceneKey}
-              sceneText={retrySceneText}
-              stylePreset={retryStylePreset}
-              renderMode={retryRenderMode}
-            />
+        {showActionButtons ? (
+          <div className="absolute bottom-3 right-3 flex flex-col gap-2">
+            {showRetryButton && (
+              <SceneArtActionButton
+                sceneKey={retrySceneKey!}
+                sceneText={retrySceneText!}
+                stylePreset={retryStylePreset}
+                renderMode={retryRenderMode}
+                action="retry"
+                label="Retry render"
+              />
+            )}
+            {showForce && (
+              <SceneArtActionButton
+                sceneKey={retrySceneKey!}
+                sceneText={retrySceneText!}
+                stylePreset={retryStylePreset}
+                renderMode={retryRenderMode}
+                action="force-regenerate"
+                label="Force regenerate"
+              />
+            )}
           </div>
         ) : null}
       </div>

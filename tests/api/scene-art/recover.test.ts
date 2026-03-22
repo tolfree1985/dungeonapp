@@ -62,4 +62,36 @@ describe("POST /api/scene-art/recover/[sceneKey]", () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: "SCENE_ART_RECOVERY_INVALID_STATE", message: "Retry not allowed" });
   });
+
+  it("returns 200 for force regenerate on ready", async () => {
+    const mockFn = recoverSceneArt as unknown as vi.Mock;
+    mockFn.mockResolvedValueOnce({ status: "ready", promptHash: "abc", imageUrl: "/scene-art/ready.png" });
+    const response = await POST(makeRequest(), { params: Promise.resolve({ sceneKey: "dock_office" }) });
+    expect(response.status).toBe(200);
+  });
+
+  it("returns 409 for force regenerate while generating", async () => {
+    const mockFn = recoverSceneArt as unknown as vi.Mock;
+    mockFn.mockRejectedValueOnce(
+      new SceneArtRecoveryError("SCENE_ART_RECOVERY_INVALID_STATE", "Force regenerate not allowed", 409),
+    );
+    const response = await POST(makeRequest(), { params: Promise.resolve({ sceneKey: "dock_office" }) });
+    expect(response.status).toBe(409);
+  });
+
+  it("returns 200 for clear-and-regenerate on ready", async () => {
+    const mockFn = recoverSceneArt as unknown as vi.Mock;
+    mockFn.mockResolvedValueOnce({ status: "ready", promptHash: "abc", imageUrl: "/scene-art/ready.png" });
+    const response = await POST(makeRequest(), { params: Promise.resolve({ sceneKey: "dock_office" }) });
+    expect(response.status).toBe(200);
+  });
+
+  it("returns 409 for clear-and-regenerate on generating", async () => {
+    const mockFn = recoverSceneArt as unknown as vi.Mock;
+    mockFn.mockRejectedValueOnce(
+      new SceneArtRecoveryError("SCENE_ART_RECOVERY_INVALID_STATE", "Clear and regenerate not allowed", 409),
+    );
+    const response = await POST(makeRequest(), { params: Promise.resolve({ sceneKey: "dock_office" }) });
+    expect(response.status).toBe(409);
+  });
 });
