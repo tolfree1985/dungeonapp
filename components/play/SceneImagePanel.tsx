@@ -75,7 +75,8 @@ export function SceneImagePanel({
   const finalSource = displayedImage.source;
   const focusLabel = focusState?.focusLabel ? `Focus: ${focusState.focusLabel}` : undefined;
   const normalizedLifecycle: SceneArtLifecycleStatus = sceneArtStatus ?? (pending ? "generating" : "ready");
-  const renderImageUrl = finalImageUrl;
+  const fallbackImageUrl = finalImageUrl ?? "/scene-art/generated-placeholder.jpg";
+  const renderImageUrl = fallbackImageUrl;
 
   const sourceLabel = () => {
     switch (finalSource) {
