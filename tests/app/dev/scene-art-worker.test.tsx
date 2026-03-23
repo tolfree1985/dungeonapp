@@ -152,4 +152,61 @@ describe("Scene Art Worker", () => {
     render(<SceneArtWorkerPage />);
     await waitFor(() => expect(screen.queryAllByRole("button", { name: "Run this" })).toHaveLength(0));
   });
+
+  it("marks stale generating rows with a badge and updates stats", async () => {
+    const staleRow = {
+      sceneKey: "dock_office",
+      promptHash: "stale-row",
+      status: "generating",
+      attemptCount: 1,
+      generationStartedAt: null,
+      generationLeaseUntil: new Date(Date.now() - 60_000).toISOString(),
+      updatedAt: new Date().toISOString(),
+      errorMessage: null,
+    };
+    const failedRow = {
+      sceneKey: "dock_office",
+      promptHash: "failed-row",
+      status: "failed",
+      attemptCount: 0,
+      generationStartedAt: null,
+      generationLeaseUntil: null,
+      updatedAt: new Date().toISOString(),
+      errorMessage: "failed reason",
+    };
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve([queuedRow, staleRow, failedRow]) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    const row = await screen.findByTestId("worker-row-stale-row");
+    expect(within(row).getByText("Stale")).toBeTruthy();
+    expect(screen.getByText("Stale: 1")).toBeTruthy();
+    expect(screen.getByText("Failed: 1")).toBeTruthy();
+  });
+
+  it("reclaim stale button refreshes queue after success", async () => {
+    const queueCalls = vi.fn(() =>
+      Promise.resolve({ json: () => Promise.resolve([queuedRow]) }),
+    );
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return queueCalls();
+      }
+      if (url === "/api/scene-art/worker/reclaim-stale") {
+        return Promise.resolve({ json: () => Promise.resolve({ reclaimedCount: 1, promptHashes: ["hash"] }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    await waitFor(() => expect(queueCalls).toHaveBeenCalledTimes(1));
+    screen.getByRole("button", { name: "Reclaim stale jobs" }).click();
+    await waitFor(() => expect((fetch as unknown as vi.Mock).mock.calls.some((call) => call[0] === "/api/scene-art/worker/reclaim-stale")).toBe(true));
+    await waitFor(() => expect(queueCalls).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Reclaimed 1 job(s)")).toBeTruthy();
+  });
 });

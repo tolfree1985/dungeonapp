@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { GET as getQueue } from "@/app/api/scene-art/worker/queue/route";
 import { POST as postRunNext } from "@/app/api/scene-art/worker/run-next/route";
+import { POST as postReclaimStale } from "@/app/api/scene-art/worker/reclaim-stale/route";
 import { prisma } from "@/lib/prisma";
 import { resetPrismaMock } from "../../mocks/prismaMock";
 import { queueSceneArtGeneration } from "@/lib/scene-art/queueSceneArtGeneration";
@@ -89,5 +90,45 @@ describe("scene-art worker ops surface", () => {
 
     const response = await postRunNext();
     expect(await response.json()).toEqual({ promptHash: queued.promptHash });
+  });
+
+  it("reclaim stale endpoint requeues expired generating rows", async () => {
+    const identity = { sceneKey: "dock_office", sceneText: "text", renderMode: "full" as const };
+    const queued = await queueSceneArtGeneration(identity, { autoProcess: false });
+    await prisma.sceneArt.update({
+      where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: queued.promptHash } },
+      data: {
+        status: "generating",
+        generationLeaseUntil: new Date(Date.now() - 60_000),
+      },
+    });
+
+    const response = await postReclaimStale();
+    expect(await response.json()).toEqual({ reclaimedCount: 1, promptHashes: [queued.promptHash] });
+
+    const row = await prisma.sceneArt.findUnique({
+      where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: queued.promptHash } },
+    });
+    expect(row?.status).toBe("queued");
+  });
+
+  it("reclaim stale endpoint ignores active generating rows", async () => {
+    const identity = { sceneKey: "dock_office", sceneText: "text", renderMode: "full" as const };
+    const queued = await queueSceneArtGeneration(identity, { autoProcess: false });
+    await prisma.sceneArt.update({
+      where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: queued.promptHash } },
+      data: {
+        status: "generating",
+        generationLeaseUntil: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const response = await postReclaimStale();
+    expect(await response.json()).toEqual({ reclaimedCount: 0, promptHashes: [] });
+
+    const row = await prisma.sceneArt.findUnique({
+      where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: queued.promptHash } },
+    });
+    expect(row?.status).toBe("generating");
   });
 });

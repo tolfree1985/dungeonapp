@@ -48,6 +48,16 @@ export const prismaMock = {
         candidates = candidates.filter((row) => statuses.includes(row.status));
       }
 
+      if (where?.generationLeaseUntil?.lt) {
+        const threshold: Date = where.generationLeaseUntil.lt;
+        candidates = candidates.filter((row) => {
+          const lease = row.generationLeaseUntil;
+          if (!lease) return false;
+          const leaseTime = lease instanceof Date ? lease.getTime() : new Date(lease).getTime();
+          return leaseTime < threshold.getTime();
+        });
+      }
+
       if (orderBy?.createdAt) {
         const direction = orderBy.createdAt === "asc" ? 1 : -1;
         candidates = [...candidates].sort((a, b) => {

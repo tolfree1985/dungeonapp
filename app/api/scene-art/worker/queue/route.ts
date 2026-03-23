@@ -5,7 +5,7 @@ export async function GET() {
   const rows = await prisma.sceneArt.findMany({
     where: {
       status: {
-        in: ["queued", "generating"],
+        in: ["queued", "generating", "failed"],
       },
     },
     orderBy: { createdAt: "asc" },
@@ -19,6 +19,7 @@ export async function GET() {
     generationStartedAt: row.generationStartedAt ?? null,
     generationLeaseUntil: row.generationLeaseUntil ?? null,
     updatedAt: row.updatedAt ?? null,
+    errorMessage: row.errorMessage ?? null,
   }));
 
   return NextResponse.json(payload);

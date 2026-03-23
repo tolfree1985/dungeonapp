@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type SceneArtRow = {
   sceneKey: string;
@@ -16,6 +16,8 @@ type SceneArtRow = {
 export default function SceneArtWorkerPage() {
   const [rows, setRows] = useState<SceneArtRow[]>([]);
   const [running, setRunning] = useState<string | null>(null);
+  const [reclaiming, setReclaiming] = useState(false);
+  const [lastReclaimedCount, setLastReclaimedCount] = useState<number | null>(null);
   const [highlightedPromptHash, setHighlightedPromptHash] = useState<string | null>(null);
   const highlightTarget = useRef<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -69,32 +71,84 @@ export default function SceneArtWorkerPage() {
     [refresh],
   );
 
+  const reclaimStale = useCallback(async () => {
+    setReclaiming(true);
+    try {
+      const response = await fetch("/api/scene-art/worker/reclaim-stale", { method: "POST" });
+      const data = await response.json();
+      setLastReclaimedCount(data.reclaimedCount ?? 0);
+      await refresh();
+    } finally {
+      setReclaiming(false);
+    }
+  }, [refresh]);
+
   const refreshQueue = useCallback(async () => {
     await refresh();
   }, [refresh]);
+
+  const stats = useMemo(() => {
+    const now = Date.now();
+    return rows.reduce(
+      (acc, row) => {
+        if (row.status === "queued") {
+          acc.queued += 1;
+        }
+        if (row.status === "generating") {
+          acc.generating += 1;
+          if (row.generationLeaseUntil && new Date(row.generationLeaseUntil).getTime() < now) {
+            acc.stale += 1;
+          }
+        }
+        if (row.status === "failed") {
+          acc.failed += 1;
+        }
+        return acc;
+      },
+      { queued: 0, generating: 0, stale: 0, failed: 0 },
+    );
+  }, [rows]);
 
   const formatDate = (value: string | null) =>
     value ? new Date(value).toLocaleString() : "-";
 
   return (
     <div className="p-6 space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Scene Art Worker</h1>
-        <div className="flex gap-2">
+      <header className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-2xl font-semibold">Scene Art Worker</h1>
+          <div className="flex gap-2">
+            <button
+              className="rounded border px-3 py-1 text-sm"
+              onClick={runNext}
+              disabled={running === "run-next"}
+            >
+              {running === "run-next" ? "Running..." : "Run next"}
+            </button>
+            <button
+              className="rounded border px-3 py-1 text-sm"
+              onClick={refreshQueue}
+              disabled={running !== null}
+            >
+              Refresh queue
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+          <span>Queued: {stats.queued}</span>
+          <span>Generating: {stats.generating}</span>
+          <span className="text-rose-500">Stale: {stats.stale}</span>
+          <span>Failed: {stats.failed}</span>
           <button
-            className="rounded border px-3 py-1 text-sm"
-            onClick={runNext}
-            disabled={running === "run-next"}
+            className="rounded border border-amber-400 px-3 py-1 text-xs text-amber-500"
+            onClick={reclaimStale}
+            disabled={reclaiming}
           >
-            {running === "run-next" ? "Running..." : "Run next"}
+            {reclaiming ? "Reclaiming..." : "Reclaim stale jobs"}
           </button>
-          <button
-            className="rounded border px-3 py-1 text-sm"
-            onClick={refreshQueue}
-            disabled={running !== null}
-          >
-            Refresh queue
-          </button>
+          {lastReclaimedCount !== null ? (
+            <span className="text-emerald-500">Reclaimed {lastReclaimedCount} job(s)</span>
+          ) : null}
         </div>
       </header>
 
@@ -114,16 +168,24 @@ export default function SceneArtWorkerPage() {
           {rows.map((row) => {
             const canRunThis = row.status === "queued";
             const isHighlighted = highlightedPromptHash === row.promptHash;
+            const isStale =
+              row.status === "generating" &&
+              row.generationLeaseUntil !== null &&
+              new Date(row.generationLeaseUntil).getTime() < Date.now();
+            const rowClasses = ["border-t", isHighlighted ? "bg-slate-50" : "", isStale ? "bg-rose-50/40" : ""].join(" ");
 
             return (
-              <tr
-                key={row.promptHash}
-                data-testid={`worker-row-${row.promptHash}`}
-                className={`border-t ${isHighlighted ? "bg-slate-50" : ""}`}
-              >
+              <tr key={row.promptHash} data-testid={`worker-row-${row.promptHash}`} className={rowClasses}>
                 <td className="py-2 font-medium">{row.sceneKey}</td>
                 <td className="py-2 font-mono text-xs">{row.promptHash}</td>
-                <td className="py-2 capitalize">{row.status}</td>
+                <td className="py-2 capitalize">
+                  <span>{row.status}</span>
+                  {isStale && (
+                    <span className="ml-2 rounded border border-rose-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-600">
+                      Stale
+                    </span>
+                  )}
+                </td>
                 <td className="py-2">{row.attemptCount}</td>
                 <td className="py-2">
                   {row.generationLeaseUntil
@@ -131,7 +193,7 @@ export default function SceneArtWorkerPage() {
                     : "-"}
                 </td>
                 <td className="py-2">{formatDate(row.updatedAt)}</td>
-                <td className="py-2">
+                <td className="py-2 space-y-1">
                   {canRunThis ? (
                     <button
                       className="rounded border px-2 py-1 text-xs"
