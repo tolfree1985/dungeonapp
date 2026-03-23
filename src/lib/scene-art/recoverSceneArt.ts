@@ -21,6 +21,7 @@ export type RecoverSceneArtInput = {
   sceneText: string;
   stylePreset?: string | null;
   renderMode?: "full" | "preview";
+  autoProcess?: boolean;
 };
 
 export type RecoverSceneArtResult = {
@@ -124,7 +125,7 @@ export async function recoverSceneArt(
       renderMode: identity.renderMode,
       engineVersion: identity.engineVersion,
     },
-    { force: true },
+    { force: true, autoProcess: input.autoProcess },
   );
 
   return result;

@@ -5,10 +5,11 @@ import {
 } from "@/lib/scene-art/recoverSceneArt";
 
 type RecoverBody = {
-  action: "retry" | "force-regenerate";
+  action: "retry" | "force-regenerate" | "clear-and-regenerate";
   sceneText: string;
   stylePreset?: string | null;
   renderMode?: "full" | "preview";
+  autoProcess?: boolean;
 };
 
 export async function POST(
@@ -25,6 +26,7 @@ export async function POST(
       sceneText: body.sceneText,
       stylePreset: body.stylePreset ?? null,
       renderMode: body.renderMode ?? "full",
+      autoProcess: body.autoProcess,
     });
 
     return NextResponse.json(result, { status: 200 });

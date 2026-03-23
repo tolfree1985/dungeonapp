@@ -16,12 +16,43 @@ export const prismaMock = {
       return row;
     },
 
+    async findFirst({ where, orderBy }: any) {
+      if (where && typeof where.promptHash === "string") {
+        const row = store.get(where.promptHash);
+        return row ?? null;
+      }
+
+      const entries = Array.from(store.values());
+      let candidates = entries;
+      if (where?.status) {
+        candidates = candidates.filter((row) => row.status === where.status);
+      }
+
+      if (orderBy?.createdAt) {
+        const direction = orderBy.createdAt === "asc" ? 1 : -1;
+        candidates = [...candidates].sort((a, b) => {
+          const aTime = a.createdAt?.getTime?.() ?? 0;
+          const bTime = b.createdAt?.getTime?.() ?? 0;
+          return (aTime - bTime) * direction;
+        });
+      }
+
+      return candidates[0] ?? null;
+    },
+
+    async findFirstOrThrow(args: any) {
+      const row = await this.findFirst(args);
+      if (!row) throw new Error("Row not found");
+      return row;
+    },
+
     async create({ data }: any) {
       const promptHash = data.promptHash;
       const entry: SceneArtRow = {
         ...data,
         imageUrl: data.imageUrl ?? identityImageUrl(data.sceneKey, promptHash),
         attemptCount: data.attemptCount ?? 0,
+        createdAt: data.createdAt ?? new Date(),
       };
       store.set(promptHash, { ...entry });
       return { ...entry };
