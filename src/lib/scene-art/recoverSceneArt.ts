@@ -3,8 +3,8 @@ import { SceneArtStatus } from "@/generated/prisma";
 import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 import { assertStoredSceneArtMatchesIdentity } from "@/lib/scene-art/assertStoredSceneArtMatchesIdentity";
 import { sceneArtFileExists } from "@/lib/scene-art/fileSystem";
-import { generateSceneArtForIdentity } from "@/lib/scene-art/generateSceneArtForIdentity";
 import { deleteSceneArtFileIfPresent } from "@/lib/scene-art/deleteSceneArtFileIfPresent";
+import { queueSceneArtGeneration } from "@/lib/scene-art/queueSceneArtGeneration";
 
 /**
  * Recovery rules:
@@ -112,26 +112,18 @@ export async function recoverSceneArt(
     await deleteSceneArtFileIfPresent(identity.imageUrl);
   }
 
-  await prisma.sceneArt.update({
-    where: {
-      sceneKey_promptHash: {
-        sceneKey: identity.sceneKey,
-        promptHash: identity.promptHash,
-      },
+  const result = await queueSceneArtGeneration(
+    {
+      sceneKey: identity.sceneKey,
+      sceneText: identity.sceneText ?? "",
+      stylePreset: identity.stylePreset,
+      renderMode: identity.renderMode,
+      engineVersion: identity.engineVersion,
     },
-    data: {
-      status: SceneArtStatus.queued,
-      tagsJson: null,
-    },
-  });
+    { force: true },
+  );
 
-  const updated = await generateSceneArtForIdentity(identity, { force: true });
-
-  return {
-    status: normalizePresentationStatus(updated.status),
-    promptHash: updated.promptHash,
-    imageUrl: updated.status === SceneArtStatus.ready ? updated.imageUrl : null,
-  };
+  return result;
 }
 
 function normalizePresentationStatus(rawStatus: SceneArtStatus): RecoverSceneArtResult["status"] {

@@ -8,9 +8,7 @@ const DEFAULT_PROVIDER_SOURCE = { provider: "remote" };
 
 export async function generateSceneArtForIdentity(
   identity: SceneArtIdentity,
-  options?: {
-    force?: boolean;
-  },
+  _options?: { force?: boolean },
 ): Promise<SceneArt> {
   const uniqueWhere = {
     sceneKey_promptHash: {
@@ -18,14 +16,6 @@ export async function generateSceneArtForIdentity(
       promptHash: identity.promptHash,
     },
   };
-
-  await prisma.sceneArt.update({
-    where: uniqueWhere,
-    data: {
-      status: SceneArtStatus.queued,
-      tagsJson: null,
-    },
-  });
 
   try {
     const generated = await generateImage(identity.prompt.renderPrompt, identity.sceneKey, identity.promptHash);

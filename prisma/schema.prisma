@@ -191,6 +191,7 @@ model UsageDay {
 
 enum SceneArtStatus {
   queued
+  generating
   ready
   failed
 }

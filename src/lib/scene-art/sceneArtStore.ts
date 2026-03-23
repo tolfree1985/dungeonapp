@@ -13,7 +13,7 @@ export async function createSceneArtRow(identity: SceneArtIdentity) {
       renderMode: identity.renderMode,
       engineVersion: identity.engineVersion,
       status: "queued",
-      imageUrl: null,
+      imageUrl: identity.imageUrl,
       tagsJson: null,
     },
   });
