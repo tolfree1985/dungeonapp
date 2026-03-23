@@ -40,6 +40,30 @@ export const prismaMock = {
       return candidates[0] ?? null;
     },
 
+    async findMany({ where, orderBy, select }: any) {
+      const entries = Array.from(store.values());
+      let candidates = entries;
+      if (where?.status?.in) {
+        const statuses = where.status.in;
+        candidates = candidates.filter((row) => statuses.includes(row.status));
+      }
+
+      if (orderBy?.createdAt) {
+        const direction = orderBy.createdAt === "asc" ? 1 : -1;
+        candidates = [...candidates].sort((a, b) => {
+          const aTime = a.createdAt?.getTime?.() ?? 0;
+          const bTime = b.createdAt?.getTime?.() ?? 0;
+          return (aTime - bTime) * direction;
+        });
+      }
+
+      if (select) {
+        return candidates.map((row) => applySelect(row, select));
+      }
+
+      return candidates;
+    },
+
     async findFirstOrThrow(args: any) {
       const row = await this.findFirst(args);
       if (!row) throw new Error("Row not found");
@@ -53,6 +77,7 @@ export const prismaMock = {
         imageUrl: data.imageUrl ?? identityImageUrl(data.sceneKey, promptHash),
         attemptCount: data.attemptCount ?? 0,
         createdAt: data.createdAt ?? new Date(),
+        status: data.status ?? "queued",
       };
       store.set(promptHash, { ...entry });
       return { ...entry };
@@ -113,6 +138,16 @@ export const prismaMock = {
 
 function identityImageUrl(sceneKey: string, promptHash: string) {
   return `/scene-art/${sceneKey}-${promptHash}.png`;
+}
+
+function applySelect(row: SceneArtRow, select: Record<string, boolean>) {
+  const result: Record<string, any> = {};
+  for (const key of Object.keys(select)) {
+    if (select[key]) {
+      result[key] = row[key];
+    }
+  }
+  return result;
 }
 
 export function resetPrismaMock() {
