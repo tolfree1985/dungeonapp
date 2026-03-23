@@ -218,6 +218,9 @@ model SceneArt {
   stylePreset   String?
   tagsJson      String?
   status        SceneArtStatus @default(queued)
+  generationStartedAt DateTime?
+  generationLeaseUntil DateTime?
+  attemptCount  Int      @default(0)
   imageUrl      String?
   engineVersion String?
   renderMode    RenderMode     @default(full)

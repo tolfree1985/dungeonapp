@@ -76,10 +76,14 @@ export async function recoverSceneArt(
 
   assertStoredSceneArtMatchesIdentity(row, identity);
 
+  const now = new Date();
   const isFailed = row.status === SceneArtStatus.failed;
   const isReady = row.status === SceneArtStatus.ready;
+  const isGenerating = row.status === SceneArtStatus.generating;
   const missingFile = isReady && (!row.imageUrl || !(await sceneArtFileExists(row.imageUrl)));
-  const isMissing = missingFile;
+  const isActiveGenerating = isGenerating && row.generationLeaseUntil && row.generationLeaseUntil.getTime() > now.getTime();
+  const isStaleGenerating = isGenerating && (!row.generationLeaseUntil || row.generationLeaseUntil.getTime() <= now.getTime());
+  const isMissing = missingFile || isStaleGenerating;
 
   if (input.action === "retry") {
     if (!isFailed && !isMissing) {

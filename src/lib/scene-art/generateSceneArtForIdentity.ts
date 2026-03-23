@@ -27,6 +27,8 @@ export async function generateSceneArtForIdentity(
         imageUrl: generated.imageUrl,
         status: SceneArtStatus.ready,
         tagsJson: JSON.stringify({ ...(generated.provider ? { provider: generated.provider } : DEFAULT_PROVIDER_SOURCE) }),
+        generationStartedAt: null,
+        generationLeaseUntil: null,
       },
     });
     return updated;
@@ -36,6 +38,8 @@ export async function generateSceneArtForIdentity(
       data: {
         status: SceneArtStatus.failed,
         tagsJson: null,
+        generationStartedAt: null,
+        generationLeaseUntil: null,
       },
     });
     throw error;

@@ -21,6 +21,7 @@ export const prismaMock = {
       const entry: SceneArtRow = {
         ...data,
         imageUrl: data.imageUrl ?? identityImageUrl(data.sceneKey, promptHash),
+        attemptCount: data.attemptCount ?? 0,
       };
       store.set(promptHash, { ...entry });
       return { ...entry };
@@ -31,10 +32,15 @@ export const prismaMock = {
       const existing = store.get(promptHash);
       if (!existing) throw new Error("Row not found");
 
-      const updated = {
+      const updated: SceneArtRow = {
         ...existing,
         ...data,
       };
+      if (data.attemptCount && typeof data.attemptCount === "object" && "increment" in data.attemptCount) {
+        const increment = data.attemptCount.increment;
+        const base = typeof existing.attemptCount === "number" ? existing.attemptCount : 0;
+        updated.attemptCount = base + increment;
+      }
       store.set(promptHash, updated);
       return updated;
     },
@@ -46,10 +52,15 @@ export const prismaMock = {
         return { count: 0 };
       }
 
-      const updated = {
+      const updated: SceneArtRow = {
         ...row,
         ...data,
       };
+      if (data.attemptCount && typeof data.attemptCount === "object" && "increment" in data.attemptCount) {
+        const increment = data.attemptCount.increment;
+        const base = typeof row.attemptCount === "number" ? row.attemptCount : 0;
+        updated.attemptCount = base + increment;
+      }
       store.set(promptHash, updated);
       return { count: 1 };
     },

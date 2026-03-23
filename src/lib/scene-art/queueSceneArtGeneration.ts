@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SceneArtIdentity, SceneArtIdentityInput, getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 import { loadOrCreateSceneArt } from "@/lib/scene-art/loadOrCreateSceneArt";
 import { processSceneArtGeneration } from "@/lib/scene-art/processSceneArtGeneration";
+import { GENERATION_LEASE_MS } from "@/lib/scene-art/constants";
 
 export type QueueSceneArtGenerationOptions = {
   force?: boolean;
@@ -18,6 +19,7 @@ export async function queueSceneArtGeneration(
   input: SceneArtIdentityInput,
   options: QueueSceneArtGenerationOptions = {},
 ): Promise<QueueSceneArtResult> {
+  const now = new Date();
   const identity = getSceneArtIdentity(input);
   const { row } = await loadOrCreateSceneArt(input);
   const imageUrl = row.imageUrl ?? null;
@@ -41,11 +43,28 @@ export async function queueSceneArtGeneration(
   }
 
   if (row.status === SceneArtStatus.generating) {
-    return {
-      status: "generating",
-      promptHash: identity.promptHash,
-      imageUrl,
-    };
+    const lease = row.generationLeaseUntil;
+    if (lease && lease > now) {
+      return {
+        status: "generating",
+        promptHash: identity.promptHash,
+        imageUrl,
+      };
+    }
+
+    await prisma.sceneArt.update({
+      where: {
+        sceneKey_promptHash: {
+          sceneKey: identity.sceneKey,
+          promptHash: identity.promptHash,
+        },
+      },
+      data: {
+        status: SceneArtStatus.queued,
+        generationStartedAt: null,
+        generationLeaseUntil: null,
+      },
+    });
   }
 
   if (row.status === SceneArtStatus.failed && !options.force) {

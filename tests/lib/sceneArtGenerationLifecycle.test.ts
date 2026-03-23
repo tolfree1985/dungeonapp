@@ -63,7 +63,62 @@ describe("scene art async lifecycle", () => {
       where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
     });
     expect(row.status).toBe(SceneArtStatus.ready);
+    expect(row.attemptCount).toBe(1);
     expect(sceneArtGenerator.generateImage).toHaveBeenCalledTimes(1);
+  });
+
+  it("claims queued work with a lease", async () => {
+    sceneArtGenerator.generateImage.mockImplementation(async () => {
+      const intermediate = await prisma.sceneArt.findUniqueOrThrow({
+        where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
+      });
+      expect(intermediate.status).toBe(SceneArtStatus.generating);
+      expect(intermediate.generationStartedAt).toBeInstanceOf(Date);
+      expect(intermediate.generationLeaseUntil).toBeInstanceOf(Date);
+      expect(intermediate.generationLeaseUntil?.getTime()).toBeGreaterThan(
+        intermediate.generationStartedAt?.getTime() ?? 0,
+      );
+      return { imageUrl: identity.imageUrl, provider: "remote" };
+    });
+    await queueSceneArtGeneration(identityInput);
+    await processSceneArtGeneration(identity);
+  });
+
+  it("does not reclaim active generating rows", async () => {
+    await queueSceneArtGeneration(identityInput);
+    await prisma.sceneArt.update({
+      where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
+      data: {
+        status: SceneArtStatus.generating,
+        generationStartedAt: new Date(),
+        generationLeaseUntil: new Date(Date.now() + 30_000),
+      },
+    });
+    const processSpy = vi.spyOn(processModule, "processSceneArtGeneration").mockResolvedValue();
+    const result = await queueSceneArtGeneration(identityInput);
+    expect(result.status).toBe("generating");
+    expect(processSpy).not.toHaveBeenCalled();
+    processSpy.mockRestore();
+  });
+
+  it("reclaims stale generating work", async () => {
+    await queueSceneArtGeneration(identityInput);
+    await prisma.sceneArt.update({
+      where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
+      data: {
+        status: SceneArtStatus.generating,
+        generationStartedAt: new Date(Date.now() - 60_000),
+        generationLeaseUntil: new Date(Date.now() - 1),
+      },
+    });
+    const processSpy = vi.spyOn(processModule, "processSceneArtGeneration").mockResolvedValue();
+    const result = await queueSceneArtGeneration(identityInput);
+    expect(result.status).toBe("pending");
+    const row = await prisma.sceneArt.findUniqueOrThrow({
+      where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
+    });
+    expect(row.status).toBe(SceneArtStatus.queued);
+    processSpy.mockRestore();
   });
 
   it("executor exits when row is already generating", async () => {
