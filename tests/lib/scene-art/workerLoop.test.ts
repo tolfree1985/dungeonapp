@@ -7,7 +7,10 @@ vi.mock("@/lib/scene-art/runNextQueuedSceneArtGeneration", () => ({
 }));
 
 describe("scene art worker loop", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.resetAllMocks();
+    workerLoop.resetSceneArtWorkerHealth();
+  });
 
   it("processes up to batch size and returns prompt hashes", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
@@ -34,4 +37,39 @@ describe("scene art worker loop", () => {
     expect(runNext).toHaveBeenCalledTimes(1);
   });
 
+  it("updates heartbeat after successful work", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockResolvedValueOnce({ promptHash: "a" });
+    runNext.mockResolvedValueOnce({ promptHash: "b" });
+    runNext.mockResolvedValue({ promptHash: null });
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 5, maxIterations: 1 });
+    const health = workerLoop.getSceneArtWorkerHealth();
+
+    expect(health.lastProcessedCount).toBe(2);
+    expect(typeof health.lastDurationMs).toBe("number");
+    expect(health.lastBatchAt).not.toBeNull();
+  });
+
+  it("updates heartbeat on idle ticks", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockResolvedValue({ promptHash: null });
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 3, intervalMs: 1, maxIterations: 1 });
+    const health = workerLoop.getSceneArtWorkerHealth();
+
+    expect(health.lastBatchAt).not.toBeNull();
+    expect(health.lastProcessedCount).toBe(0);
+  });
+
+  it("continues after a batch error", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockRejectedValue(new Error("boom"));
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 2, intervalMs: 1, maxIterations: 1 });
+    const health = workerLoop.getSceneArtWorkerHealth();
+
+    expect(health.lastErrorMessage).toBe("boom");
+    expect(health.lastErrorAt).not.toBeNull();
+  });
 });
