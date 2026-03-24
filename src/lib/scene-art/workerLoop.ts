@@ -17,6 +17,7 @@ export type SceneArtWorkerBatchResult = {
 
 export type SceneArtWorkerHealthSnapshot = {
   running: boolean;
+  paused: boolean;
   startedAt: string | null;
   lastTickAt: string | null;
   lastBatchAt: string | null;
@@ -40,6 +41,7 @@ function clampBatchSize(value?: number) {
 
 const workerHealth: SceneArtWorkerHealthSnapshot = {
   running: false,
+  paused: false,
   startedAt: null,
   lastTickAt: null,
   lastBatchAt: null,
@@ -48,6 +50,26 @@ const workerHealth: SceneArtWorkerHealthSnapshot = {
   lastErrorAt: null,
   lastErrorMessage: null,
 };
+
+let workerPaused = false;
+
+function updatePausedInSnapshot() {
+  workerHealth.paused = workerPaused;
+}
+
+export function pauseSceneArtWorker() {
+  workerPaused = true;
+  updatePausedInSnapshot();
+}
+
+export function resumeSceneArtWorker() {
+  workerPaused = false;
+  updatePausedInSnapshot();
+}
+
+export function isSceneArtWorkerPaused() {
+  return workerPaused;
+}
 
 function markWorkerStarted() {
   const now = new Date().toISOString();
@@ -59,6 +81,7 @@ function markWorkerStarted() {
   workerHealth.lastDurationMs = null;
   workerHealth.lastErrorAt = null;
   workerHealth.lastErrorMessage = null;
+  updatePausedInSnapshot();
 }
 
 function recordWorkerTick() {
@@ -119,6 +142,11 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
 
   try {
     while (!signal?.aborted) {
+      if (workerPaused) {
+        recordWorkerTick();
+        await delay(intervalMs);
+        continue;
+      }
       recordWorkerTick();
       try {
         const batch = await runSceneArtWorkerBatch({ batchSize });
@@ -183,6 +211,7 @@ export function getSceneArtWorkerHealth(): SceneArtWorkerHealthSnapshot {
 
 export function resetSceneArtWorkerHealth() {
   workerHealth.running = false;
+  workerPaused = false;
   workerHealth.startedAt = null;
   workerHealth.lastTickAt = null;
   workerHealth.lastBatchAt = null;
@@ -190,4 +219,5 @@ export function resetSceneArtWorkerHealth() {
   workerHealth.lastDurationMs = null;
   workerHealth.lastErrorAt = null;
   workerHealth.lastErrorMessage = null;
+  updatePausedInSnapshot();
 }

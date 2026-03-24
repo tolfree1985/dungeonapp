@@ -73,3 +73,38 @@ describe("scene art worker loop", () => {
     expect(health.lastErrorAt).not.toBeNull();
   });
 });
+  it("does not start new batch when paused", async () => {
+    workerLoop.pauseSceneArtWorker();
+    const controller = new AbortController();
+    const runNext = vi.spyOn(workerLoop, "runSceneArtWorkerBatch");
+    setTimeout(() => controller.abort(), 20);
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, intervalMs: 5, signal: controller.signal });
+    expect(runNext).not.toHaveBeenCalled();
+  });
+
+  it("resumes processing after resume is called", async () => {
+    workerLoop.pauseSceneArtWorker();
+    workerLoop.resumeSceneArtWorker();
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockResolvedValueOnce({ promptHash: "resumed" });
+    runNext.mockResolvedValue({ promptHash: null });
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
+    const health = workerLoop.getSceneArtWorkerHealth();
+    expect(health.lastProcessedCount).toBeGreaterThan(0);
+  });
+
+  it("does not interrupt in-flight batch when pause triggered", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockImplementation(async () => {
+      workerLoop.pauseSceneArtWorker();
+      return { promptHash: "inflight" };
+    });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20);
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 2, signal: controller.signal });
+    const health = workerLoop.getSceneArtWorkerHealth();
+    expect(health.lastProcessedCount).toBeGreaterThan(0);
+  });

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { GET } from "@/app/api/scene-art/worker/health/route";
+import { POST as pauseWorker } from "@/app/api/scene-art/worker/pause/route";
+import { POST as resumeWorker } from "@/app/api/scene-art/worker/resume/route";
 import * as workerLoop from "@/lib/scene-art/workerLoop";
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
 
@@ -25,6 +27,7 @@ describe("scene-art worker health", () => {
     expect(body).toHaveProperty("running");
     expect(body.lastProcessedCount).toBe(1);
     expect(typeof body.lastDurationMs).toBe("number");
+    expect(body.paused).toBe(false);
   });
 
   it("includes last error details after a batch failure", async () => {
@@ -50,5 +53,18 @@ describe("scene-art worker health", () => {
     const after = workerLoop.getSceneArtWorkerHealth();
 
     expect(after).toEqual(before);
+  });
+
+  it("pause endpoint sets paused true", async () => {
+    const response = await pauseWorker();
+    const body = await response.json();
+    expect(body.paused).toBe(true);
+  });
+
+  it("resume endpoint sets paused false", async () => {
+    workerLoop.pauseSceneArtWorker();
+    const response = await resumeWorker();
+    const body = await response.json();
+    expect(body.paused).toBe(false);
   });
 });

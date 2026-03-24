@@ -33,6 +33,7 @@ describe("Scene Art Worker", () => {
     lastDurationMs: 5,
     lastErrorAt: null,
     lastErrorMessage: null,
+    paused: false,
   };
 
   it("renders rows, action buttons, and refresh control", async () => {
@@ -350,5 +351,64 @@ describe("Scene Art Worker", () => {
     await waitFor(() => expect(screen.getByText("Last Processed: 4")).toBeTruthy());
     expect(screen.getByText(/Last Tick:/)).toBeTruthy();
     expect(screen.getByText(/Last Batch:/)).toBeTruthy();
+  });
+
+  it("shows pause button when worker is active", async () => {
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve({ ...baseHealth, paused: false }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    await waitFor(() => expect(screen.getByText("Pause worker")).toBeTruthy());
+  });
+
+  it("shows resume button when worker is paused", async () => {
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve({ ...baseHealth, paused: true }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    await waitFor(() => expect(screen.getByText("Resume worker")).toBeTruthy());
+  });
+
+  it("updates health panel after pause and resume", async () => {
+    let paused = false;
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve({ ...baseHealth, paused, lastProcessedCount: paused ? 0 : 1 }) });
+      }
+      if (url === "/api/scene-art/worker/pause") {
+        paused = true;
+        return Promise.resolve({ json: () => Promise.resolve({ ...baseHealth, paused: true, lastProcessedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/resume") {
+        paused = false;
+        return Promise.resolve({ json: () => Promise.resolve({ ...baseHealth, paused: false, lastProcessedCount: 2 }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    const pauseButton = await screen.findByText("Pause worker");
+    pauseButton.click();
+    await waitFor(() => expect(screen.getByText(/Status: Paused/i)).toBeTruthy());
+    const resumeButton = await screen.findByText("Resume worker");
+    resumeButton.click();
+    await waitFor(() => expect(screen.getByText(/Status: Running/i)).toBeTruthy());
   });
 });

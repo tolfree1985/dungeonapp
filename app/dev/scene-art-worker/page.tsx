@@ -33,6 +33,7 @@ export default function SceneArtWorkerPage() {
   const [lastReclaimedCount, setLastReclaimedCount] = useState<number | null>(null);
   const [autoReclaimedCount, setAutoReclaimedCount] = useState(0);
   const [health, setHealth] = useState<WorkerHealth | null>(null);
+  const [controlLoading, setControlLoading] = useState(false);
   const [highlightedPromptHash, setHighlightedPromptHash] = useState<string | null>(null);
   const highlightTarget = useRef<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,20 +144,55 @@ export default function SceneArtWorkerPage() {
     );
   }, [rows]);
 
-  const formatDate = (value: string | null) => value ? new Date(value).toLocaleString() : "-";
-  const formatTime = (value: string | null) => value ? new Date(value).toLocaleTimeString() : "-";
+  const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString() : "-");
+  const formatTime = (value: string | null) => (value ? new Date(value).toLocaleTimeString() : "-");
 
   const healthStatus = useMemo(() => {
     if (!health) return "unknown";
-    const isError = Boolean(health.lastErrorMessage);
-    const isIdle = !health.lastBatchAt || health.lastProcessedCount === 0;
-    if (isError) return "error";
-    if (isIdle) return "idle";
+    if (health.paused) return "paused";
+    if (health.lastErrorMessage) return "error";
+    if (!health.lastBatchAt || health.lastProcessedCount === 0) return "idle";
     return "running";
   }, [health]);
 
-  const statusLabel = healthStatus === "error" ? "Error" : healthStatus === "idle" ? "Idle" : healthStatus === "running" ? "Running" : "Unknown";
-  const statusColor = healthStatus === "error" ? "text-rose-600" : healthStatus === "idle" ? "text-slate-500" : "text-emerald-600";
+  const statusLabel =
+    healthStatus === "paused"
+      ? "Paused"
+      : healthStatus === "error"
+      ? "Error"
+      : healthStatus === "idle"
+      ? "Idle"
+      : healthStatus === "running"
+      ? "Running"
+      : "Unknown";
+  const statusColor =
+    healthStatus === "paused"
+      ? "text-slate-500"
+      : healthStatus === "error"
+      ? "text-rose-600"
+      : healthStatus === "idle"
+      ? "text-slate-500"
+      : "text-emerald-600";
+
+  const pauseWorker = useCallback(async () => {
+    setControlLoading(true);
+    try {
+      await fetch("/api/scene-art/worker/pause", { method: "POST" });
+    } finally {
+      setControlLoading(false);
+      await fetchHealth();
+    }
+  }, [fetchHealth]);
+
+  const resumeWorker = useCallback(async () => {
+    setControlLoading(true);
+    try {
+      await fetch("/api/scene-art/worker/resume", { method: "POST" });
+    } finally {
+      setControlLoading(false);
+      await fetchHealth();
+    }
+  }, [fetchHealth]);
 
   const handleBatch = useCallback(async () => {
     setBatchRunning(true);
@@ -252,6 +288,25 @@ export default function SceneArtWorkerPage() {
         {health?.lastErrorMessage ? (
           <div className="text-xs text-rose-600">Error: {health.lastErrorMessage}</div>
         ) : null}
+        <div className="pt-2">
+          {health?.paused ? (
+            <button
+              className="rounded border border-emerald-500 px-3 py-1 text-xs text-emerald-600"
+              onClick={resumeWorker}
+              disabled={controlLoading}
+            >
+              {controlLoading ? "Resuming..." : "Resume worker"}
+            </button>
+          ) : (
+            <button
+              className="rounded border border-rose-500 px-3 py-1 text-xs text-rose-600"
+              onClick={pauseWorker}
+              disabled={controlLoading}
+            >
+              {controlLoading ? "Pausing..." : "Pause worker"}
+            </button>
+          )}
+        </div>
       </section>
 
       <table className="min-w-full text-sm">
