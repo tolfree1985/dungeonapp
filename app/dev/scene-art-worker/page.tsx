@@ -13,6 +13,17 @@ type SceneArtRow = {
   errorMessage?: string | null;
 };
 
+type WorkerHealth = {
+  running: boolean;
+  startedAt: string | null;
+  lastTickAt: string | null;
+  lastBatchAt: string | null;
+  lastProcessedCount: number;
+  lastDurationMs: number | null;
+  lastErrorAt: string | null;
+  lastErrorMessage: string | null;
+};
+
 export default function SceneArtWorkerPage() {
   const [rows, setRows] = useState<SceneArtRow[]>([]);
   const [running, setRunning] = useState<string | null>(null);
@@ -21,11 +32,12 @@ export default function SceneArtWorkerPage() {
   const [reclaiming, setReclaiming] = useState(false);
   const [lastReclaimedCount, setLastReclaimedCount] = useState<number | null>(null);
   const [autoReclaimedCount, setAutoReclaimedCount] = useState(0);
+  const [health, setHealth] = useState<WorkerHealth | null>(null);
   const [highlightedPromptHash, setHighlightedPromptHash] = useState<string | null>(null);
   const highlightTarget = useRef<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refresh = useCallback(async () => {
+  const fetchQueue = useCallback(async () => {
     const response = await fetch("/api/scene-art/worker/queue");
     const body = await response.json();
     const data: SceneArtRow[] = body.rows ?? [];
@@ -46,7 +58,24 @@ export default function SceneArtWorkerPage() {
       }
       highlightTimer.current = setTimeout(() => setHighlightedPromptHash(null), 3000);
     }
+
+    return data;
   }, []);
+
+  const fetchHealth = useCallback(async () => {
+    try {
+      const response = await fetch("/api/scene-art/worker/health");
+      const body: WorkerHealth = await response.json();
+      setHealth(body);
+    } catch {
+      setHealth(null);
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    await fetchQueue();
+    await fetchHealth();
+  }, [fetchHealth, fetchQueue]);
 
   useEffect(() => {
     refresh();
@@ -114,8 +143,20 @@ export default function SceneArtWorkerPage() {
     );
   }, [rows]);
 
-  const formatDate = (value: string | null) =>
-    value ? new Date(value).toLocaleString() : "-";
+  const formatDate = (value: string | null) => value ? new Date(value).toLocaleString() : "-";
+  const formatTime = (value: string | null) => value ? new Date(value).toLocaleTimeString() : "-";
+
+  const healthStatus = useMemo(() => {
+    if (!health) return "unknown";
+    const isError = Boolean(health.lastErrorMessage);
+    const isIdle = !health.lastBatchAt || health.lastProcessedCount === 0;
+    if (isError) return "error";
+    if (isIdle) return "idle";
+    return "running";
+  }, [health]);
+
+  const statusLabel = healthStatus === "error" ? "Error" : healthStatus === "idle" ? "Idle" : healthStatus === "running" ? "Running" : "Unknown";
+  const statusColor = healthStatus === "error" ? "text-rose-600" : healthStatus === "idle" ? "text-slate-500" : "text-emerald-600";
 
   const handleBatch = useCallback(async () => {
     setBatchRunning(true);
@@ -195,6 +236,23 @@ export default function SceneArtWorkerPage() {
           ) : null}
         </div>
       </header>
+
+      <section className="rounded border bg-white/50 p-4 shadow-sm space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-slate-700">Worker Health</div>
+          <span className={`text-xs font-semibold uppercase tracking-wide ${statusColor}`}>
+            Status: {statusLabel}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+          <span>Last Tick: {formatTime(health?.lastTickAt ?? null)}</span>
+          <span>Last Batch: {formatTime(health?.lastBatchAt ?? null)}</span>
+          <span>Last Processed: {health?.lastProcessedCount ?? 0}</span>
+        </div>
+        {health?.lastErrorMessage ? (
+          <div className="text-xs text-rose-600">Error: {health.lastErrorMessage}</div>
+        ) : null}
+      </section>
 
       <table className="min-w-full text-sm">
         <thead>
