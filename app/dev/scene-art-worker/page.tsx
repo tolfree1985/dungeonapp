@@ -18,14 +18,17 @@ export default function SceneArtWorkerPage() {
   const [running, setRunning] = useState<string | null>(null);
   const [reclaiming, setReclaiming] = useState(false);
   const [lastReclaimedCount, setLastReclaimedCount] = useState<number | null>(null);
+  const [autoReclaimedCount, setAutoReclaimedCount] = useState(0);
   const [highlightedPromptHash, setHighlightedPromptHash] = useState<string | null>(null);
   const highlightTarget = useRef<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = useCallback(async () => {
     const response = await fetch("/api/scene-art/worker/queue");
-    const data: SceneArtRow[] = await response.json();
+    const body = await response.json();
+    const data: SceneArtRow[] = body.rows ?? [];
     setRows(data);
+    setAutoReclaimedCount(body.autoReclaimedCount ?? 0);
 
     if (highlightTarget.current) {
       if (highlightTarget.current === "__generating__") {
@@ -148,6 +151,9 @@ export default function SceneArtWorkerPage() {
           </button>
           {lastReclaimedCount !== null ? (
             <span className="text-emerald-500">Reclaimed {lastReclaimedCount} job(s)</span>
+          ) : null}
+          {autoReclaimedCount > 0 ? (
+            <span className="text-emerald-500">Auto-reclaimed {autoReclaimedCount} job(s)</span>
           ) : null}
         </div>
       </header>

@@ -37,10 +37,14 @@ export const prismaMock = {
         });
       }
 
+      if (typeof take === "number") {
+        candidates = candidates.slice(0, take);
+      }
+
       return candidates[0] ?? null;
     },
 
-    async findMany({ where, orderBy, select }: any) {
+    async findMany({ where, orderBy, select, take }: any) {
       const entries = Array.from(store.values());
       let candidates = entries;
       if (where?.status?.in) {

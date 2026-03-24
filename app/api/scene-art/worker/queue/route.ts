@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { autoReclaimStaleSceneArt } from "@/lib/scene-art/reclaimStaleSceneArt";
 
 export async function GET() {
+  const autoResult = await autoReclaimStaleSceneArt({ limit: 10 });
   const rows = await prisma.sceneArt.findMany({
     where: {
       status: {
@@ -22,5 +24,5 @@ export async function GET() {
     errorMessage: row.errorMessage ?? null,
   }));
 
-  return NextResponse.json(payload);
+  return NextResponse.json({ rows: payload, autoReclaimedCount: autoResult.reclaimedCount });
 }

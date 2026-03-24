@@ -2,7 +2,7 @@ import { SceneArtStatus } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 
-export async function reclaimStaleSceneArt() {
+export async function reclaimStaleSceneArt(options?: { limit?: number }) {
   const now = new Date();
   const staleRows = await prisma.sceneArt.findMany({
     where: {
@@ -11,6 +11,8 @@ export async function reclaimStaleSceneArt() {
         lt: now,
       },
     },
+    orderBy: { generationLeaseUntil: "asc" },
+    take: options?.limit,
   });
 
   if (staleRows.length === 0) {
@@ -50,4 +52,19 @@ export async function reclaimStaleSceneArt() {
     reclaimedCount: reclaimedPromptHashes.length,
     promptHashes: reclaimedPromptHashes,
   };
+}
+
+export async function autoReclaimStaleSceneArt(options?: { limit?: number }) {
+  const result = await reclaimStaleSceneArt({ limit: options?.limit });
+  if (result.reclaimedCount > 0) {
+    logSceneArtEvent("scene.art.auto_reclaimed", {
+      sceneKey: "auto",
+      promptHash: "auto",
+      status: SceneArtStatus.queued,
+      attemptCount: result.reclaimedCount,
+      generationStartedAt: null,
+      generationLeaseUntil: null,
+    });
+  }
+  return result;
 }

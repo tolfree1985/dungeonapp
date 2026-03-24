@@ -27,7 +27,7 @@ describe("Scene Art Worker", () => {
   it("renders rows, action buttons, and refresh control", async () => {
     (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
       if (url === "/api/scene-art/worker/queue") {
-        return Promise.resolve({ json: () => Promise.resolve([queuedRow]) });
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
       }
       return Promise.resolve({});
     });
@@ -42,9 +42,7 @@ describe("Scene Art Worker", () => {
 
   it("refresh button reloads queue data", async () => {
     const queueCalls = vi.fn(() =>
-      Promise.resolve({
-        json: () => Promise.resolve([queuedRow]),
-      }),
+      Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) }),
     );
     (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
       if (url === "/api/scene-art/worker/queue") {
@@ -64,7 +62,7 @@ describe("Scene Art Worker", () => {
     (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
       if (url === "/api/scene-art/worker/queue") {
         queueCount += 1;
-        return Promise.resolve({ json: () => Promise.resolve([queuedRow]) });
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
       }
       if (url === "/api/scene-art/worker/run-next") {
         return Promise.resolve({});
@@ -86,7 +84,7 @@ describe("Scene Art Worker", () => {
     (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
       if (url === "/api/scene-art/worker/queue") {
         queueCount += 1;
-        return Promise.resolve({ json: () => Promise.resolve([queuedRow]) });
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
       }
       if (url.startsWith("/api/scene-art/worker/run/")) {
         return Promise.resolve({});
@@ -117,7 +115,7 @@ describe("Scene Art Worker", () => {
 
     (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
       if (url === "/api/scene-art/worker/queue") {
-        return Promise.resolve({ json: () => Promise.resolve([detailedRow]) });
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [detailedRow], autoReclaimedCount: 0 }) });
       }
       return Promise.resolve({});
     });
@@ -176,7 +174,7 @@ describe("Scene Art Worker", () => {
     };
     (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
       if (url === "/api/scene-art/worker/queue") {
-        return Promise.resolve({ json: () => Promise.resolve([queuedRow, staleRow, failedRow]) });
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow, staleRow, failedRow], autoReclaimedCount: 0 }) });
       }
       return Promise.resolve({});
     });
@@ -190,7 +188,7 @@ describe("Scene Art Worker", () => {
 
   it("reclaim stale button refreshes queue after success", async () => {
     const queueCalls = vi.fn(() =>
-      Promise.resolve({ json: () => Promise.resolve([queuedRow]) }),
+      Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) }),
     );
     (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
       if (url === "/api/scene-art/worker/queue") {
@@ -208,5 +206,17 @@ describe("Scene Art Worker", () => {
     await waitFor(() => expect((fetch as unknown as vi.Mock).mock.calls.some((call) => call[0] === "/api/scene-art/worker/reclaim-stale")).toBe(true));
     await waitFor(() => expect(queueCalls).toHaveBeenCalledTimes(2));
     expect(screen.getByText("Reclaimed 1 job(s)")).toBeTruthy();
+  });
+
+  it("shows auto-reclaimed label when queue reports automation", async () => {
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 2 }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    expect(await screen.findByText("Auto-reclaimed 2 job(s)")).toBeTruthy();
   });
 });

@@ -50,9 +50,9 @@ describe("scene-art worker ops surface", () => {
 
     const response = await getQueue();
     const data = await response.json();
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.some((entry: any) => entry.status === "queued")).toBe(true);
-    expect(data.some((entry: any) => entry.status === "generating")).toBe(true);
+    expect(Array.isArray(data.rows)).toBe(true);
+    expect(data.rows.some((entry: any) => entry.status === "queued")).toBe(true);
+    expect(data.rows.some((entry: any) => entry.status === "generating")).toBe(true);
 
     const after = await prisma.sceneArt.findUnique({ where: { sceneKey_promptHash: { sceneKey: second.sceneKey, promptHash: second.promptHash } } });
     expect(after?.status).toBe("generating");
