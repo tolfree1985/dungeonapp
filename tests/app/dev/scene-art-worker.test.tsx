@@ -208,6 +208,28 @@ describe("Scene Art Worker", () => {
     expect(screen.getByText("Reclaimed 1 job(s)")).toBeTruthy();
   });
 
+  it("run batch button sends limit and refreshes queue", async () => {
+    const queueCalls = vi.fn(() =>
+      Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) }),
+    );
+    (fetch as unknown as vi.Mock).mockImplementation((url: string, opts?: RequestInit) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return queueCalls();
+      }
+      if (url === "/api/scene-art/worker/run-batch") {
+        const body = opts?.body ? JSON.parse(opts.body.toString()) : {};
+        expect(body.limit).toBe(3);
+        return Promise.resolve({ json: () => Promise.resolve({ processedCount: 3, processedPromptHashes: ["hash"] }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    await waitFor(() => expect(queueCalls).toHaveBeenCalledTimes(1));
+    screen.getByRole("button", { name: "Run batch" }).click();
+    await waitFor(() => expect(queueCalls).toHaveBeenCalledTimes(2));
+  });
+
   it("shows auto-reclaimed label when queue reports automation", async () => {
     (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
       if (url === "/api/scene-art/worker/queue") {

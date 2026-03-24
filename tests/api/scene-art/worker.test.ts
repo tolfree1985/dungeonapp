@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { GET as getQueue } from "@/app/api/scene-art/worker/queue/route";
 import { POST as postRunNext } from "@/app/api/scene-art/worker/run-next/route";
+import { POST as postRunBatch } from "@/app/api/scene-art/worker/run-batch/route";
 import { POST as postReclaimStale } from "@/app/api/scene-art/worker/reclaim-stale/route";
 import { prisma } from "@/lib/prisma";
 import { resetPrismaMock } from "../../mocks/prismaMock";
@@ -130,5 +131,25 @@ describe("scene-art worker ops surface", () => {
       where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: queued.promptHash } },
     });
     expect(row?.status).toBe("generating");
+  });
+
+  it("run-batch processes up to the limit", async () => {
+    const identity = { sceneKey: "dock_office", sceneText: "text", renderMode: "full" as const };
+    await queueSceneArtGeneration(identity, { autoProcess: false });
+    await queueSceneArtGeneration({ ...identity, sceneKey: "dock_office_b" }, { autoProcess: false });
+
+    const response = await postRunBatch(new Request("http://localhost/api/scene-art/worker/run-batch", {
+      method: "POST",
+      body: JSON.stringify({ limit: 1 }),
+    } as any));
+    expect(await response.json()).toEqual(expect.objectContaining({ processedCount: 1 }));
+  });
+
+  it("run-batch stops when queue empty", async () => {
+    const response = await postRunBatch(new Request("http://localhost/api/scene-art/worker/run-batch", {
+      method: "POST",
+      body: JSON.stringify({ limit: 5 }),
+    } as any));
+    expect(await response.json()).toEqual({ processedCount: 0, processedPromptHashes: [] });
   });
 });

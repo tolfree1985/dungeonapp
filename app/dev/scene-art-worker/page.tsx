@@ -16,6 +16,8 @@ type SceneArtRow = {
 export default function SceneArtWorkerPage() {
   const [rows, setRows] = useState<SceneArtRow[]>([]);
   const [running, setRunning] = useState<string | null>(null);
+  const [batchLimit, setBatchLimit] = useState(3);
+  const [batchRunning, setBatchRunning] = useState(false);
   const [reclaiming, setReclaiming] = useState(false);
   const [lastReclaimedCount, setLastReclaimedCount] = useState<number | null>(null);
   const [autoReclaimedCount, setAutoReclaimedCount] = useState(0);
@@ -115,6 +117,20 @@ export default function SceneArtWorkerPage() {
   const formatDate = (value: string | null) =>
     value ? new Date(value).toLocaleString() : "-";
 
+  const handleBatch = useCallback(async () => {
+    setBatchRunning(true);
+    try {
+      await fetch("/api/scene-art/worker/run-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: batchLimit }),
+      });
+    } finally {
+      setBatchRunning(false);
+      await refresh();
+    }
+  }, [batchLimit, refresh]);
+
   return (
     <div className="p-6 space-y-4">
       <header className="space-y-3">
@@ -134,6 +150,28 @@ export default function SceneArtWorkerPage() {
               disabled={running !== null}
             >
               Refresh queue
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <label className="text-slate-500">Run batch</label>
+            <select
+              className="rounded border px-2 py-1 text-xs"
+              value={batchLimit}
+              onChange={(event) => setBatchLimit(Number(event.target.value))}
+              disabled={batchRunning}
+            >
+              {[1, 3, 5, 10].map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <button
+              className="rounded border px-3 py-1 text-xs text-amber-600"
+              onClick={handleBatch}
+              disabled={batchRunning}
+            >
+              {batchRunning ? "Running..." : "Run batch"}
             </button>
           </div>
         </div>
