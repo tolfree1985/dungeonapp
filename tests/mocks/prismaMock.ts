@@ -2,15 +2,30 @@ type SceneArtRow = Record<string, any>;
 
 const store = new Map<string, SceneArtRow>();
 
+function resolveSceneArtWhere(where: any) {
+  if (!where) return {};
+  if (where.sceneKey_promptHash) return where.sceneKey_promptHash;
+  if (typeof where.promptHash === "string") return where;
+  if (typeof where.id === "string") {
+    for (const row of store.values()) {
+      if (row.id === where.id) {
+        return { promptHash: row.promptHash, sceneKey: row.sceneKey };
+      }
+    }
+  }
+  return where;
+}
 export const prismaMock = {
   sceneArt: {
-    async findUnique({ where: { sceneKey_promptHash } }: any) {
-      const { promptHash } = sceneKey_promptHash;
+    async findUnique({ where }: any) {
+      const resolved = resolveSceneArtWhere(where);
+      const { promptHash } = resolved;
       return store.get(promptHash) ?? null;
     },
 
-    async findUniqueOrThrow({ where: { sceneKey_promptHash } }: any) {
-      const { promptHash } = sceneKey_promptHash;
+    async findUniqueOrThrow({ where }: any) {
+      const resolved = resolveSceneArtWhere(where);
+      const { promptHash } = resolved;
       const row = store.get(promptHash);
       if (!row) throw new Error("Row not found");
       return row;
@@ -97,8 +112,9 @@ export const prismaMock = {
       return { ...entry };
     },
 
-    async update({ where: { sceneKey_promptHash }, data }: any) {
-      const { promptHash } = sceneKey_promptHash;
+    async update({ where, data }: any) {
+      const resolved = where.sceneKey_promptHash ?? where;
+      const { promptHash } = resolved;
       const existing = store.get(promptHash);
       if (!existing) throw new Error("Row not found");
 
@@ -115,8 +131,9 @@ export const prismaMock = {
       return updated;
     },
 
-    async updateMany({ where: { sceneKey_promptHash, status }, data }: any) {
-      const { promptHash } = sceneKey_promptHash;
+    async updateMany({ where, data }: any) {
+      const resolved = where.sceneKey_promptHash ?? where;
+      const { promptHash, status } = resolved;
       const row = store.get(promptHash);
       if (!row || row.status !== status) {
         return { count: 0 };

@@ -50,7 +50,11 @@ describe("runNextQueuedSceneArtGeneration", () => {
     const result = await runNextQueuedSceneArtGeneration();
 
     expect(result.promptHash).toBe(firstIdentity.promptHash);
-    expect(spy).toHaveBeenCalledWith(firstIdentity.promptHash);
+    expect(result.sceneKey).toBe(firstIdentity.sceneKey);
+    expect(spy).toHaveBeenCalledWith({
+      sceneKey: firstIdentity.sceneKey,
+      promptHash: firstIdentity.promptHash,
+    });
     const processedRow = await prisma.sceneArt.findUniqueOrThrow({
       where: { sceneKey_promptHash: { sceneKey: firstIdentity.sceneKey, promptHash: firstIdentity.promptHash } },
     });
@@ -83,6 +87,7 @@ describe("runNextQueuedSceneArtGeneration", () => {
     await queueSceneArtGeneration(baseInput, { autoProcess: false });
     const result = await runNextQueuedSceneArtGeneration();
     expect(result.promptHash).toBe(identity.promptHash);
+    expect(result.sceneKey).toBe(identity.sceneKey);
     const row = await prisma.sceneArt.findUniqueOrThrow({
       where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
     });

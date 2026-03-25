@@ -162,7 +162,10 @@ describe("scene art async lifecycle", () => {
 
   it("runQueuedSceneArtGeneration processes previously queued work", async () => {
     await queueSceneArtGeneration(identityInput, { autoProcess: false });
-    await runQueuedSceneArtGeneration(identity.promptHash);
+    await runQueuedSceneArtGeneration({
+      sceneKey,
+      promptHash: identity.promptHash,
+    });
     const row = await prisma.sceneArt.findUniqueOrThrow({
       where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
     });
@@ -174,7 +177,10 @@ describe("scene art async lifecycle", () => {
     const alternateInput = { ...identityInput, sceneText: "changed" };
     const alternateIdentity = getSceneArtIdentity(alternateInput);
     await queueSceneArtGeneration(alternateInput, { autoProcess: false });
-    await runQueuedSceneArtGeneration(alternateIdentity.promptHash);
+    await runQueuedSceneArtGeneration({
+      sceneKey,
+      promptHash: alternateIdentity.promptHash,
+    });
     const row = await prisma.sceneArt.findUniqueOrThrow({
       where: { sceneKey_promptHash: { sceneKey, promptHash: alternateIdentity.promptHash } },
     });
