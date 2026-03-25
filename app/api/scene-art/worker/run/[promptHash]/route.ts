@@ -11,17 +11,21 @@ export async function POST(
 
   const row = await prisma.sceneArt.findFirst({
     where: { promptHash },
-    select: { status: true },
+    select: { status: true, sceneKey: true },
   });
 
-  if (!row) {
+  if (!row || row.status !== SceneArtStatus.queued) {
     return NextResponse.json({ promptHash: null });
   }
 
-  if (row.status !== SceneArtStatus.queued) {
-    return NextResponse.json({ promptHash: null });
+  if (!row.sceneKey) {
+    throw new Error("SCENE_ART_INVALID_IDENTITY: missing sceneKey");
   }
 
-  await runQueuedSceneArtGeneration(promptHash);
+  await runQueuedSceneArtGeneration({
+    sceneKey: row.sceneKey,
+    promptHash,
+  });
+
   return NextResponse.json({ promptHash });
 }

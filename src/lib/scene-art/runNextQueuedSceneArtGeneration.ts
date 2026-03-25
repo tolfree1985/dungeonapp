@@ -31,7 +31,10 @@ export async function runNextQueuedSceneArtGeneration(): Promise<RunNextResult> 
     throw new Error("SCENE_ART_INVALID_IDENTITY: queued row missing sceneKey or promptHash");
   }
 
-  await runQueuedSceneArtGeneration(row.promptHash);
+  await runQueuedSceneArtGeneration({
+    sceneKey: row.sceneKey,
+    promptHash: row.promptHash,
+  });
 
   return {
     sceneKey: row.sceneKey,

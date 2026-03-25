@@ -5,6 +5,11 @@ import { GENERATION_LEASE_MS } from "@/lib/scene-art/constants";
 import { SceneArtExecutionContext, generateSceneArtForExecutionContext } from "@/lib/scene-art/generateSceneArtForIdentity";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 
+export type SceneArtIdentityInput = {
+  sceneKey: string;
+  promptHash: string;
+};
+
 function buildExecutionContext(row: Prisma.SceneArtGetPayload<{}>): SceneArtExecutionContext {
   return {
     sceneKey: row.sceneKey,
@@ -17,13 +22,18 @@ function buildExecutionContext(row: Prisma.SceneArtGetPayload<{}>): SceneArtExec
   };
 }
 
-export async function runQueuedSceneArtGeneration(promptHash: string): Promise<void> {
+export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInput): Promise<void> {
+  const { sceneKey, promptHash } = identity;
+
+  if (!sceneKey) {
+    throw new Error("SCENE_ART_INVALID_IDENTITY: missing sceneKey");
+  }
   if (!promptHash) {
     throw new Error("SCENE_ART_INVALID_IDENTITY: missing promptHash");
   }
 
   const row = await prisma.sceneArt.findFirst({
-    where: { promptHash },
+    where: { sceneKey, promptHash },
     select: {
       sceneKey: true,
       promptHash: true,
@@ -40,15 +50,7 @@ export async function runQueuedSceneArtGeneration(promptHash: string): Promise<v
   });
 
   if (!row) {
-    throw new Error(`runQueuedSceneArtGeneration: row missing for ${promptHash}`);
-  }
-
-  if (!row.sceneKey) {
-    throw new Error("SCENE_ART_INVALID_IDENTITY: missing sceneKey");
-  }
-
-  if (!row.promptHash) {
-    throw new Error("SCENE_ART_INVALID_IDENTITY: empty promptHash");
+    throw new Error(`runQueuedSceneArtGeneration: row missing for ${sceneKey}/${promptHash}`);
   }
 
   const leaseStartedAt = new Date();
