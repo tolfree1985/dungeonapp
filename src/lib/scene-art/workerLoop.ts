@@ -1,5 +1,6 @@
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
+import { workerStateStore } from "@/lib/scene-art/workerStateStore";
 
 export type SceneArtWorkerLoopOptions = {
   batchSize?: number;
@@ -18,6 +19,7 @@ export type SceneArtWorkerBatchResult = {
 export type SceneArtWorkerHealthSnapshot = {
   running: boolean;
   paused: boolean;
+  draining: boolean;
   startedAt: string | null;
   lastTickAt: string | null;
   lastBatchAt: string | null;
@@ -39,9 +41,10 @@ function clampBatchSize(value?: number) {
   return Math.min(10, Math.max(1, requested));
 }
 
-const workerHealth: SceneArtWorkerHealthSnapshot = {
+let workerHealth: SceneArtWorkerHealthSnapshot = {
   running: false,
   paused: false,
+  draining: false,
   startedAt: null,
   lastTickAt: null,
   lastBatchAt: null,
@@ -50,56 +53,124 @@ const workerHealth: SceneArtWorkerHealthSnapshot = {
   lastErrorAt: null,
   lastErrorMessage: null,
 };
+let workerController: AbortController | null = null;
+let workerTask: Promise<void> | null = null;
 
-let workerPaused = false;
-
-function updatePausedInSnapshot() {
-  workerHealth.paused = workerPaused;
+export async function pauseSceneArtWorker() {
+  await workerStateStore.setControl({ paused: true });
+  workerHealth.paused = true;
 }
 
-export function pauseSceneArtWorker() {
-  workerPaused = true;
-  updatePausedInSnapshot();
+export async function resumeSceneArtWorker() {
+  await workerStateStore.setControl({ paused: false });
+  workerHealth.paused = false;
 }
 
-export function resumeSceneArtWorker() {
-  workerPaused = false;
-  updatePausedInSnapshot();
+export async function isSceneArtWorkerPaused() {
+  const control = await workerStateStore.getControl();
+  return control.paused;
 }
 
-export function isSceneArtWorkerPaused() {
-  return workerPaused;
+export async function drainSceneArtWorker() {
+  await workerStateStore.setControl({ draining: true });
+  workerHealth.draining = true;
 }
 
-function markWorkerStarted() {
+export async function isSceneArtWorkerDraining() {
+  const control = await workerStateStore.getControl();
+  return control.draining;
+}
+
+export async function isSceneArtWorkerRunning() {
+  const health = await workerStateStore.getHealth();
+  return health.running;
+}
+
+export async function startSceneArtWorkerBackground(options: SceneArtWorkerLoopOptions = {}) {
+  const health = await workerStateStore.getHealth();
+  if (workerTask && health.running) {
+    return;
+  }
+
+  const controller = new AbortController();
+  workerController = controller;
+  workerTask = startSceneArtWorkerLoop({ ...options, signal: controller.signal }).finally(() => {
+    if (workerController === controller) {
+      workerController = null;
+    }
+    workerTask = null;
+  });
+}
+
+async function markWorkerStarted() {
+  const control = await workerStateStore.getControl();
   const now = new Date().toISOString();
-  workerHealth.running = true;
-  workerHealth.startedAt = now;
-  workerHealth.lastTickAt = null;
-  workerHealth.lastBatchAt = null;
-  workerHealth.lastProcessedCount = 0;
-  workerHealth.lastDurationMs = null;
-  workerHealth.lastErrorAt = null;
-  workerHealth.lastErrorMessage = null;
-  updatePausedInSnapshot();
+  workerHealth = {
+    running: true,
+    paused: control.paused,
+    draining: control.draining,
+    startedAt: now,
+    lastTickAt: null,
+    lastBatchAt: null,
+    lastProcessedCount: 0,
+    lastDurationMs: null,
+    lastErrorAt: null,
+    lastErrorMessage: null,
+  };
+  await workerStateStore.updateHealth({
+    running: true,
+    paused: control.paused,
+    draining: control.draining,
+    startedAt: now,
+    lastTickAt: null,
+    lastBatchAt: null,
+    lastProcessedCount: 0,
+    lastDurationMs: null,
+    lastErrorAt: null,
+    lastErrorMessage: null,
+  });
 }
 
-function recordWorkerTick() {
-  workerHealth.lastTickAt = new Date().toISOString();
+async function recordWorkerTick(control: { paused: boolean; draining: boolean }) {
+  const now = new Date().toISOString();
+  workerHealth.lastTickAt = now;
+  workerHealth.paused = control.paused;
+  workerHealth.draining = control.draining;
+  await workerStateStore.updateHealth({
+    lastTickAt: now,
+    paused: control.paused,
+    draining: control.draining,
+  });
 }
 
-function recordBatchSuccess(batch: SceneArtWorkerBatchResult) {
-  workerHealth.lastBatchAt = new Date().toISOString();
+async function recordBatchSuccess(batch: SceneArtWorkerBatchResult) {
+  const now = new Date().toISOString();
+  workerHealth.lastBatchAt = now;
   workerHealth.lastProcessedCount = batch.processedCount;
   workerHealth.lastDurationMs = batch.durationMs;
   workerHealth.lastErrorAt = null;
   workerHealth.lastErrorMessage = null;
+  await workerStateStore.updateHealth({
+    lastBatchAt: now,
+    lastProcessedCount: batch.processedCount,
+    lastDurationMs: batch.durationMs,
+    lastErrorAt: null,
+    lastErrorMessage: null,
+  });
 }
 
-function recordBatchFailure(error: unknown) {
-  workerHealth.lastErrorAt = new Date().toISOString();
+async function recordBatchFailure(error: unknown) {
+  const now = new Date().toISOString();
+  workerHealth.lastErrorAt = now;
   workerHealth.lastErrorMessage = error instanceof Error ? error.message : String(error);
   workerHealth.lastDurationMs = null;
+  workerHealth.lastProcessedCount = 0;
+  await workerStateStore.updateHealth({
+    lastErrorAt: now,
+    lastErrorMessage: workerHealth.lastErrorMessage,
+    lastDurationMs: null,
+    lastProcessedCount: 0,
+  });
 }
 
 export async function runSceneArtWorkerBatch({ batchSize }: Pick<SceneArtWorkerLoopOptions, "batchSize">): Promise<SceneArtWorkerBatchResult> {
@@ -131,8 +202,9 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
   const signal = options.signal;
   const limit = typeof options.maxIterations === "number" ? options.maxIterations : undefined;
   let iterations = 0;
+  let stopReason: string | null = null;
 
-  markWorkerStarted();
+  await markWorkerStarted();
   logSceneArtEvent("scene.art.worker.started", {
     sceneKey: "worker",
     promptHash: "worker",
@@ -142,15 +214,15 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
 
   try {
     while (!signal?.aborted) {
-      if (workerPaused) {
-        recordWorkerTick();
+      const control = await workerStateStore.getControl();
+      await recordWorkerTick(control);
+      if (control.paused && !control.draining) {
         await delay(intervalMs);
         continue;
       }
-      recordWorkerTick();
       try {
         const batch = await runSceneArtWorkerBatch({ batchSize });
-        recordBatchSuccess(batch);
+        await recordBatchSuccess(batch);
         logSceneArtEvent("scene.art.worker.tick", {
           sceneKey: "worker",
           promptHash: batch.processedPromptHashes.join(",") || "worker",
@@ -176,8 +248,19 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
             durationMs: batch.durationMs,
           });
         }
+        if (control.draining && batch.processedCount === 0) {
+          stopReason = "drained";
+          logSceneArtEvent("scene.art.worker.stopped", {
+            sceneKey: "worker",
+            promptHash: "worker",
+            status: "ready",
+            attemptCount: 0,
+            reason: "drained",
+          });
+          break;
+        }
       } catch (error) {
-        recordBatchFailure(error);
+        await recordBatchFailure(error);
         logSceneArtEvent("scene.art.worker.batch_failed", {
           sceneKey: "worker",
           promptHash: "worker",
@@ -195,29 +278,40 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
       }
     }
   } finally {
-    logSceneArtEvent("scene.art.worker.stopped", {
-      sceneKey: "worker",
-      promptHash: "worker",
-      status: "failed",
-      attemptCount: 0,
-    });
+    if (!stopReason) {
+      logSceneArtEvent("scene.art.worker.stopped", {
+        sceneKey: "worker",
+        promptHash: "worker",
+        status: "failed",
+        attemptCount: 0,
+      });
+    }
     workerHealth.running = false;
+    const finalControl = await workerStateStore.getControl();
+    await workerStateStore.updateHealth({
+      running: false,
+      paused: finalControl.paused,
+      draining: finalControl.draining,
+    });
   }
 }
 
-export function getSceneArtWorkerHealth(): SceneArtWorkerHealthSnapshot {
-  return { ...workerHealth };
+export async function getSceneArtWorkerHealth(): Promise<SceneArtWorkerHealthSnapshot> {
+  return workerStateStore.getHealth();
 }
 
-export function resetSceneArtWorkerHealth() {
-  workerHealth.running = false;
-  workerPaused = false;
-  workerHealth.startedAt = null;
-  workerHealth.lastTickAt = null;
-  workerHealth.lastBatchAt = null;
-  workerHealth.lastProcessedCount = 0;
-  workerHealth.lastDurationMs = null;
-  workerHealth.lastErrorAt = null;
-  workerHealth.lastErrorMessage = null;
-  updatePausedInSnapshot();
+export async function resetSceneArtWorkerHealth() {
+  workerHealth = {
+    running: false,
+    paused: false,
+    draining: false,
+    startedAt: null,
+    lastTickAt: null,
+    lastBatchAt: null,
+    lastProcessedCount: 0,
+    lastDurationMs: null,
+    lastErrorAt: null,
+    lastErrorMessage: null,
+  };
+  await workerStateStore.resetHealth();
 }

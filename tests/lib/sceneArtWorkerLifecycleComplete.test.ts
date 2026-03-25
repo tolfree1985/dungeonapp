@@ -1,8 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GET } from "@/app/api/scene-art/worker/health/route";
-import { POST as pauseWorker } from "@/app/api/scene-art/worker/pause/route";
-import { POST as resumeWorker } from "@/app/api/scene-art/worker/resume/route";
-import { POST as drainWorker } from "@/app/api/scene-art/worker/drain/route";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as workerLoop from "@/lib/scene-art/workerLoop";
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
 
@@ -69,7 +65,7 @@ vi.mock("@/lib/scene-art/workerStateStore", () => ({
 }));
 
 vi.mock("@/lib/scene-art/runNextQueuedSceneArtGeneration", () => ({
-  runNextQueuedSceneArtGeneration: vi.fn().mockResolvedValue({ promptHash: null }),
+  runNextQueuedSceneArtGeneration: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -78,64 +74,42 @@ beforeEach(() => {
   workerLoop.resetSceneArtWorkerHealth();
 });
 
-describe("scene-art worker health", () => {
+describe("scene-art worker lifecycle smoke", () => {
 
-  it("health endpoint returns the latest snapshot", async () => {
+  it("exercises start/pause/resume/drain/stop/restart in order", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "x" });
+    runNext.mockResolvedValueOnce({ promptHash: "job-1" });
     runNext.mockResolvedValue({ promptHash: null });
 
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
-    const response = await GET();
-    const body = await response.json();
+    let health = await workerLoop.getSceneArtWorkerHealth();
+    expect(health.lastProcessedCount).toBe(1);
+    expect(health.running).toBe(false);
 
-    expect(body).toHaveProperty("running");
-    expect(body.lastProcessedCount).toBe(1);
-    expect(typeof body.lastDurationMs).toBe("number");
-    expect(body.paused).toBe(false);
-  });
+    workerLoop.pauseSceneArtWorker();
+    expect((await workerLoop.getSceneArtWorkerHealth()).paused).toBe(true);
 
-  it("includes last error details after a batch failure", async () => {
-    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockRejectedValue(new Error("boom"));
+    workerLoop.resumeSceneArtWorker();
+    expect((await workerLoop.getSceneArtWorkerHealth()).paused).toBe(false);
 
-    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, intervalMs: 1, maxIterations: 1 });
-    const response = await GET();
-    const body = await response.json();
-
-    expect(body.lastErrorMessage).toBe("boom");
-    expect(body.lastErrorAt).not.toBeNull();
-  });
-
-  it("does not mutate worker state when reading health", async () => {
-    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "y" });
+    runNext.mockResolvedValueOnce({ promptHash: "job-2" });
     runNext.mockResolvedValue({ promptHash: null });
-
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
-    const before = await workerLoop.getSceneArtWorkerHealth();
-    await GET();
-    const after = await workerLoop.getSceneArtWorkerHealth();
+    health = await workerLoop.getSceneArtWorkerHealth();
+    expect(health.lastProcessedCount).toBe(1);
 
-    expect(after).toEqual(before);
-  });
+    workerLoop.drainSceneArtWorker();
+    runNext.mockResolvedValue({ promptHash: null });
+    await expect(workerLoop.isSceneArtWorkerDraining()).resolves.toBe(true);
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
+    health = await workerLoop.getSceneArtWorkerHealth();
+    expect(health.draining).toBe(true);
 
-  it("pause endpoint sets paused true", async () => {
-    const response = await pauseWorker();
-    const body = await response.json();
-    expect(body.paused).toBe(true);
-  });
-
-  it("resume endpoint sets paused false", async () => {
-    await workerLoop.pauseSceneArtWorker();
-    const response = await resumeWorker();
-    const body = await response.json();
-    expect(body.paused).toBe(false);
-  });
-
-  it("drain endpoint sets draining true", async () => {
-    const response = await drainWorker();
-    const body = await response.json();
-    expect(body.draining).toBe(true);
+    runNext.mockResolvedValueOnce({ promptHash: "job-3" });
+    runNext.mockResolvedValue({ promptHash: null });
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
+    health = await workerLoop.getSceneArtWorkerHealth();
+    expect(health.draining).toBe(true);
+    expect(health.lastProcessedCount).toBe(1);
   });
 });

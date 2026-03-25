@@ -22,6 +22,8 @@ type WorkerHealth = {
   lastDurationMs: number | null;
   lastErrorAt: string | null;
   lastErrorMessage: string | null;
+  paused: boolean;
+  draining: boolean;
 };
 
 export default function SceneArtWorkerPage() {
@@ -34,6 +36,8 @@ export default function SceneArtWorkerPage() {
   const [autoReclaimedCount, setAutoReclaimedCount] = useState(0);
   const [health, setHealth] = useState<WorkerHealth | null>(null);
   const [controlLoading, setControlLoading] = useState(false);
+  const [drainLoading, setDrainLoading] = useState(false);
+  const [startLoading, setStartLoading] = useState(false);
   const [highlightedPromptHash, setHighlightedPromptHash] = useState<string | null>(null);
   const highlightTarget = useRef<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,6 +153,8 @@ export default function SceneArtWorkerPage() {
 
   const healthStatus = useMemo(() => {
     if (!health) return "unknown";
+    if (health.draining) return "draining";
+    if (!health.running) return "stopped";
     if (health.paused) return "paused";
     if (health.lastErrorMessage) return "error";
     if (!health.lastBatchAt || health.lastProcessedCount === 0) return "idle";
@@ -160,6 +166,10 @@ export default function SceneArtWorkerPage() {
       ? "Paused"
       : healthStatus === "error"
       ? "Error"
+      : healthStatus === "draining"
+      ? "Draining"
+      : healthStatus === "stopped"
+      ? "Stopped"
       : healthStatus === "idle"
       ? "Idle"
       : healthStatus === "running"
@@ -170,6 +180,10 @@ export default function SceneArtWorkerPage() {
       ? "text-slate-500"
       : healthStatus === "error"
       ? "text-rose-600"
+      : healthStatus === "draining"
+      ? "text-amber-600"
+      : healthStatus === "stopped"
+      ? "text-slate-500"
       : healthStatus === "idle"
       ? "text-slate-500"
       : "text-emerald-600";
@@ -193,6 +207,26 @@ export default function SceneArtWorkerPage() {
       await fetchHealth();
     }
   }, [fetchHealth]);
+
+  const drainWorker = useCallback(async () => {
+    setDrainLoading(true);
+    try {
+      await fetch("/api/scene-art/worker/drain", { method: "POST" });
+    } finally {
+      setDrainLoading(false);
+    }
+    await refresh();
+  }, [refresh]);
+
+  const startWorker = useCallback(async () => {
+    setStartLoading(true);
+    try {
+      await fetch("/api/scene-art/worker/start", { method: "POST" });
+    } finally {
+      setStartLoading(false);
+    }
+    await refresh();
+  }, [refresh]);
 
   const handleBatch = useCallback(async () => {
     setBatchRunning(true);
@@ -289,22 +323,46 @@ export default function SceneArtWorkerPage() {
           <div className="text-xs text-rose-600">Error: {health.lastErrorMessage}</div>
         ) : null}
         <div className="pt-2">
-          {health?.paused ? (
+          {!health?.running ? (
             <button
               className="rounded border border-emerald-500 px-3 py-1 text-xs text-emerald-600"
-              onClick={resumeWorker}
-              disabled={controlLoading}
+              onClick={startWorker}
+              disabled={startLoading}
             >
-              {controlLoading ? "Resuming..." : "Resume worker"}
+              {startLoading ? "Starting..." : "Start worker"}
             </button>
+          ) : health?.draining ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-amber-600">
+              <span className="rounded border border-amber-300 px-3 py-1">Draining…</span>
+              <span className="text-amber-500">Stopping after queue drains</span>
+            </div>
           ) : (
-            <button
-              className="rounded border border-rose-500 px-3 py-1 text-xs text-rose-600"
-              onClick={pauseWorker}
-              disabled={controlLoading}
-            >
-              {controlLoading ? "Pausing..." : "Pause worker"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              {health?.paused ? (
+                <button
+                  className="rounded border border-emerald-500 px-3 py-1 text-xs text-emerald-600"
+                  onClick={resumeWorker}
+                  disabled={controlLoading}
+                >
+                  {controlLoading ? "Resuming..." : "Resume worker"}
+                </button>
+              ) : (
+                <button
+                  className="rounded border border-rose-500 px-3 py-1 text-xs text-rose-600"
+                  onClick={pauseWorker}
+                  disabled={controlLoading}
+                >
+                  {controlLoading ? "Pausing..." : "Pause worker"}
+                </button>
+              )}
+              <button
+                className="rounded border border-amber-500 px-3 py-1 text-xs text-amber-600"
+                onClick={drainWorker}
+                disabled={drainLoading}
+              >
+                {drainLoading ? "Draining..." : "Drain & stop"}
+              </button>
+            </div>
           )}
         </div>
       </section>

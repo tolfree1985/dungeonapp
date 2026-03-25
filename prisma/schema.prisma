@@ -257,3 +257,21 @@ enum ScenarioVisibility {
   PRIVATE
   PUBLIC
 }
+
+model SceneArtWorkerState {
+  id                 String   @id
+  paused             Boolean  @default(false)
+  draining           Boolean  @default(false)
+  running            Boolean  @default(false)
+
+  startedAt          DateTime?
+  lastTickAt         DateTime?
+  lastBatchAt        DateTime?
+  lastProcessedCount Int      @default(0)
+  lastDurationMs     Int?
+  lastErrorAt        DateTime?
+  lastErrorMessage   String?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}

@@ -18,6 +18,10 @@ function buildExecutionContext(row: Prisma.SceneArtGetPayload<{}>): SceneArtExec
 }
 
 export async function runQueuedSceneArtGeneration(promptHash: string): Promise<void> {
+  if (!promptHash) {
+    throw new Error("SCENE_ART_INVALID_IDENTITY: missing promptHash");
+  }
+
   const row = await prisma.sceneArt.findFirst({
     where: { promptHash },
     select: {
@@ -39,14 +43,20 @@ export async function runQueuedSceneArtGeneration(promptHash: string): Promise<v
     throw new Error(`runQueuedSceneArtGeneration: row missing for ${promptHash}`);
   }
 
+  if (!row.sceneKey) {
+    throw new Error("SCENE_ART_INVALID_IDENTITY: missing sceneKey");
+  }
+
+  if (!row.promptHash) {
+    throw new Error("SCENE_ART_INVALID_IDENTITY: empty promptHash");
+  }
+
   const leaseStartedAt = new Date();
   const leaseUntil = new Date(leaseStartedAt.getTime() + GENERATION_LEASE_MS);
   const claimed = await prisma.sceneArt.updateMany({
     where: {
-      sceneKey_promptHash: {
-        sceneKey: row.sceneKey,
-        promptHash: row.promptHash,
-      },
+      sceneKey: row.sceneKey,
+      promptHash: row.promptHash,
       status: SceneArtStatus.queued,
     },
     data: {
@@ -61,14 +71,12 @@ export async function runQueuedSceneArtGeneration(promptHash: string): Promise<v
     return;
   }
 
-  const uniqueWhere = {
-    sceneKey_promptHash: {
+  const claimedRow = await prisma.sceneArt.findUniqueOrThrow({
+    where: {
       sceneKey: row.sceneKey,
       promptHash: row.promptHash,
     },
-  };
-
-  const claimedRow = await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
+  });
   logSceneArtEvent("scene.art.claimed", {
     sceneKey: claimedRow.sceneKey,
     promptHash: claimedRow.promptHash,

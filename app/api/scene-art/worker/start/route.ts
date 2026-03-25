@@ -1,19 +1,17 @@
 import { NextResponse } from "next/server";
 import { workerStateStore } from "@/lib/scene-art/workerStateStore";
-import {
-  startSceneArtWorkerBackground,
-  getSceneArtWorkerHealth,
-} from "@/lib/scene-art/workerLoop";
+import { startSceneArtWorkerBackground } from "@/lib/scene-art/workerLoop";
 
 export async function POST() {
-  await workerStateStore.setControl({ paused: false });
+  await workerStateStore.setControl({ paused: false, draining: false });
   await workerStateStore.updateHealth({
     running: true,
     paused: false,
+    draining: false,
   });
 
-  await startSceneArtWorkerBackground();
+  void startSceneArtWorkerBackground();
 
-  const health = await getSceneArtWorkerHealth();
+  const health = await workerStateStore.getHealth();
   return NextResponse.json(health);
 }

@@ -34,6 +34,7 @@ describe("Scene Art Worker", () => {
     lastErrorAt: null,
     lastErrorMessage: null,
     paused: false,
+    draining: false,
   };
 
   it("renders rows, action buttons, and refresh control", async () => {
@@ -292,7 +293,7 @@ describe("Scene Art Worker", () => {
 
     render(<SceneArtWorkerPage />);
     await waitFor(() => expect(screen.getByText("Worker Health")).toBeTruthy());
-    expect(screen.getByText("Status: Running")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Status: Running")).toBeTruthy());
     expect(screen.getByText("Last Processed: 2")).toBeTruthy();
   });
 
@@ -410,5 +411,89 @@ describe("Scene Art Worker", () => {
     const resumeButton = await screen.findByText("Resume worker");
     resumeButton.click();
     await waitFor(() => expect(screen.getByText(/Status: Running/i)).toBeTruthy());
+  });
+
+  it("shows draining status and hides pause/resume controls", async () => {
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve({ ...baseHealth, draining: true }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    await waitFor(() => expect(screen.getByText("Status: Draining")).toBeTruthy());
+    expect(screen.queryByText("Pause worker")).toBeNull();
+    expect(screen.queryByText("Resume worker")).toBeNull();
+    expect(screen.queryByText(/Drain & stop/i)).toBeNull();
+    expect(screen.getByText(/Draining…/)).toBeTruthy();
+  });
+
+  it("drain button calls endpoint and refreshes queue", async () => {
+    let queueCalls = 0;
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        queueCalls += 1;
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve(baseHealth) });
+      }
+      if (url === "/api/scene-art/worker/drain") {
+        return Promise.resolve({ json: () => Promise.resolve({ ...baseHealth, draining: true }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    const drainButton = await screen.findByRole("button", { name: /Drain & stop/i });
+    drainButton.click();
+    await waitFor(() =>
+      expect((fetch as unknown as vi.Mock).mock.calls.some((call) => call[0] === "/api/scene-art/worker/drain")).toBe(true),
+    );
+    await waitFor(() => expect(queueCalls).toBeGreaterThanOrEqual(2));
+  });
+
+  it("shows start button when worker stopped and triggers start endpoint", async () => {
+    let queueCalls = 0;
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        queueCalls += 1;
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve({ ...baseHealth, running: false }) });
+      }
+      if (url === "/api/scene-art/worker/start") {
+        return Promise.resolve({ json: () => Promise.resolve({ ...baseHealth, running: true }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    const startButton = await screen.findByRole("button", { name: /Start worker/i });
+    startButton.click();
+    await waitFor(() =>
+      expect((fetch as unknown as vi.Mock).mock.calls.some((call) => call[0] === "/api/scene-art/worker/start")).toBe(true),
+    );
+    await waitFor(() => expect(queueCalls).toBeGreaterThanOrEqual(2));
+  });
+
+  it("hides start button when worker already running", async () => {
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve(baseHealth) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Start worker/i })).toBeNull());
   });
 });

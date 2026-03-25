@@ -1,6 +1,7 @@
 import { pauseSceneArtWorker, getSceneArtWorkerHealth } from "@/lib/scene-art/workerLoop";
 
 export async function POST() {
-  pauseSceneArtWorker();
-  return Response.json(getSceneArtWorkerHealth());
+  await pauseSceneArtWorker();
+  const health = await getSceneArtWorkerHealth();
+  return Response.json(health);
 }
