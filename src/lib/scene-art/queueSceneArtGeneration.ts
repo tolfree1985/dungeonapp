@@ -4,6 +4,7 @@ import { SceneArtIdentity, SceneArtIdentityInput, getSceneArtIdentity } from "@/
 import { loadOrCreateSceneArt } from "@/lib/scene-art/loadOrCreateSceneArt";
 import { runQueuedSceneArtGeneration } from "@/lib/scene-art/runQueuedSceneArtGeneration";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
+import { assertSceneArtIdentity } from "@/lib/scene-art/assertSceneArtIdentity";
 
 export type QueueSceneArtGenerationOptions = {
   force?: boolean;
@@ -22,6 +23,7 @@ export async function queueSceneArtGeneration(
 ): Promise<QueueSceneArtResult> {
   const now = new Date();
   const identity = getSceneArtIdentity(input);
+  assertSceneArtIdentity(identity);
   const { row } = await loadOrCreateSceneArt(input);
   const imageUrl = row.imageUrl ?? null;
   const isReady = row.status === SceneArtStatus.ready;
@@ -114,7 +116,10 @@ export async function queueSceneArtGeneration(
   });
 
   if (options.autoProcess !== false) {
-    void runQueuedSceneArtGeneration(identity.promptHash).catch(() => {
+    void runQueuedSceneArtGeneration({
+      sceneKey: identity.sceneKey,
+      promptHash: identity.promptHash,
+    }).catch(() => {
       /* swallow to avoid unhandled rejection when caller is already running the executor */
     });
   }

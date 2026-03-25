@@ -5,6 +5,7 @@ import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 import { createSceneArtRow } from "@/lib/scene-art/sceneArtStore";
 import { assertStoredSceneArtMatchesIdentity } from "@/lib/scene-art/assertStoredSceneArtMatchesIdentity";
 import type { SceneArtIdentityInput, SceneArtIdentity } from "@/lib/sceneArtIdentity";
+import { assertSceneArtIdentity } from "@/lib/scene-art/assertSceneArtIdentity";
 
 export type LoadOrCreateSceneArtResult = {
   identity: SceneArtIdentity;
@@ -16,6 +17,7 @@ export async function loadOrCreateSceneArt(
   input: SceneArtIdentityInput,
 ): Promise<LoadOrCreateSceneArtResult> {
   const identity = getSceneArtIdentity(input);
+  assertSceneArtIdentity(identity);
   const existing = await prisma.sceneArt.findUnique({
     where: {
       sceneKey_promptHash: {

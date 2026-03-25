@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import type { SceneArtIdentity } from "@/lib/sceneArtIdentity";
+import { assertSceneArtIdentity } from "@/lib/scene-art/assertSceneArtIdentity";
 
 export async function createSceneArtRow(identity: SceneArtIdentity) {
+  assertSceneArtIdentity(identity);
   return prisma.sceneArt.create({
     data: {
       sceneKey: identity.sceneKey,
