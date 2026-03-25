@@ -65,7 +65,7 @@ describe("evaluateSceneArtVisualTrigger", () => {
 
     expect(trigger.shouldGenerate).toBe(true);
     expect(trigger.tier).toBe("low");
-    expect(queueMock).toHaveBeenCalledOnce();
+    expect(queueMock).toHaveBeenCalledTimes(1);
     expect(logMock).toHaveBeenCalledWith(
       "scene.art.triggered",
       expect.objectContaining({
@@ -96,7 +96,7 @@ describe("evaluateSceneArtVisualTrigger", () => {
 
     expect(trigger.shouldGenerate).toBe(false);
     expect(queueMock).not.toHaveBeenCalled();
-    expect(logMock.mock.calls.some(([event]) => event === "scene.art.triggered")).toBe(false);
+    expect(logMock.mock.calls.some(([event]) => event === "scene.art.triggered" || event === "scene.art.focus_shot.triggered")).toBe(false);
   });
 
   it("ignores important object inspections without milestones", async () => {
@@ -118,12 +118,12 @@ describe("evaluateSceneArtVisualTrigger", () => {
 
     expect(trigger.shouldGenerate).toBe(false);
     expect(queueMock).not.toHaveBeenCalled();
-    expect(logMock.mock.calls.some(([event]) => event === "scene.art.triggered")).toBe(false);
+    expect(logMock.mock.calls.some(([event]) => event === "scene.art.triggered" || event === "scene.art.focus_shot.triggered")).toBe(false);
   });
 
   it("queues when a visual milestone appears", async () => {
     const previousState = makeState({ visualMilestones: [] });
-    const currentState = makeState({ visualMilestones: ["artifact_discovered"] });
+    const currentState = makeState({ visualMilestones: ["legendary_item_revealed"] });
     const identity = { ...baseIdentity };
 
     const trigger = await evaluateSceneArtVisualTrigger({
@@ -139,8 +139,12 @@ describe("evaluateSceneArtVisualTrigger", () => {
     });
 
     expect(trigger.shouldGenerate).toBe(true);
-    expect(trigger.tier).toBe("medium");
-    expect(queueMock).toHaveBeenCalledOnce();
+    expect(trigger.tier).toBe("high");
+    expect(queueMock).toHaveBeenCalledTimes(2);
+    const sceneCall = queueMock.mock.calls[0][0];
+    const focusCall = queueMock.mock.calls[1][0];
+    expect(sceneCall.sceneKey).not.toBe(focusCall.sceneKey);
+    expect(focusCall.sceneKey).toContain("focus:");
     expect(logMock).toHaveBeenCalledWith(
       "scene.art.triggered",
       expect.objectContaining({
@@ -172,7 +176,7 @@ describe("evaluateSceneArtVisualTrigger", () => {
 
     expect(trigger.shouldGenerate).toBe(true);
     expect(trigger.tier).toBe("medium");
-    expect(queueMock).toHaveBeenCalledOnce();
+    expect(queueMock).toHaveBeenCalledTimes(1);
     expect(logMock).toHaveBeenCalledWith(
       "scene.art.triggered",
       expect.objectContaining({

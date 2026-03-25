@@ -1,9 +1,14 @@
 import { DEFAULT_STYLE_PRESET } from "@/lib/sceneArt";
 import type { SceneIdentity } from "@/server/scene/scene-identity";
-import { decideSceneArtVisualTrigger, type SceneArtTriggerDecision, type SceneArtVisualState } from "@/lib/scene-art/visualTriggerPolicy";
+import {
+  decideSceneArtVisualTrigger,
+  type SceneArtTriggerDecision,
+  type SceneArtVisualState,
+} from "@/lib/scene-art/visualTriggerPolicy";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import { queueSceneArtGeneration } from "@/lib/scene-art/queueSceneArtGeneration";
 import { getSceneArtIdentity, type SceneArtIdentityInput } from "@/lib/sceneArtIdentity";
+import { decideFocusShotTrigger } from "@/lib/scene-art/focusShotTriggerPolicy";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -70,6 +75,13 @@ function deriveVisualStateFromRecord(
   };
 }
 
+function buildFocusShotSceneKey(baseSceneKey: string, milestoneKind: string | null): string {
+  const normalized = milestoneKind
+    ? milestoneKind.replace(/[^a-z0-9]+/gi, "-").replace(/(^-+|-+$)/g, "")
+    : "reveal";
+  return `focus:${normalized}:${baseSceneKey}`;
+}
+
 export type SceneArtTriggerEvaluationOptions = {
   previousState: Record<string, unknown> | null;
   currentState: Record<string, unknown> | null;
@@ -117,5 +129,26 @@ export async function evaluateSceneArtVisualTrigger(
     triggerTier: triggerDecision.tier,
     triggerMilestoneKind: triggerDecision.milestoneKind ?? null,
   });
+
+  const focusDecision = decideFocusShotTrigger(
+    { visualMilestones: previousVisualState.visualMilestones },
+    { visualMilestones: currentVisualState.visualMilestones },
+  );
+
+  if (focusDecision.shouldGenerate) {
+    const focusSceneKey = buildFocusShotSceneKey(identity.sceneKey, focusDecision.milestoneKind ?? focusDecision.reason);
+    const focusIdentityInput: SceneArtIdentityInput = {
+      ...identityInput,
+      sceneKey: focusSceneKey,
+    };
+    const focusIdentity = getSceneArtIdentity(focusIdentityInput);
+    await queueSceneArtGeneration(focusIdentityInput);
+    logSceneArtEvent("scene.art.focus_shot.triggered", {
+      sceneKey: focusSceneKey,
+      promptHash: focusIdentity.promptHash,
+      triggerReason: focusDecision.reason,
+      triggerTier: focusDecision.tier,
+    });
+  }
   return triggerDecision;
 }
