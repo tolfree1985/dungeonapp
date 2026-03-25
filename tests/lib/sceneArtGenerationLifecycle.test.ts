@@ -217,6 +217,69 @@ describe("scene art async lifecycle", () => {
     expect(row.lastProviderAttemptAt).toBeInstanceOf(Date);
   });
 
+  it("classifies timeout as retryable with timeout delay", async () => {
+    const timeout = new Error("The request timed out");
+    timeout.name = "AbortError";
+    sceneArtGenerator.generateImage.mockRejectedValueOnce(timeout);
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await expect(processSceneArtGeneration(identity)).rejects.toThrow("The request timed out");
+    const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.lastProviderFailureClass).toBe("timeout");
+    expect(row.lastProviderRetryable).toBe(true);
+    expect(row.lastProviderRetryDelayMs).toBe(5000);
+  });
+
+  it("treats rate-limited failures as retryable with longer delay", async () => {
+    sceneArtGenerator.generateImage.mockRejectedValue(new Error("Image provider failed: 429"));
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await expect(processSceneArtGeneration(identity)).rejects.toThrow();
+    const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.lastProviderFailureClass).toBe("rate_limited");
+    expect(row.lastProviderRetryable).toBe(true);
+    expect(row.lastProviderRetryDelayMs).toBe(30000);
+  });
+
+  it("treats terminal failures as non-retryable", async () => {
+    sceneArtGenerator.generateImage.mockRejectedValue(new Error("Image provider failed: 403"));
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await expect(processSceneArtGeneration(identity)).rejects.toThrow();
+    const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.lastProviderFailureClass).toBe("terminal");
+    expect(row.lastProviderRetryable).toBe(false);
+    expect(row.lastProviderRetryDelayMs).toBeNull();
+  });
+
+  it("treats malformed responses as non-retryable", async () => {
+    sceneArtGenerator.generateImage.mockRejectedValue(new Error("Image provider returned no imageUrl"));
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await expect(processSceneArtGeneration(identity)).rejects.toThrow();
+    const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.lastProviderFailureClass).toBe("malformed_response");
+    expect(row.lastProviderRetryable).toBe(false);
+  });
+
+  it("completes once after a retryable failure", async () => {
+    sceneArtGenerator.generateImage
+      .mockRejectedValueOnce(new Error("Image provider failed: 503"))
+      .mockResolvedValueOnce({ imageUrl: identity.imageUrl, provider: "remote" });
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await expect(processSceneArtGeneration(identity)).rejects.toThrow();
+    let row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.status).toBe(SceneArtStatus.failed);
+    expect(row.attemptCount).toBe(1);
+    expect(row.lastProviderFailureClass).toBe("transient");
+
+    await prisma.sceneArt.update({
+      where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
+      data: { status: SceneArtStatus.queued },
+    });
+    await processSceneArtGeneration(identity);
+    row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.status).toBe(SceneArtStatus.ready);
+    expect(row.attemptCount).toBe(2);
+    expect(row.lastProviderFailureClass).toBeNull();
+  });
+
   it("recovery enqueues work without auto-processing when autoProcess is false", async () => {
     await queueSceneArtGeneration(identityInput, { autoProcess: false });
     await prisma.sceneArt.update({
