@@ -13,6 +13,18 @@ type SceneArtRow = {
   errorMessage?: string | null;
 };
 
+type SceneArtWorkerBatchSummary = {
+  batchId: string;
+  workerId: string;
+  startedAt: string;
+  completedAt: string;
+  processedCount: number;
+  claimedCount: number;
+  failedCount: number;
+  reclaimedCount: number;
+  idle: boolean;
+};
+
 type WorkerHealth = {
   running: boolean;
   startedAt: string | null;
@@ -24,6 +36,7 @@ type WorkerHealth = {
   lastErrorMessage: string | null;
   paused: boolean;
   draining: boolean;
+  lastBatchSummary: SceneArtWorkerBatchSummary | null;
 };
 
 export default function SceneArtWorkerPage() {
@@ -187,6 +200,8 @@ export default function SceneArtWorkerPage() {
       : healthStatus === "idle"
       ? "text-slate-500"
       : "text-emerald-600";
+
+  const latestBatch = health?.lastBatchSummary;
 
   const pauseWorker = useCallback(async () => {
     setControlLoading(true);
@@ -365,6 +380,65 @@ export default function SceneArtWorkerPage() {
             </div>
           )}
         </div>
+      </section>
+
+      <section data-testid="latest-batch-panel" className="rounded border bg-white/50 p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-slate-700">Latest Batch</div>
+          <span className="text-xs text-slate-500">
+            {latestBatch ? (latestBatch.idle ? "Idle" : "Processed") : "No data"}
+          </span>
+        </div>
+        {latestBatch ? (
+          <div className="grid grid-cols-2 gap-4 text-xs text-slate-500">
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Batch ID</div>
+              <div data-testid="latest-batch-id" className="font-mono text-[12px] text-slate-700">
+                {latestBatch.batchId}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Worker</div>
+              <div data-testid="latest-batch-worker" className="font-mono text-[12px] text-slate-700">
+                {latestBatch.workerId}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Started</div>
+              <div className="text-[12px] text-slate-700">{formatDate(latestBatch.startedAt)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Completed</div>
+              <div className="text-[12px] text-slate-700">{formatDate(latestBatch.completedAt)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Processed</div>
+              <div data-testid="latest-batch-processed" className="text-[12px] text-slate-700">
+                {latestBatch.processedCount}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Claimed</div>
+              <div className="text-[12px] text-slate-700">{latestBatch.claimedCount}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Failed</div>
+              <div className="text-[12px] text-slate-700">{latestBatch.failedCount}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Reclaimed</div>
+              <div className="text-[12px] text-slate-700">{latestBatch.reclaimedCount}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Idle</div>
+              <div data-testid="latest-batch-idle" className="text-[12px] text-slate-700">
+                {latestBatch.idle ? "Yes" : "No"}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-xs text-slate-500">No batch summary has been recorded yet.</div>
+        )}
       </section>
 
       <table className="min-w-full text-sm">

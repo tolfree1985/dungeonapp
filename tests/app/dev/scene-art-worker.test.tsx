@@ -24,18 +24,34 @@ describe("Scene Art Worker", () => {
     errorMessage: null,
   };
 
-  const baseHealth = {
-    running: true,
-    startedAt: "2026-03-23T12:00:00Z",
-    lastTickAt: "2026-03-23T12:01:00Z",
-    lastBatchAt: "2026-03-23T12:02:00Z",
-    lastProcessedCount: 1,
-    lastDurationMs: 5,
-    lastErrorAt: null,
-    lastErrorMessage: null,
-    paused: false,
-    draining: false,
-  };
+const baseHealth = {
+  running: true,
+  startedAt: "2026-03-23T12:00:00Z",
+  lastTickAt: "2026-03-23T12:01:00Z",
+  lastBatchAt: "2026-03-23T12:02:00Z",
+  lastProcessedCount: 1,
+  lastDurationMs: 5,
+  lastErrorAt: null,
+  lastErrorMessage: null,
+  paused: false,
+  draining: false,
+  lastBatchSummary: null,
+};
+
+const summaryHealth = {
+  ...baseHealth,
+  lastBatchSummary: {
+    batchId: "batch:xyz",
+    workerId: "worker-1",
+    startedAt: "2026-03-23T12:05:00Z",
+    completedAt: "2026-03-23T12:05:07Z",
+    processedCount: 2,
+    claimedCount: 2,
+    failedCount: 0,
+    reclaimedCount: 1,
+    idle: false,
+  },
+};
 
   it("renders rows, action buttons, and refresh control", async () => {
     (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
@@ -153,6 +169,25 @@ describe("Scene Art Worker", () => {
     expect(within(row).getByText("dock_office")).toBeTruthy();
     expect(within(row).getByText("5")).toBeTruthy();
     expect(within(row).getByText("provider failed")).toBeTruthy();
+  });
+
+  it("shows the latest batch summary when available", async () => {
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve(summaryHealth) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    const panel = await screen.findByTestId("latest-batch-panel");
+    expect(within(panel).getByTestId("latest-batch-id")).toHaveTextContent("batch:xyz");
+    expect(within(panel).getByTestId("latest-batch-worker")).toHaveTextContent("worker-1");
+    expect(within(panel).getByTestId("latest-batch-processed")).toHaveTextContent("2");
+    expect(within(panel).getByTestId("latest-batch-idle")).toHaveTextContent("No");
   });
 
   it("hides run this for non-queued rows", async () => {
