@@ -1,3 +1,5 @@
+import { getSceneArtWorkerRuntimeConfig } from "@/lib/scene-art/workerRuntimeConfig";
+
 let cachedWorkerId: string | null = null;
 
 export function getSceneArtWorkerId() {
@@ -5,9 +7,15 @@ export function getSceneArtWorkerId() {
     return cachedWorkerId;
   }
 
-  const override = process.env.SCENE_ART_WORKER_ID?.trim();
-  if (override) {
-    cachedWorkerId = override;
+  const runtimeOverride = getSceneArtWorkerRuntimeConfig().workerIdOverride?.trim();
+  if (runtimeOverride) {
+    cachedWorkerId = runtimeOverride;
+    return cachedWorkerId;
+  }
+
+  const envOverride = process.env.SCENE_ART_WORKER_ID?.trim();
+  if (envOverride) {
+    cachedWorkerId = envOverride;
     return cachedWorkerId;
   }
 

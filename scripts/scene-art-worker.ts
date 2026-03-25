@@ -1,8 +1,5 @@
 import { runWorkerProcess } from "@/lib/scene-art/runWorkerProcess";
 
-const batchSize = Number(process.env.SCENE_ART_WORKER_BATCH_SIZE ?? "3");
-const intervalMs = Number(process.env.SCENE_ART_WORKER_INTERVAL_MS ?? "2000");
-
 async function main() {
   const worker = runWorkerProcess({ batchSize, intervalMs });
 

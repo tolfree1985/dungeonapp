@@ -1,10 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SceneArtStatus } from "@/generated/prisma";
-import { GENERATION_LEASE_MS } from "@/lib/scene-art/constants";
 import { SceneArtExecutionContext, generateSceneArtForExecutionContext } from "@/lib/scene-art/generateSceneArtForIdentity";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
+import { getSceneArtWorkerRuntimeConfig } from "@/lib/scene-art/workerRuntimeConfig";
 
 export type SceneArtIdentityInput = {
   sceneKey: string;
@@ -55,7 +55,8 @@ export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInpu
   }
 
   const leaseStartedAt = new Date();
-  const leaseUntil = new Date(leaseStartedAt.getTime() + GENERATION_LEASE_MS);
+  const leaseMs = getSceneArtWorkerRuntimeConfig().leaseMs;
+  const leaseUntil = new Date(leaseStartedAt.getTime() + leaseMs);
   const workerId = getSceneArtWorkerId();
   const claimed = await prisma.sceneArt.updateMany({
     where: {

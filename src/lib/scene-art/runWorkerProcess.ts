@@ -1,5 +1,6 @@
 import { startSceneArtWorkerLoop, SceneArtWorkerLoopOptions } from "@/lib/scene-art/workerLoop";
 import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
+import { getSceneArtWorkerRuntimeConfig } from "@/lib/scene-art/workerRuntimeConfig";
 
 export type RunWorkerProcessOptions = {
   batchSize?: number;
@@ -14,6 +15,7 @@ export type RunningWorker = {
 };
 
 export function runWorkerProcess(options: RunWorkerProcessOptions = {}): RunningWorker {
+  const runtimeConfig = getSceneArtWorkerRuntimeConfig();
   const workerId = getSceneArtWorkerId();
   const controller = new AbortController();
   const signal = options.signal ?? controller.signal;
@@ -42,6 +44,8 @@ export function runWorkerProcess(options: RunWorkerProcessOptions = {}): Running
 
   const done = startSceneArtWorkerLoop({
     ...options,
+    batchSize: options.batchSize ?? runtimeConfig.batchSize,
+    intervalMs: options.intervalMs ?? runtimeConfig.intervalMs,
     signal,
   }).finally(() => {
     listeners.forEach((dispose) => dispose());
