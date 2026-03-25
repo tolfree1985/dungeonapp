@@ -6,6 +6,7 @@ import type { SceneArtIdentity } from "@/lib/sceneArtIdentity";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import type { RenderMode } from "@/generated/prisma";
 import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
+import { classifySceneArtProviderError } from "@/lib/scene-art/classifyProviderError";
 
 const DEFAULT_PROVIDER_SOURCE = { provider: "remote" };
 
@@ -96,6 +97,7 @@ export async function generateSceneArtForExecutionContext(
     const durationMs = current.generationStartedAt
       ? Date.now() - current.generationStartedAt.getTime()
       : 0;
+    const classification = classifySceneArtProviderError(error);
     logSceneArtEvent("scene.art.failed", {
       sceneKey: context.sceneKey,
       promptHash: context.promptHash,
@@ -108,6 +110,9 @@ export async function generateSceneArtForExecutionContext(
       durationMs,
       errorCode: "provider_error",
       errorMessage: error instanceof Error ? error.message : String(error),
+      failureClass: classification.failureClass,
+      failureRetryable: classification.retryable,
+      failureReason: classification.reason,
     });
     throw error;
   }
