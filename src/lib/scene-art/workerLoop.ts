@@ -250,14 +250,11 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
         await delay(intervalMs);
         continue;
       }
+      const workerId = getSceneArtWorkerId();
+      const batchId = `batch:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+      const batchStartedAt = new Date().toISOString();
       let reclaimedCount = 0;
-      let batchId = "";
-      let workerId = "";
-      let batchStartedAt = "";
       try {
-        batchId = `batch:${Date.now()}:${Math.random().toString(16).slice(2)}`;
-        workerId = getSceneArtWorkerId();
-        batchStartedAt = new Date().toISOString();
         logSceneArtEvent("scene.art.batch_started", {
           sceneKey: "worker",
           promptHash: "worker",

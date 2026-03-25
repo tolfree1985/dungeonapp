@@ -184,10 +184,10 @@ const summaryHealth = {
 
     render(<SceneArtWorkerPage />);
     const panel = await screen.findByTestId("latest-batch-panel");
-    expect(within(panel).getByTestId("latest-batch-id")).toHaveTextContent("batch:xyz");
-    expect(within(panel).getByTestId("latest-batch-worker")).toHaveTextContent("worker-1");
-    expect(within(panel).getByTestId("latest-batch-processed")).toHaveTextContent("2");
-    expect(within(panel).getByTestId("latest-batch-idle")).toHaveTextContent("No");
+    expect(within(panel).getByTestId("latest-batch-id").textContent).toContain("batch:xyz");
+    expect(within(panel).getByTestId("latest-batch-worker").textContent).toContain("worker-1");
+    expect(within(panel).getByTestId("latest-batch-processed").textContent).toContain("2");
+    expect(within(panel).getByTestId("latest-batch-idle").textContent).toContain("No");
   });
 
   it("hides run this for non-queued rows", async () => {
