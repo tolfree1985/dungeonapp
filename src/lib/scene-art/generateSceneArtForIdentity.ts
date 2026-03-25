@@ -67,6 +67,7 @@ export async function generateSceneArtForExecutionContext(
         totalCostUsd: { increment: attemptCost.attemptCostUsd },
         billableAttemptCount: { increment: 1 },
         providerModel: attemptCost.providerModel,
+        providerCostTier: attemptCost.costTier,
       },
     });
 
@@ -119,6 +120,7 @@ export async function generateSceneArtForExecutionContext(
         totalCostUsd: { increment: attemptCost.attemptCostUsd },
         billableAttemptCount: { increment: 1 },
         providerModel: attemptCost.providerModel,
+        providerCostTier: attemptCost.costTier,
       },
     });
     if (result.count !== 1) {

@@ -231,6 +231,7 @@ model SceneArt {
   lastAttemptCostUsd Float?
   billableAttemptCount Int    @default(0)
   providerModel     String?
+  providerCostTier String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   renderPriority SceneArtPriority @default(normal)

@@ -36,6 +36,7 @@ import { findSceneArt, queueSceneArt, type RenderMode } from "@/lib/sceneArtRepo
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
+import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import { SceneTransition, resolveSceneTransition } from "@/lib/resolveSceneTransition";
 import { resolveSceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
 import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
@@ -77,7 +78,8 @@ import {
 } from "@/server/scene/continuity";
 
 import { deriveSceneIdentityFromTurnState } from "@/server/scene/derive-scene-identity";
-import { buildSceneKey as buildSceneIdentityKey, decideSceneDeltaKind } from "@/server/scene/scene-identity";
+import { buildSceneKey as buildSceneIdentityKey, decideSceneDeltaKind, type SceneIdentity } from "@/server/scene/scene-identity";
+import { evaluateSceneArtVisualTrigger } from "@/lib/scene-art/visualTriggerIntegration";
 import { applyShotTransitionRules } from "@/server/scene/shot-transition";
 import {
   buildSceneTransitionLedgerEntry,
@@ -953,6 +955,17 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             turn: latestTurn,
             state: stateRecord,
           });
+    if (sceneArtPayload) {
+      void runSceneArtTriggerIntegration({
+        sceneArtPayload,
+        previousState: previousStateRecord,
+        currentState: stateRecord,
+        previousSceneIdentity,
+        currentSceneIdentity,
+        latestTurnScene: latestTurn?.scene ?? null,
+        renderMode,
+      });
+    }
     const { shotDuration } = persistShot({
       previousShotKey,
       currentShotKey,
@@ -2489,6 +2502,40 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
 
     console.error(err);
     return errorResponse(500, "Internal error");
+  }
+}
+
+export type SceneArtTriggerIntegrationOptions = {
+  sceneArtPayload: SceneArtPayload | null;
+  previousState: Record<string, unknown> | null;
+  currentState: Record<string, unknown>;
+  previousSceneIdentity: SceneIdentity | null;
+  currentSceneIdentity: SceneIdentity;
+  latestTurnScene: string | null;
+  renderMode: RenderMode;
+};
+
+export async function runSceneArtTriggerIntegration(
+  options: SceneArtTriggerIntegrationOptions,
+): Promise<void> {
+  if (!options.sceneArtPayload) return;
+  try {
+    await evaluateSceneArtVisualTrigger({
+      previousState: options.previousState,
+      currentState: options.currentState,
+      previousIdentity: options.previousSceneIdentity,
+      currentIdentity: options.currentSceneIdentity,
+      sceneKey: options.sceneArtPayload.sceneKey,
+      sceneText: options.latestTurnScene,
+      stylePreset: options.sceneArtPayload.stylePreset,
+      renderMode: options.renderMode,
+      engineVersion: ENGINE_VERSION,
+    });
+  } catch (error) {
+    logSceneArtEvent("scene.art.trigger.error", {
+      sceneKey: options.sceneArtPayload.sceneKey,
+      message: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

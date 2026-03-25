@@ -35,10 +35,20 @@ describe("scene art async lifecycle", () => {
     resetPrismaMock();
     sceneArtGenerator.generateImage.mockResolvedValue({ imageUrl: identity.imageUrl, provider: "remote" });
     sceneArtGenerator.generateImage.mockClear();
+    process.env.SCENE_ART_PROVIDER_MODEL = "gpt-image-1";
+    process.env.SCENE_ART_COST_TIER = "low";
+    process.env.SCENE_ART_LOW_COST_PER_ATTEMPT_USD = "0.01";
+    process.env.SCENE_ART_MEDIUM_COST_PER_ATTEMPT_USD = "0.02";
+    process.env.SCENE_ART_HIGH_COST_PER_ATTEMPT_USD = "0.05";
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete process.env.SCENE_ART_PROVIDER_MODEL;
+    delete process.env.SCENE_ART_COST_TIER;
+    delete process.env.SCENE_ART_LOW_COST_PER_ATTEMPT_USD;
+    delete process.env.SCENE_ART_MEDIUM_COST_PER_ATTEMPT_USD;
+    delete process.env.SCENE_ART_HIGH_COST_PER_ATTEMPT_USD;
   });
 
   it("queueSceneArtGeneration returns without waiting for provider", async () => {
@@ -227,6 +237,7 @@ describe("scene art async lifecycle", () => {
     expect(row.billableAttemptCount).toBe(1);
     expect(row.totalCostUsd).toBeCloseTo(COST);
     expect(row.lastAttemptCostUsd).toBeCloseTo(COST);
+    expect(row.providerCostTier).toBe("low");
     expect(row.providerModel).toBe("gpt-image-1");
   });
 
@@ -237,6 +248,7 @@ describe("scene art async lifecycle", () => {
     const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
     expect(row.billableAttemptCount).toBe(1);
     expect(row.totalCostUsd).toBeCloseTo(COST);
+    expect(row.providerCostTier).toBe("low");
   });
 
   it("accumulates cost across retryable failure + success", async () => {
