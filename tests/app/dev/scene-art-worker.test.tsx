@@ -400,6 +400,71 @@ const summaryHealth = {
     expect(screen.getByText("Reclaimed 1 job(s)")).toBeTruthy();
   });
 
+  it("renders latest focus shot card when focus rows exist", async () => {
+    const focusRow = {
+      sceneKey: "focus:legendary_item_revealed:dock_office",
+      promptHash: "focus-hash",
+      status: "ready",
+      attemptCount: 1,
+      generationStartedAt: "2026-03-23T12:10:00Z",
+      generationLeaseUntil: null,
+      updatedAt: "2026-03-23T12:11:00Z",
+      imageUrl: "/scene-art/focus.png",
+    };
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [focusRow, queuedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve(baseHealth) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    await waitFor(() => expect(screen.getByText("Latest Focus Shot")).toBeTruthy());
+    expect(screen.getByText(/Legendary Item Revealed/)).toBeTruthy();
+    expect(screen.getByText("Tier: High")).toBeTruthy();
+    expect(screen.getByText(/Status: ready/)).toBeTruthy();
+    expect(screen.getByAltText("Focus reveal")).toBeTruthy();
+  });
+
+  it("displays placeholder when focus shot has no image and takes newest row", async () => {
+    const focusRowOld = {
+      sceneKey: "focus:artifact_revealed:dock_office",
+      promptHash: "focus-old",
+      status: "queued",
+      generationStartedAt: null,
+      generationLeaseUntil: null,
+      updatedAt: "2026-03-23T12:00:00Z",
+      imageUrl: null,
+    };
+    const focusRowNew = {
+      sceneKey: "focus:major_reveal:dock_office",
+      promptHash: "focus-new",
+      status: "queued",
+      generationStartedAt: null,
+      generationLeaseUntil: null,
+      updatedAt: "2026-03-23T12:05:00Z",
+      imageUrl: null,
+    };
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [focusRowOld, focusRowNew], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve(baseHealth) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    await waitFor(() => expect(screen.getByText("Latest Focus Shot")).toBeTruthy());
+    expect(screen.getByText(/Major Reveal/)).toBeTruthy();
+    expect(screen.getByText("Tier: Medium")).toBeTruthy();
+    expect(screen.getByText("Image pending…")).toBeTruthy();
+  });
+
   it("run batch button sends limit and refreshes queue", async () => {
     const queueCalls = vi.fn(() =>
       Promise.resolve({ json: () => Promise.resolve({ rows: [queuedRow], autoReclaimedCount: 0 }) }),
