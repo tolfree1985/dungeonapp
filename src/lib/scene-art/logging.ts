@@ -10,6 +10,16 @@ export type SceneArtLogPayload = {
   durationMs?: number;
   errorCode?: string;
   errorMessage?: string;
+  batchId?: string;
+  workerId?: string;
+  startedAt?: string;
+  completedAt?: string;
+  idle?: boolean;
+  processedCount?: number;
+  claimedCount?: number;
+  failedCount?: number;
+  reclaimedCount?: number;
+  reason?: string;
 };
 
 export type SceneArtLogEntry = {

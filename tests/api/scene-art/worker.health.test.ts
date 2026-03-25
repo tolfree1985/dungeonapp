@@ -23,6 +23,7 @@ const { storeStateRef, workerStateStoreMock, makeDefaultState } = vi.hoisted(() 
       lastDurationMs: null,
       lastErrorAt: null,
       lastErrorMessage: null,
+      lastBatchSummary: null,
     },
   });
 

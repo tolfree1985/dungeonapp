@@ -1,6 +1,9 @@
+import { SceneArtStatus } from "@/generated/prisma";
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import { workerStateStore } from "@/lib/scene-art/workerStateStore";
+import type { SceneArtWorkerBatchSummary } from "@/lib/scene-art/workerStateStore";
+import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
 
 export type SceneArtWorkerLoopOptions = {
   batchSize?: number;
@@ -27,6 +30,7 @@ export type SceneArtWorkerHealthSnapshot = {
   lastDurationMs: number | null;
   lastErrorAt: string | null;
   lastErrorMessage: string | null;
+  lastBatchSummary: SceneArtWorkerBatchSummary | null;
 };
 
 type WorkerStopReason = "stopped" | "drained" | "aborted" | "failed";
@@ -54,6 +58,7 @@ let workerHealth: SceneArtWorkerHealthSnapshot = {
   lastDurationMs: null,
   lastErrorAt: null,
   lastErrorMessage: null,
+  lastBatchSummary: null,
 };
 let workerController: AbortController | null = null;
 let workerTask: Promise<void> | null = null;
@@ -118,6 +123,7 @@ async function markWorkerStarted() {
     lastDurationMs: null,
     lastErrorAt: null,
     lastErrorMessage: null,
+    lastBatchSummary: null,
   };
   await workerStateStore.updateHealth({
     running: true,
@@ -130,6 +136,7 @@ async function markWorkerStarted() {
     lastDurationMs: null,
     lastErrorAt: null,
     lastErrorMessage: null,
+    lastBatchSummary: null,
   });
 }
 
@@ -145,19 +152,24 @@ async function recordWorkerTick(control: { paused: boolean; draining: boolean })
   });
 }
 
-async function recordBatchSuccess(batch: SceneArtWorkerBatchResult) {
-  const now = new Date().toISOString();
+async function recordBatchSuccess(
+  batch: SceneArtWorkerBatchResult,
+  summary: SceneArtWorkerBatchSummary
+) {
+  const now = summary.completedAt;
   workerHealth.lastBatchAt = now;
-  workerHealth.lastProcessedCount = batch.processedCount;
+  workerHealth.lastProcessedCount = summary.processedCount;
   workerHealth.lastDurationMs = batch.durationMs;
   workerHealth.lastErrorAt = null;
   workerHealth.lastErrorMessage = null;
+  workerHealth.lastBatchSummary = summary;
   await workerStateStore.updateHealth({
     lastBatchAt: now,
-    lastProcessedCount: batch.processedCount,
+    lastProcessedCount: summary.processedCount,
     lastDurationMs: batch.durationMs,
     lastErrorAt: null,
     lastErrorMessage: null,
+    lastBatchSummary: summary,
   });
 }
 
@@ -227,14 +239,61 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
         continue;
       }
       try {
+        const batchId = `batch:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+        const workerId = getSceneArtWorkerId();
+        const batchStartedAt = new Date().toISOString();
+        logSceneArtEvent("scene.art.batch_started", {
+          sceneKey: "worker",
+          promptHash: "worker",
+          status: SceneArtStatus.generating,
+          attemptCount: 0,
+          batchId,
+          workerId,
+          startedAt: batchStartedAt,
+          idle: true,
+          processedCount: 0,
+        });
+
         const batch = await runSceneArtWorkerBatch({ batchSize });
-        await recordBatchSuccess(batch);
+        const completedAt = new Date().toISOString();
+        const summary: SceneArtWorkerBatchSummary = {
+          batchId,
+          workerId,
+          startedAt: batchStartedAt,
+          completedAt,
+          processedCount: batch.processedCount,
+          claimedCount: batch.processedCount,
+          failedCount: 0,
+          reclaimedCount: 0,
+          idle: batch.idle,
+        };
+
+        await recordBatchSuccess(batch, summary);
+        logSceneArtEvent("scene.art.batch_completed", {
+          sceneKey: "worker",
+          promptHash: batch.processedPromptHashes.join(",") || "worker",
+          status: SceneArtStatus.ready,
+          attemptCount: batch.processedCount,
+          durationMs: batch.durationMs,
+          batchId,
+          workerId,
+          startedAt: summary.startedAt,
+          completedAt: summary.completedAt,
+          processedCount: summary.processedCount,
+          claimedCount: summary.claimedCount,
+          failedCount: summary.failedCount,
+          reclaimedCount: summary.reclaimedCount,
+          idle: summary.idle,
+        });
+
         logSceneArtEvent("scene.art.worker.tick", {
           sceneKey: "worker",
           promptHash: batch.processedPromptHashes.join(",") || "worker",
           status: batch.idle ? "generating" : "ready",
           attemptCount: batch.processedCount,
           durationMs: batch.durationMs,
+          batchId,
+          workerId,
         });
 
         if (batch.idle) {
@@ -243,6 +302,8 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
             promptHash: "worker",
             status: "generating",
             attemptCount: batchSize,
+            batchId,
+            workerId,
           });
           await delay(intervalMs);
         } else {
@@ -252,8 +313,11 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
             status: "ready",
             attemptCount: batch.processedCount,
             durationMs: batch.durationMs,
+            batchId,
+            workerId,
           });
         }
+
         if (control.draining && batch.processedCount === 0) {
           stopReason = "drained";
           break;
@@ -316,6 +380,7 @@ export async function resetSceneArtWorkerHealth() {
     lastDurationMs: null,
     lastErrorAt: null,
     lastErrorMessage: null,
+    lastBatchSummary: null,
   };
   await workerStateStore.resetHealth();
 }

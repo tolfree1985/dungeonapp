@@ -1,3 +1,4 @@
+import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 
 const SCENE_ART_WORKER_STATE_ID = "scene-art-worker";
@@ -18,6 +19,19 @@ export type SceneArtWorkerHealthState = {
   lastDurationMs: number | null;
   lastErrorAt: string | null;
   lastErrorMessage: string | null;
+  lastBatchSummary: SceneArtWorkerBatchSummary | null;
+};
+
+export type SceneArtWorkerBatchSummary = {
+  batchId: string;
+  workerId: string;
+  startedAt: string;
+  completedAt: string;
+  processedCount: number;
+  claimedCount: number;
+  failedCount: number;
+  reclaimedCount: number;
+  idle: boolean;
 };
 
 type SceneArtWorkerStateRow = {
@@ -32,6 +46,7 @@ type SceneArtWorkerStateRow = {
   lastDurationMs: number | null;
   lastErrorAt: Date | null;
   lastErrorMessage: string | null;
+  lastBatchSummary: Prisma.Json | null;
 };
 
 async function ensureStateRow(): Promise<SceneArtWorkerStateRow> {
@@ -58,6 +73,9 @@ function mapRowToHealth(row: SceneArtWorkerStateRow): SceneArtWorkerHealthState 
     lastDurationMs: row.lastDurationMs,
     lastErrorAt: row.lastErrorAt ? row.lastErrorAt.toISOString() : null,
     lastErrorMessage: row.lastErrorMessage,
+    lastBatchSummary: row.lastBatchSummary
+      ? (row.lastBatchSummary as SceneArtWorkerBatchSummary)
+      : null,
   };
 }
 
@@ -91,6 +109,7 @@ export const workerStateStore = {
     if (next.lastDurationMs !== undefined) data.lastDurationMs = next.lastDurationMs;
     if (next.lastErrorAt !== undefined) data.lastErrorAt = next.lastErrorAt ? new Date(next.lastErrorAt) : null;
     if (next.lastErrorMessage !== undefined) data.lastErrorMessage = next.lastErrorMessage;
+    if (next.lastBatchSummary !== undefined) data.lastBatchSummary = next.lastBatchSummary;
 
     if (Object.keys(data).length === 0) return;
 
@@ -112,6 +131,7 @@ export const workerStateStore = {
         lastDurationMs: null,
         lastErrorAt: null,
         lastErrorMessage: null,
+        lastBatchSummary: null,
       },
     });
   },

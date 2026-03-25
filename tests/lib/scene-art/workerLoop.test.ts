@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as workerLoop from "@/lib/scene-art/workerLoop";
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
+import { getSceneArtLogs, resetSceneArtLogs } from "@/lib/scene-art/logging";
 
 const { storeStateRef, workerStateStoreMock, makeDefaultState } = vi.hoisted(() => {
   const makeDefaultState = () => ({
@@ -19,6 +20,7 @@ const { storeStateRef, workerStateStoreMock, makeDefaultState } = vi.hoisted(() 
       lastDurationMs: null,
       lastErrorAt: null,
       lastErrorMessage: null,
+      lastBatchSummary: null,
     },
   });
 
@@ -76,6 +78,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   storeStateRef.current = makeDefaultState();
   workerLoop.resetSceneArtWorkerHealth();
+  resetSceneArtLogs();
 });
 
 describe("scene art worker loop", () => {
@@ -174,5 +177,47 @@ describe("scene art worker loop", () => {
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 2, signal: controller.signal });
     const health = await workerLoop.getSceneArtWorkerHealth();
     expect(health.lastProcessedCount).toBeGreaterThan(0);
+  });
+
+  it("persists a batch summary after work completes", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockResolvedValueOnce({ promptHash: "summary" });
+    runNext.mockResolvedValue({ promptHash: null });
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
+    const health = await workerLoop.getSceneArtWorkerHealth();
+
+    expect(health.lastBatchSummary).not.toBeNull();
+    expect(health.lastBatchSummary?.processedCount).toBe(1);
+    expect(health.lastBatchSummary?.idle).toBe(false);
+    expect(health.lastBatchSummary?.batchId).toMatch(/^batch:/);
+  });
+
+  it("records summary even for idle batches", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockResolvedValue({ promptHash: null });
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, intervalMs: 1, maxIterations: 1 });
+    const health = await workerLoop.getSceneArtWorkerHealth();
+
+    expect(health.lastBatchSummary).not.toBeNull();
+    expect(health.lastBatchSummary?.processedCount).toBe(0);
+    expect(health.lastBatchSummary?.idle).toBe(true);
+  });
+
+  it("emits matching batch start/completion events", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockResolvedValueOnce({ promptHash: "sync" });
+    runNext.mockResolvedValue({ promptHash: null });
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
+    const logs = getSceneArtLogs();
+    const started = logs.find((entry) => entry.event === "scene.art.batch_started");
+    const completed = logs.find((entry) => entry.event === "scene.art.batch_completed");
+
+    expect(started).toBeDefined();
+    expect(completed).toBeDefined();
+    expect(started?.payload.batchId).toBe(completed?.payload.batchId);
+    expect(completed?.payload.processedCount).toBe(1);
   });
 });
