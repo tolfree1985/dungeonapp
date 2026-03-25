@@ -22,6 +22,10 @@ export async function GET() {
     generationLeaseUntil: row.generationLeaseUntil ?? null,
     updatedAt: row.updatedAt ?? null,
     errorMessage: row.errorMessage ?? null,
+    leaseOwnerId: row.leaseOwnerId ?? null,
+    leaseAcquiredAt: row.leaseAcquiredAt ?? null,
+    lastRecoveredAt: row.lastRecoveredAt ?? null,
+    createdAt: row.createdAt ?? null,
   }));
 
   return NextResponse.json({ rows: payload, autoReclaimedCount: autoResult.reclaimedCount });

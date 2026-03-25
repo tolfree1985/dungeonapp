@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type SceneArtRow = {
   sceneKey: string;
@@ -54,6 +54,7 @@ export default function SceneArtWorkerPage() {
   const [drainLoading, setDrainLoading] = useState(false);
   const [startLoading, setStartLoading] = useState(false);
   const [highlightedPromptHash, setHighlightedPromptHash] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState<Record<string, boolean>>({});
   const highlightTarget = useRef<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -504,49 +505,73 @@ export default function SceneArtWorkerPage() {
             const rowClasses = ["border-t", isHighlighted ? "bg-slate-50" : "", isStale ? "bg-rose-50/40" : ""].join(" ");
 
             return (
-              <tr key={row.promptHash} data-testid={`worker-row-${row.promptHash}`} className={rowClasses}>
-                <td className="py-2 font-medium">{row.sceneKey}</td>
-                <td className="py-2 font-mono text-xs">{row.promptHash}</td>
-                <td className="py-2 capitalize">
-                  <span>{row.status}</span>
-                  {isStale && (
-                    <span className="ml-2 rounded border border-rose-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-600">
-                      Stale
-                    </span>
-                  )}
-                </td>
-                <td className="py-2">{row.attemptCount}</td>
-                <td className="py-2">
-                  {row.generationLeaseUntil
-                    ? new Date(row.generationLeaseUntil).toLocaleTimeString()
-                    : "-"}
-                </td>
-                <td className="py-2">{formatDate(row.updatedAt)}</td>
-                <td className="py-2 space-y-1">
-                  {row.status === "failed" ? (
-                    <button
-                      className="rounded border border-emerald-500 px-2 py-1 text-xs"
-                      onClick={() => requeueRow(row.sceneKey, row.promptHash)}
-                      disabled={requeueing === row.promptHash}
-                    >
-                      {requeueing === row.promptHash ? "Requeueing..." : "Requeue"}
-                    </button>
-                  ) : canRunThis ? (
-                    <button
-                      className="rounded border px-2 py-1 text-xs"
-                      onClick={() => runRow(row.promptHash)}
-                      disabled={running === row.promptHash}
-                    >
-                      {running === row.promptHash ? "Running" : "Run this"}
-                    </button>
-                  ) : (
-                    <span className="text-slate-500 text-xs">queued-only</span>
-                  )}
-                  {row.errorMessage ? (
-                    <div className="text-rose-500 text-[10px]">{row.errorMessage}</div>
-                  ) : null}
-                </td>
-              </tr>
+              <Fragment key={row.promptHash}>
+                <tr data-testid={`worker-row-${row.promptHash}`} className={rowClasses}>
+                  <td className="py-2 font-medium">{row.sceneKey}</td>
+                  <td className="py-2 font-mono text-xs">{row.promptHash}</td>
+                  <td className="py-2 capitalize">
+                    <span>{row.status}</span>
+                    {isStale && (
+                      <span className="ml-2 rounded border border-rose-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-600">
+                        Stale
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2">{row.attemptCount}</td>
+                  <td className="py-2">
+                    {row.generationLeaseUntil ? new Date(row.generationLeaseUntil).toLocaleTimeString() : "-"}
+                  </td>
+                  <td className="py-2">{formatDate(row.updatedAt)}</td>
+                  <td className="py-2 space-y-1">
+                    <div className="flex flex-wrap gap-2">
+                      {row.status === "failed" ? (
+                        <button
+                          className="rounded border border-emerald-500 px-2 py-1 text-xs"
+                          onClick={() => requeueRow(row.sceneKey, row.promptHash)}
+                          disabled={requeueing === row.promptHash}
+                        >
+                          {requeueing === row.promptHash ? "Requeueing..." : "Requeue"}
+                        </button>
+                      ) : canRunThis ? (
+                        <button
+                          className="rounded border px-2 py-1 text-xs"
+                          onClick={() => runRow(row.promptHash)}
+                          disabled={running === row.promptHash}
+                        >
+                          {running === row.promptHash ? "Running" : "Run this"}
+                        </button>
+                      ) : (
+                        <span className="text-slate-500 text-xs">queued-only</span>
+                      )}
+                      <button
+                        className="text-xs text-slate-500"
+                        onClick={() =>
+                          setDetailsOpen((prev) => ({ ...prev, [row.promptHash]: !prev[row.promptHash] }))
+                        }
+                      >
+                        {detailsOpen[row.promptHash] ? "Hide details" : "Show details"}
+                      </button>
+                    </div>
+                    {row.errorMessage ? (
+                      <div className="text-rose-500 text-[10px]">{row.errorMessage}</div>
+                    ) : null}
+                  </td>
+                </tr>
+                {detailsOpen[row.promptHash] && (
+                  <tr className="bg-slate-50">
+                    <td colSpan={7} className="px-4 py-2 text-[12px] text-slate-600">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>Lease owner: {row.leaseOwnerId ?? "n/a"}</div>
+                        <div>Lease acquired: {formatTime(row.leaseAcquiredAt ?? null)}</div>
+                        <div>Lease expires: {formatTime(row.generationLeaseUntil ?? null)}</div>
+                        <div>Recovered at: {formatTime(row.lastRecoveredAt ?? null)}</div>
+                        <div>Started at: {formatTime(row.generationStartedAt ?? null)}</div>
+                        <div>Created: {formatDate(row.createdAt ?? null)}</div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             );
           })}
         </tbody>

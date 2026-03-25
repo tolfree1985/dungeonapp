@@ -265,6 +265,42 @@ const summaryHealth = {
     );
   });
 
+  it("renders row diagnostics", async () => {
+    const failedRow = {
+      sceneKey: "dock_house",
+      promptHash: "diag-hash",
+      status: "failed",
+      attemptCount: 3,
+      generationStartedAt: "2026-03-23T12:05:00Z",
+      generationLeaseUntil: "2026-03-23T12:06:00Z",
+      updatedAt: "2026-03-23T12:07:00Z",
+      leaseOwnerId: "worker-1",
+      leaseAcquiredAt: "2026-03-23T12:04:50Z",
+      lastRecoveredAt: "2026-03-23T12:03:00Z",
+      createdAt: "2026-03-23T12:00:00Z",
+      errorMessage: null,
+    };
+
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [failedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve(baseHealth) });
+      }
+      if (url === "/api/scene-art/worker/requeue") {
+        return Promise.resolve({ json: () => Promise.resolve({ ok: true }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    const toggle = await screen.findByRole("button", { name: "Show details" });
+    toggle.click();
+    await waitFor(() => expect(screen.getByText(/Lease owner: worker-1/)).toBeTruthy());
+    expect(screen.getByText(/Lease expires:/)).toBeTruthy();
+  });
+
   it("marks stale generating rows with a badge and updates stats", async () => {
     const staleRow = {
       sceneKey: "dock_office",
