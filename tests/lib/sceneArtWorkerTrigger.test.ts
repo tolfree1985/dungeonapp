@@ -88,4 +88,36 @@ describe("runNextQueuedSceneArtGeneration", () => {
     });
     expect(row.status).toBe(SceneArtStatus.ready);
   });
+
+  it("fails malformed queued rows and lets later valid work proceed", async () => {
+    const malformedId = "malformed-row";
+    await prisma.sceneArt.create({
+      data: {
+        id: malformedId,
+        sceneKey: "broken_scene",
+        promptHash: "",
+        title: "Broken",
+        basePrompt: "Broken prompt",
+        renderPrompt: "Broken render",
+        status: SceneArtStatus.queued,
+        renderMode: "full",
+        engineVersion: "v1",
+      },
+    });
+
+    const identity = getSceneArtIdentity(baseInput);
+    await queueSceneArtGeneration(baseInput, { autoProcess: false });
+
+    await expect(runNextQueuedSceneArtGeneration()).rejects.toThrow("SCENE_ART_INVALID_IDENTITY");
+
+    const malformedRow = await prisma.sceneArt.findUniqueOrThrow({ where: { id: malformedId } });
+    expect(malformedRow.status).toBe(SceneArtStatus.failed);
+
+    const result = await runNextQueuedSceneArtGeneration();
+    expect(result.promptHash).toBe(identity.promptHash);
+    const processedRow = await prisma.sceneArt.findUniqueOrThrow({
+      where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
+    });
+    expect(processedRow.status).toBe(SceneArtStatus.ready);
+  });
 });
