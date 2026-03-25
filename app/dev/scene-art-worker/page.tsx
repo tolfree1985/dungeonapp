@@ -15,6 +15,7 @@ type SceneArtRow = {
   leaseAcquiredAt?: string | null;
   lastRecoveredAt?: string | null;
   createdAt?: string | null;
+  imageUrl?: string | null;
 };
 
 type SceneArtWorkerBatchSummary = {
@@ -186,6 +187,38 @@ export default function SceneArtWorkerPage() {
       { queued: 0, generating: 0, stale: 0, failed: 0 },
     );
   }, [rows]);
+
+  const focusShots = useMemo(() => {
+    return rows
+      .filter((row) => row.sceneKey.startsWith("focus:"))
+      .sort((a, b) => {
+        const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return bTime - aTime;
+      });
+  }, [rows]);
+
+  const latestFocusShot = focusShots[0] ?? null;
+
+  const parseFocusReason = (sceneKey: string | null) => {
+    if (!sceneKey) return null;
+    const parts = sceneKey.split(":");
+    return parts[1] ?? null;
+  };
+
+  const formatFocusReason = (reason: string | null) => {
+    if (!reason) return "Focus Reveal";
+    return reason
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  };
+
+  const focusTier = (reason: string | null) => {
+    if (!reason) return "Medium";
+    if (/legendary|boss/i.test(reason)) return "High";
+    return "Medium";
+  };
 
   const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString() : "-");
   const formatTime = (value: string | null) => (value ? new Date(value).toLocaleTimeString() : "-");
@@ -419,6 +452,32 @@ export default function SceneArtWorkerPage() {
           )}
         </div>
       </section>
+
+      {latestFocusShot ? (
+        <section className="rounded border bg-gradient-to-br from-indigo-50 to-white/70 p-4 shadow-sm">
+          <div className="text-sm font-semibold text-slate-700">Latest Focus Shot</div>
+          <div className="mt-2 flex flex-col gap-2 text-xs text-slate-500">
+            <span className="text-2xs text-slate-400">{focusShots.length} focus shot(s) tracked</span>
+            <div className="flex flex-wrap gap-3 text-xs">
+              <span>Reason: {formatFocusReason(parseFocusReason(latestFocusShot.sceneKey))}</span>
+              <span>Tier: {focusTier(parseFocusReason(latestFocusShot.sceneKey))}</span>
+              <span>Status: {latestFocusShot.status}</span>
+              <span>Updated: {formatTime(latestFocusShot.updatedAt)}</span>
+            </div>
+          </div>
+          {latestFocusShot.imageUrl ? (
+            <img
+              src={latestFocusShot.imageUrl}
+              alt="Focus reveal"
+              className="mt-3 h-40 w-full rounded object-cover"
+            />
+          ) : (
+            <div className="mt-3 flex h-40 w-full items-center justify-center rounded border border-dashed border-slate-300 text-slate-400">
+              Image pending…
+            </div>
+          )}
+        </section>
+      ) : null}
 
       <section className="rounded border bg-white/50 p-4 shadow-sm">
         <div className="text-sm font-semibold text-slate-700">Recent Batches</div>
