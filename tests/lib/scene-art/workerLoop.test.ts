@@ -3,7 +3,7 @@ import * as workerLoop from "@/lib/scene-art/workerLoop";
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
 import { getSceneArtLogs, resetSceneArtLogs } from "@/lib/scene-art/logging";
 
-const { storeStateRef, workerStateStoreMock, makeDefaultState } = vi.hoisted(() => {
+const { storeStateRef, workerStateStoreMock, makeDefaultState, reclaimStaleSceneArtMock } = vi.hoisted(() => {
   const makeDefaultState = () => ({
     control: {
       paused: false,
@@ -59,10 +59,13 @@ const { storeStateRef, workerStateStoreMock, makeDefaultState } = vi.hoisted(() 
     }),
   };
 
+  const reclaimStaleSceneArtMock = vi.fn(async () => ({ reclaimedCount: 0, promptHashes: [] }));
+
   return {
     storeStateRef,
     workerStateStoreMock,
     makeDefaultState,
+    reclaimStaleSceneArtMock,
   };
 });
 
@@ -74,11 +77,16 @@ vi.mock("@/lib/scene-art/runNextQueuedSceneArtGeneration", () => ({
   runNextQueuedSceneArtGeneration: vi.fn(),
 }));
 
+vi.mock("@/lib/scene-art/reclaimStaleSceneArt", () => ({
+  reclaimStaleSceneArt: reclaimStaleSceneArtMock,
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   storeStateRef.current = makeDefaultState();
   workerLoop.resetSceneArtWorkerHealth();
   resetSceneArtLogs();
+  reclaimStaleSceneArtMock.mockResolvedValue({ reclaimedCount: 0, promptHashes: [] });
 });
 
 describe("scene art worker loop", () => {
@@ -130,6 +138,28 @@ describe("scene art worker loop", () => {
 
     expect(health.lastBatchAt).not.toBeNull();
     expect(health.lastProcessedCount).toBe(0);
+  });
+
+  it("records reclaimedCount when stale leases are reclaimed", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockResolvedValueOnce({ promptHash: "reclaimed" });
+    runNext.mockResolvedValue({ promptHash: null });
+    reclaimStaleSceneArtMock.mockResolvedValueOnce({ reclaimedCount: 2, promptHashes: ["reclaimed"] });
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
+    const health = await workerLoop.getSceneArtWorkerHealth();
+
+    expect(health.lastBatchSummary?.reclaimedCount).toBe(2);
+  });
+
+  it("records failedCount when batches error", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockRejectedValue(new Error("boom"));
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, intervalMs: 1, maxIterations: 1 });
+    const health = await workerLoop.getSceneArtWorkerHealth();
+
+    expect(health.lastBatchSummary?.failedCount).toBe(1);
   });
 
   it("continues after a batch error", async () => {

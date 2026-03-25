@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as workerLoop from "@/lib/scene-art/workerLoop";
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
+import { reclaimStaleSceneArt } from "@/lib/scene-art/reclaimStaleSceneArt";
 
 const { storeStateRef, workerStateStoreMock, makeDefaultState } = vi.hoisted(() => {
   const makeDefaultState = () => ({
@@ -67,6 +68,9 @@ vi.mock("@/lib/scene-art/workerStateStore", () => ({
 
 vi.mock("@/lib/scene-art/runNextQueuedSceneArtGeneration", () => ({
   runNextQueuedSceneArtGeneration: vi.fn(),
+}));
+vi.mock("@/lib/scene-art/reclaimStaleSceneArt", () => ({
+  reclaimStaleSceneArt: vi.fn(async () => ({ reclaimedCount: 0, promptHashes: [] })),
 }));
 
 beforeEach(() => {

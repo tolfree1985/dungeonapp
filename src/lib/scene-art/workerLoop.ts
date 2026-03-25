@@ -1,4 +1,5 @@
 import { SceneArtStatus } from "@/generated/prisma";
+import { reclaimStaleSceneArt } from "@/lib/scene-art/reclaimStaleSceneArt";
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import { workerStateStore } from "@/lib/scene-art/workerStateStore";
@@ -17,6 +18,8 @@ export type SceneArtWorkerBatchResult = {
   processedPromptHashes: string[];
   durationMs: number;
   idle: boolean;
+  reclaimedCount: number;
+  failedCount: number;
 };
 
 export type SceneArtWorkerHealthSnapshot = {
@@ -173,18 +176,25 @@ async function recordBatchSuccess(
   });
 }
 
-async function recordBatchFailure(error: unknown) {
+async function recordBatchFailure(error: unknown, summary?: SceneArtWorkerBatchSummary) {
   const now = new Date().toISOString();
   workerHealth.lastErrorAt = now;
   workerHealth.lastErrorMessage = error instanceof Error ? error.message : String(error);
   workerHealth.lastDurationMs = null;
   workerHealth.lastProcessedCount = 0;
-  await workerStateStore.updateHealth({
+  if (summary) {
+    workerHealth.lastBatchSummary = summary;
+  }
+  const payload: Partial<SceneArtWorkerHealthSnapshot> = {
     lastErrorAt: now,
     lastErrorMessage: workerHealth.lastErrorMessage,
     lastDurationMs: null,
     lastProcessedCount: 0,
-  });
+  };
+  if (summary) {
+    payload.lastBatchSummary = summary;
+  }
+  await workerStateStore.updateHealth(payload);
 }
 
 export async function runSceneArtWorkerBatch({ batchSize }: Pick<SceneArtWorkerLoopOptions, "batchSize">): Promise<SceneArtWorkerBatchResult> {
@@ -207,6 +217,8 @@ export async function runSceneArtWorkerBatch({ batchSize }: Pick<SceneArtWorkerL
     processedPromptHashes,
     durationMs,
     idle: processedPromptHashes.length === 0,
+    reclaimedCount: 0,
+    failedCount: 0,
   };
 }
 
@@ -238,10 +250,14 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
         await delay(intervalMs);
         continue;
       }
+      let reclaimedCount = 0;
+      let batchId = "";
+      let workerId = "";
+      let batchStartedAt = "";
       try {
-        const batchId = `batch:${Date.now()}:${Math.random().toString(16).slice(2)}`;
-        const workerId = getSceneArtWorkerId();
-        const batchStartedAt = new Date().toISOString();
+        batchId = `batch:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+        workerId = getSceneArtWorkerId();
+        batchStartedAt = new Date().toISOString();
         logSceneArtEvent("scene.art.batch_started", {
           sceneKey: "worker",
           promptHash: "worker",
@@ -254,6 +270,9 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
           processedCount: 0,
         });
 
+        const reclaimResult = await reclaimStaleSceneArt();
+        reclaimedCount = reclaimResult.reclaimedCount;
+
         const batch = await runSceneArtWorkerBatch({ batchSize });
         const completedAt = new Date().toISOString();
         const summary: SceneArtWorkerBatchSummary = {
@@ -264,7 +283,7 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
           processedCount: batch.processedCount,
           claimedCount: batch.processedCount,
           failedCount: 0,
-          reclaimedCount: 0,
+          reclaimedCount,
           idle: batch.idle,
         };
 
@@ -323,7 +342,18 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
           break;
         }
       } catch (error) {
-        await recordBatchFailure(error);
+        const failureSummary: SceneArtWorkerBatchSummary = {
+          batchId,
+          workerId,
+          startedAt: batchStartedAt,
+          completedAt: new Date().toISOString(),
+          processedCount: 0,
+          claimedCount: 0,
+          failedCount: 1,
+          reclaimedCount,
+          idle: true,
+        };
+        await recordBatchFailure(error, failureSummary);
         logSceneArtEvent("scene.art.worker.batch_failed", {
           sceneKey: "worker",
           promptHash: "worker",
