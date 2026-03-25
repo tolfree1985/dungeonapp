@@ -11,6 +11,8 @@ export type SceneArtIdentityInput = {
   promptHash: string;
 };
 
+type SceneArtRow = Prisma.SceneArtGetPayload<{}>;
+
 function buildExecutionContext(row: Prisma.SceneArtGetPayload<{}>): SceneArtExecutionContext {
   return {
     sceneKey: row.sceneKey,
@@ -23,7 +25,25 @@ function buildExecutionContext(row: Prisma.SceneArtGetPayload<{}>): SceneArtExec
   };
 }
 
-export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInput): Promise<void> {
+export type SceneArtAttemptResult = {
+  sceneKey: string;
+  promptHash: string;
+  lastAttemptCostUsd: number;
+};
+
+export interface SceneArtAttemptError extends Error {
+  attemptResult?: SceneArtAttemptResult;
+}
+
+function attemptResultFromRow(row: SceneArtRow): SceneArtAttemptResult {
+  return {
+    sceneKey: row.sceneKey,
+    promptHash: row.promptHash,
+    lastAttemptCostUsd: row.lastAttemptCostUsd ?? 0,
+  };
+}
+
+export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInput): Promise<SceneArtAttemptResult | null> {
   const { sceneKey, promptHash } = identity;
 
   if (!sceneKey) {
@@ -96,5 +116,19 @@ export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInpu
   });
 
   const context = buildExecutionContext(claimedRow);
-  await generateSceneArtForExecutionContext(context, { force: true });
+  try {
+    const updated = await generateSceneArtForExecutionContext(context, { force: true });
+    return attemptResultFromRow(updated);
+  } catch (error) {
+    const updated = await prisma.sceneArt.findUniqueOrThrow({
+      where: {
+        sceneKey: row.sceneKey,
+        promptHash: row.promptHash,
+      },
+    });
+    const attemptResult = attemptResultFromRow(updated);
+    const attemptError = (error as SceneArtAttemptError) || new Error(String(error));
+    attemptError.attemptResult = attemptResult;
+    throw attemptError;
+  }
 }

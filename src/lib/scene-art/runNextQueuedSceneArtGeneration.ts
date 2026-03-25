@@ -5,6 +5,7 @@ import { runQueuedSceneArtGeneration } from "@/lib/scene-art/runQueuedSceneArtGe
 export type RunNextResult = {
   sceneKey: string | null;
   promptHash: string | null;
+  attemptResult?: SceneArtAttemptResult;
 };
 
 export async function runNextQueuedSceneArtGeneration(): Promise<RunNextResult> {
@@ -31,7 +32,7 @@ export async function runNextQueuedSceneArtGeneration(): Promise<RunNextResult> 
     throw new Error("SCENE_ART_INVALID_IDENTITY: queued row missing sceneKey or promptHash");
   }
 
-  await runQueuedSceneArtGeneration({
+  const attemptResult = await runQueuedSceneArtGeneration({
     sceneKey: row.sceneKey,
     promptHash: row.promptHash,
   });
@@ -39,5 +40,6 @@ export async function runNextQueuedSceneArtGeneration(): Promise<RunNextResult> 
   return {
     sceneKey: row.sceneKey,
     promptHash: row.promptHash,
+    attemptResult: attemptResult ?? undefined,
   };
 }

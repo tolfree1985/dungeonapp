@@ -20,6 +20,7 @@ import { runQueuedSceneArtGeneration } from "@/lib/scene-art/runQueuedSceneArtGe
 import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 import * as sceneArtGenerator from "@/lib/sceneArtGenerator";
 import * as runModule from "@/lib/scene-art/runQueuedSceneArtGeneration";
+import { reclaimStaleSceneArt } from "@/lib/scene-art/reclaimStaleSceneArt";
 import { recoverSceneArt } from "@/lib/scene-art/recoverSceneArt";
 import { generateSceneArtForExecutionContext } from "@/lib/scene-art/generateSceneArtForIdentity";
 import { resetSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
@@ -238,10 +239,47 @@ describe("scene art async lifecycle", () => {
     expect(row.totalCostUsd).toBeCloseTo(COST);
   });
 
+  it("accumulates cost across retryable failure + success", async () => {
+    sceneArtGenerator.generateImage
+      .mockRejectedValueOnce(new Error("Image provider failed: 503"))
+      .mockResolvedValueOnce({ imageUrl: identity.imageUrl, provider: "remote" });
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await expect(processSceneArtGeneration(identity)).rejects.toThrow();
+    let row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.billableAttemptCount).toBe(1);
+    expect(row.totalCostUsd).toBeCloseTo(COST);
+
+    await prisma.sceneArt.update({
+      where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
+      data: { status: SceneArtStatus.queued },
+    });
+    await processSceneArtGeneration(identity);
+    row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.status).toBe(SceneArtStatus.ready);
+    expect(row.billableAttemptCount).toBe(2);
+    expect(row.totalCostUsd).toBeCloseTo(2 * COST);
+    expect(row.lastAttemptCostUsd).toBeCloseTo(COST);
+  });
+
   it("does not change cost when merely queueing rows", async () => {
     const result = await queueSceneArtGeneration(identityInput, { autoProcess: false });
     expect(result.status).toBe("pending");
     const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: result.promptHash } } });
+    expect(row.billableAttemptCount).toBe(0);
+    expect(row.totalCostUsd).toBe(0);
+  });
+
+  it("does not charge cost when reclaiming stale rows", async () => {
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await prisma.sceneArt.update({
+      where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
+      data: {
+        status: SceneArtStatus.generating,
+        generationLeaseUntil: new Date(Date.now() - 60_000),
+      },
+    });
+    await reclaimStaleSceneArt();
+    const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
     expect(row.billableAttemptCount).toBe(0);
     expect(row.totalCostUsd).toBe(0);
   });

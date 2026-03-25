@@ -1,6 +1,7 @@
 import { SceneArtStatus } from "@/generated/prisma";
 import { reclaimStaleSceneArt } from "@/lib/scene-art/reclaimStaleSceneArt";
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
+import type { SceneArtAttemptError } from "@/lib/scene-art/runQueuedSceneArtGeneration";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import { workerStateStore } from "@/lib/scene-art/workerStateStore";
 import type { SceneArtWorkerBatchSummary } from "@/lib/scene-art/workerStateStore";
@@ -19,6 +20,8 @@ export type SceneArtWorkerBatchResult = {
   durationMs: number;
   idle: boolean;
   reclaimedCount: number;
+  batchCostUsd: number;
+  billableAttempts: number;
   failedCount: number;
 };
 
@@ -215,6 +218,8 @@ export async function runSceneArtWorkerBatch({ batchSize }: Pick<SceneArtWorkerL
   const target = clampBatchSize(batchSize);
   const start = Date.now();
   const processedPromptHashes: string[] = [];
+  let batchCostUsd = 0;
+  let billableAttempts = 0;
 
   for (let i = 0; i < target; i += 1) {
     const result = await runNextQueuedSceneArtGeneration();
@@ -222,6 +227,10 @@ export async function runSceneArtWorkerBatch({ batchSize }: Pick<SceneArtWorkerL
       break;
     }
     processedPromptHashes.push(result.promptHash);
+    if (result.attemptResult) {
+      batchCostUsd += result.attemptResult.lastAttemptCostUsd;
+      billableAttempts += 1;
+    }
   }
 
   const durationMs = Date.now() - start;
@@ -232,6 +241,8 @@ export async function runSceneArtWorkerBatch({ batchSize }: Pick<SceneArtWorkerL
     durationMs,
     idle: processedPromptHashes.length === 0,
     reclaimedCount: 0,
+    batchCostUsd,
+    billableAttempts,
     failedCount: 0,
   };
 }
@@ -296,6 +307,8 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
           failedCount: 0,
           reclaimedCount,
           idle: batch.idle,
+          batchCostUsd: batch.batchCostUsd,
+          billableAttempts: batch.billableAttempts,
         };
 
         await recordBatchSuccess(batch, summary);
@@ -353,6 +366,10 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
           break;
         }
       } catch (error) {
+        const attemptResult =
+          error && typeof error === "object" && "attemptResult" in error
+            ? (error as SceneArtAttemptError).attemptResult
+            : undefined;
         const failureSummary: SceneArtWorkerBatchSummary = {
           batchId,
           workerId,
@@ -363,6 +380,8 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
           failedCount: 1,
           reclaimedCount,
           idle: true,
+          batchCostUsd: attemptResult?.lastAttemptCostUsd ?? 0,
+          billableAttempts: attemptResult ? 1 : 0,
         };
         await recordBatchFailure(error, failureSummary);
         logSceneArtEvent("scene.art.worker.batch_failed", {

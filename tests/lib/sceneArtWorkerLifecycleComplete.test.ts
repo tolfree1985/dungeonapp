@@ -74,6 +74,16 @@ vi.mock("@/lib/scene-art/reclaimStaleSceneArt", () => ({
   reclaimStaleSceneArt: vi.fn(async () => ({ reclaimedCount: 0, promptHashes: [] })),
 }));
 
+const makeRunNextResult = (promptHash: string, cost = 1) => ({
+  sceneKey: `scene-${promptHash}`,
+  promptHash,
+  attemptResult: {
+    sceneKey: `scene-${promptHash}`,
+    promptHash,
+    lastAttemptCostUsd: cost,
+  },
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   storeStateRef.current = makeDefaultState();
@@ -84,7 +94,7 @@ describe("scene-art worker lifecycle smoke", () => {
 
   it("exercises start/pause/resume/drain/stop/restart in order", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "job-1" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("job-1"));
     runNext.mockResolvedValue({ promptHash: null });
 
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
@@ -98,7 +108,7 @@ describe("scene-art worker lifecycle smoke", () => {
     workerLoop.resumeSceneArtWorker();
     expect((await workerLoop.getSceneArtWorkerHealth()).paused).toBe(false);
 
-    runNext.mockResolvedValueOnce({ promptHash: "job-2" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("job-2"));
     runNext.mockResolvedValue({ promptHash: null });
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
     health = await workerLoop.getSceneArtWorkerHealth();
@@ -111,7 +121,7 @@ describe("scene-art worker lifecycle smoke", () => {
     health = await workerLoop.getSceneArtWorkerHealth();
     expect(health.draining).toBe(true);
 
-    runNext.mockResolvedValueOnce({ promptHash: "job-3" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("job-3"));
     runNext.mockResolvedValue({ promptHash: null });
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
     health = await workerLoop.getSceneArtWorkerHealth();

@@ -78,6 +78,16 @@ vi.mock("@/lib/scene-art/runNextQueuedSceneArtGeneration", () => ({
   runNextQueuedSceneArtGeneration: vi.fn(),
 }));
 
+const makeRunNextResult = (promptHash: string, cost = 1) => ({
+  sceneKey: `scene-${promptHash}`,
+  promptHash,
+  attemptResult: {
+    sceneKey: `scene-${promptHash}`,
+    promptHash,
+    lastAttemptCostUsd: cost,
+  },
+});
+
 vi.mock("@/lib/scene-art/reclaimStaleSceneArt", () => ({
   reclaimStaleSceneArt: reclaimStaleSceneArtMock,
 }));
@@ -93,8 +103,8 @@ beforeEach(() => {
 describe("scene art worker loop", () => {
   it("processes up to batch size and returns prompt hashes", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "a" });
-    runNext.mockResolvedValueOnce({ promptHash: "b" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("a"));
+    runNext.mockResolvedValueOnce(makeRunNextResult("b"));
     runNext.mockResolvedValue({ promptHash: null });
 
     const result = await workerLoop.runSceneArtWorkerBatch({ batchSize: 5 });
@@ -118,8 +128,8 @@ describe("scene art worker loop", () => {
 
   it("updates heartbeat after successful work", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "a" });
-    runNext.mockResolvedValueOnce({ promptHash: "b" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("a"));
+    runNext.mockResolvedValueOnce(makeRunNextResult("b"));
     runNext.mockResolvedValue({ promptHash: null });
 
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 5, maxIterations: 1 });
@@ -143,7 +153,7 @@ describe("scene art worker loop", () => {
 
   it("records reclaimedCount when stale leases are reclaimed", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "reclaimed" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("reclaimed"));
     runNext.mockResolvedValue({ promptHash: null });
     reclaimStaleSceneArtMock.mockResolvedValueOnce({ reclaimedCount: 2, promptHashes: ["reclaimed"] });
 
@@ -188,7 +198,7 @@ describe("scene art worker loop", () => {
     await workerLoop.pauseSceneArtWorker();
     await workerLoop.resumeSceneArtWorker();
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "resumed" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("resumed"));
     runNext.mockResolvedValue({ promptHash: null });
 
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
@@ -212,7 +222,7 @@ describe("scene art worker loop", () => {
 
   it("persists a batch summary after work completes", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "summary" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("summary"));
     runNext.mockResolvedValue({ promptHash: null });
 
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
@@ -222,6 +232,19 @@ describe("scene art worker loop", () => {
     expect(health.lastBatchSummary?.processedCount).toBe(1);
     expect(health.lastBatchSummary?.idle).toBe(false);
     expect(health.lastBatchSummary?.batchId).toMatch(/^batch:/);
+  });
+
+  it("tracks batch cost and billable attempts", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockResolvedValueOnce(makeRunNextResult("alpha", 2));
+    runNext.mockResolvedValueOnce(makeRunNextResult("beta", 3));
+    runNext.mockResolvedValue({ promptHash: null });
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 5, maxIterations: 1 });
+    const health = await workerLoop.getSceneArtWorkerHealth();
+
+    expect(health.lastBatchSummary?.batchCostUsd).toBe(5);
+    expect(health.lastBatchSummary?.billableAttempts).toBe(2);
   });
 
   it("records summary even for idle batches", async () => {
@@ -236,9 +259,26 @@ describe("scene art worker loop", () => {
     expect(health.lastBatchSummary?.idle).toBe(true);
   });
 
+  it("keeps batch cost in sync with recent history", async () => {
+    const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
+    runNext.mockResolvedValueOnce(makeRunNextResult("cache", 4));
+    runNext.mockResolvedValue({ promptHash: null });
+
+    await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
+    const health = await workerLoop.getSceneArtWorkerHealth();
+    const summary = health.lastBatchSummary;
+    const history = health.recentBatchHistory;
+
+    expect(summary).not.toBeNull();
+    expect(history.length).toBeGreaterThanOrEqual(1);
+    const lastHistory = history[history.length - 1];
+    expect(lastHistory.batchCostUsd).toBe(summary?.batchCostUsd);
+    expect(lastHistory.billableAttempts).toBe(summary?.billableAttempts);
+  });
+
   it("emits matching batch start/completion events", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "sync" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("sync"));
     runNext.mockResolvedValue({ promptHash: null });
 
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });

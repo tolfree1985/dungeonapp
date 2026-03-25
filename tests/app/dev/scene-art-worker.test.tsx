@@ -50,6 +50,8 @@ const summaryHealth = {
     claimedCount: 2,
     failedCount: 0,
     reclaimedCount: 1,
+    batchCostUsd: 10,
+    billableAttempts: 2,
     idle: false,
   },
   recentBatchHistory: [
@@ -62,6 +64,8 @@ const summaryHealth = {
       claimedCount: 2,
       failedCount: 0,
       reclaimedCount: 1,
+      batchCostUsd: 10,
+      billableAttempts: 2,
       idle: false,
     },
   ],
@@ -202,6 +206,9 @@ const summaryHealth = {
     expect(within(panel).getByTestId("latest-batch-worker").textContent).toContain("worker-1");
     expect(within(panel).getByTestId("latest-batch-processed").textContent).toContain("2");
     expect(within(panel).getByTestId("latest-batch-idle").textContent).toContain("No");
+    expect(within(panel).getByTestId("latest-batch-cost").textContent).toContain("$10.00");
+    expect(within(panel).getByTestId("latest-batch-attempts").textContent).toContain("2");
+    expect(screen.getAllByText("Cost: $10.00").length).toBeGreaterThan(0);
   });
 
   it("hides run this for non-queued rows", async () => {

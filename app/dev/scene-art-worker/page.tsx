@@ -27,6 +27,8 @@ type SceneArtWorkerBatchSummary = {
   failedCount: number;
   reclaimedCount: number;
   idle: boolean;
+  batchCostUsd: number;
+  billableAttempts: number;
 };
 
 type WorkerHealth = {
@@ -187,6 +189,7 @@ export default function SceneArtWorkerPage() {
 
   const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString() : "-");
   const formatTime = (value: string | null) => (value ? new Date(value).toLocaleTimeString() : "-");
+  const formatCost = (value?: number) => `$${(value ?? 0).toFixed(2)}`;
 
   const getRowSignals = (row: SceneArtRow) => {
     const now = Date.now();
@@ -430,6 +433,8 @@ export default function SceneArtWorkerPage() {
                 <div className="text-[11px]">Processed: {entry.processedCount}</div>
                 <div className="text-[11px]">Failed: {entry.failedCount}</div>
                 <div className="text-[11px]">Reclaimed: {entry.reclaimedCount}</div>
+                <div className="text-[11px]">Cost: {formatCost(entry.batchCostUsd)}</div>
+                <div className="text-[11px]">Attempts: {entry.billableAttempts}</div>
                 <div className="text-[11px]">Idle: {entry.idle ? "Yes" : "No"}</div>
               </div>
             ))}
@@ -488,6 +493,18 @@ export default function SceneArtWorkerPage() {
               <div className="text-[10px] uppercase text-slate-400">Idle</div>
               <div data-testid="latest-batch-idle" className="text-[12px] text-slate-700">
                 {latestBatch.idle ? "Yes" : "No"}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Batch Cost</div>
+              <div data-testid="latest-batch-cost" className="text-[12px] text-slate-700">
+                {formatCost(latestBatch.batchCostUsd)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-slate-400">Billable Attempts</div>
+              <div data-testid="latest-batch-attempts" className="text-[12px] text-slate-700">
+                {latestBatch.billableAttempts}
               </div>
             </div>
           </div>

@@ -74,6 +74,20 @@ vi.mock("@/lib/scene-art/runNextQueuedSceneArtGeneration", () => ({
   runNextQueuedSceneArtGeneration: vi.fn().mockResolvedValue({ promptHash: null }),
 }));
 
+vi.mock("@/lib/scene-art/reclaimStaleSceneArt", () => ({
+  reclaimStaleSceneArt: vi.fn(async () => ({ reclaimedCount: 0, promptHashes: [] })),
+}));
+
+const makeRunNextResult = (promptHash: string, cost = 1) => ({
+  sceneKey: `scene-${promptHash}`,
+  promptHash,
+  attemptResult: {
+    sceneKey: `scene-${promptHash}`,
+    promptHash,
+    lastAttemptCostUsd: cost,
+  },
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   storeStateRef.current = makeDefaultState();
@@ -84,7 +98,7 @@ describe("scene-art worker health", () => {
 
   it("health endpoint returns the latest snapshot", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "x" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("x"));
     runNext.mockResolvedValue({ promptHash: null });
 
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });
@@ -111,7 +125,7 @@ describe("scene-art worker health", () => {
 
   it("does not mutate worker state when reading health", async () => {
     const runNext = runNextQueuedSceneArtGeneration as unknown as vi.Mock;
-    runNext.mockResolvedValueOnce({ promptHash: "y" });
+    runNext.mockResolvedValueOnce(makeRunNextResult("y"));
     runNext.mockResolvedValue({ promptHash: null });
 
     await workerLoop.startSceneArtWorkerLoop({ batchSize: 1, maxIterations: 1 });

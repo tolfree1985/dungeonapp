@@ -33,6 +33,8 @@ export type SceneArtWorkerBatchSummary = {
   failedCount: number;
   reclaimedCount: number;
   idle: boolean;
+  batchCostUsd: number;
+  billableAttempts: number;
 };
 
 type SceneArtWorkerStateRow = {
