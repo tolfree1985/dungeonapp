@@ -34,9 +34,11 @@ export type SceneArtWorkerHealthSnapshot = {
   lastErrorAt: string | null;
   lastErrorMessage: string | null;
   lastBatchSummary: SceneArtWorkerBatchSummary | null;
+  recentBatchHistory: SceneArtWorkerBatchSummary[];
 };
 
 type WorkerStopReason = "stopped" | "drained" | "aborted" | "failed";
+const BATCH_HISTORY_LIMIT = 20;
 
 export function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -62,6 +64,7 @@ let workerHealth: SceneArtWorkerHealthSnapshot = {
   lastErrorAt: null,
   lastErrorMessage: null,
   lastBatchSummary: null,
+  recentBatchHistory: [],
 };
 let workerController: AbortController | null = null;
 let workerTask: Promise<void> | null = null;
@@ -114,6 +117,7 @@ export async function startSceneArtWorkerBackground(options: SceneArtWorkerLoopO
 
 async function markWorkerStarted() {
   const control = await workerStateStore.getControl();
+  const existingHealth = await workerStateStore.getHealth();
   const now = new Date().toISOString();
   workerHealth = {
     running: true,
@@ -127,6 +131,7 @@ async function markWorkerStarted() {
     lastErrorAt: null,
     lastErrorMessage: null,
     lastBatchSummary: null,
+    recentBatchHistory: existingHealth.recentBatchHistory,
   };
   await workerStateStore.updateHealth({
     running: true,
@@ -166,6 +171,7 @@ async function recordBatchSuccess(
   workerHealth.lastErrorAt = null;
   workerHealth.lastErrorMessage = null;
   workerHealth.lastBatchSummary = summary;
+  appendBatchHistory(summary);
   await workerStateStore.updateHealth({
     lastBatchAt: now,
     lastProcessedCount: summary.processedCount,
@@ -173,6 +179,7 @@ async function recordBatchSuccess(
     lastErrorAt: null,
     lastErrorMessage: null,
     lastBatchSummary: summary,
+    recentBatchHistory: workerHealth.recentBatchHistory,
   });
 }
 
@@ -184,6 +191,7 @@ async function recordBatchFailure(error: unknown, summary?: SceneArtWorkerBatchS
   workerHealth.lastProcessedCount = 0;
   if (summary) {
     workerHealth.lastBatchSummary = summary;
+    appendBatchHistory(summary);
   }
   const payload: Partial<SceneArtWorkerHealthSnapshot> = {
     lastErrorAt: now,
@@ -193,8 +201,14 @@ async function recordBatchFailure(error: unknown, summary?: SceneArtWorkerBatchS
   };
   if (summary) {
     payload.lastBatchSummary = summary;
+    payload.recentBatchHistory = workerHealth.recentBatchHistory;
   }
   await workerStateStore.updateHealth(payload);
+}
+
+function appendBatchHistory(summary: SceneArtWorkerBatchSummary) {
+  const history = [...workerHealth.recentBatchHistory, summary];
+  workerHealth.recentBatchHistory = history.slice(-BATCH_HISTORY_LIMIT);
 }
 
 export async function runSceneArtWorkerBatch({ batchSize }: Pick<SceneArtWorkerLoopOptions, "batchSize">): Promise<SceneArtWorkerBatchResult> {
@@ -408,6 +422,7 @@ export async function resetSceneArtWorkerHealth() {
     lastErrorAt: null,
     lastErrorMessage: null,
     lastBatchSummary: null,
+    recentBatchHistory: [],
   };
   await workerStateStore.resetHealth();
 }

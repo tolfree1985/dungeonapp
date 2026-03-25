@@ -37,6 +37,7 @@ type WorkerHealth = {
   paused: boolean;
   draining: boolean;
   lastBatchSummary: SceneArtWorkerBatchSummary | null;
+  recentBatchHistory: SceneArtWorkerBatchSummary[];
 };
 
 export default function SceneArtWorkerPage() {
@@ -202,6 +203,7 @@ export default function SceneArtWorkerPage() {
       : "text-emerald-600";
 
   const latestBatch = health?.lastBatchSummary;
+  const history = health?.recentBatchHistory ?? [];
 
   const pauseWorker = useCallback(async () => {
     setControlLoading(true);
@@ -380,6 +382,26 @@ export default function SceneArtWorkerPage() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="rounded border bg-white/50 p-4 shadow-sm">
+        <div className="text-sm font-semibold text-slate-700">Recent Batches</div>
+        {history.length === 0 ? (
+          <div className="text-xs text-slate-500">No batches recorded yet.</div>
+        ) : (
+          <div className="mt-3 space-y-3 text-xs text-slate-500">
+            {history.slice().reverse().map((entry) => (
+              <div key={entry.batchId} className="flex flex-wrap items-center gap-4 border-b pb-2 last:border-b-0">
+                <div className="w-32 font-mono text-[11px] text-slate-700">{entry.batchId}</div>
+                <div className="text-[11px]">{formatDate(entry.completedAt)}</div>
+                <div className="text-[11px]">Processed: {entry.processedCount}</div>
+                <div className="text-[11px]">Failed: {entry.failedCount}</div>
+                <div className="text-[11px]">Reclaimed: {entry.reclaimedCount}</div>
+                <div className="text-[11px]">Idle: {entry.idle ? "Yes" : "No"}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section data-testid="latest-batch-panel" className="rounded border bg-white/50 p-4 shadow-sm space-y-3">

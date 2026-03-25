@@ -21,6 +21,7 @@ const { storeStateRef, workerStateStoreMock, makeDefaultState, reclaimStaleScene
       lastErrorAt: null,
       lastErrorMessage: null,
       lastBatchSummary: null,
+      recentBatchHistory: [],
     },
   });
 

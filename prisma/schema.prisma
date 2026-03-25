@@ -274,6 +274,7 @@ model SceneArtWorkerState {
   lastDurationMs     Int?
   lastErrorAt        DateTime?
   lastErrorMessage   String?
+  batchHistory       Json?
   lastBatchSummary   Json?
 
   createdAt          DateTime @default(now())

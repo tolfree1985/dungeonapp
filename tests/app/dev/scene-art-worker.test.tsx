@@ -36,6 +36,7 @@ const baseHealth = {
   paused: false,
   draining: false,
   lastBatchSummary: null,
+  recentBatchHistory: [],
 };
 
 const summaryHealth = {
@@ -51,6 +52,19 @@ const summaryHealth = {
     reclaimedCount: 1,
     idle: false,
   },
+  recentBatchHistory: [
+    {
+      batchId: "batch:xyz",
+      workerId: "worker-1",
+      startedAt: "2026-03-23T12:05:00Z",
+      completedAt: "2026-03-23T12:05:07Z",
+      processedCount: 2,
+      claimedCount: 2,
+      failedCount: 0,
+      reclaimedCount: 1,
+      idle: false,
+    },
+  ],
 };
 
   it("renders rows, action buttons, and refresh control", async () => {

@@ -20,6 +20,7 @@ export type SceneArtWorkerHealthState = {
   lastErrorAt: string | null;
   lastErrorMessage: string | null;
   lastBatchSummary: SceneArtWorkerBatchSummary | null;
+  recentBatchHistory: SceneArtWorkerBatchSummary[];
 };
 
 export type SceneArtWorkerBatchSummary = {
@@ -47,6 +48,7 @@ type SceneArtWorkerStateRow = {
   lastErrorAt: Date | null;
   lastErrorMessage: string | null;
   lastBatchSummary: Prisma.Json | null;
+  batchHistory: Prisma.Json | null;
 };
 
 async function ensureStateRow(): Promise<SceneArtWorkerStateRow> {
@@ -73,9 +75,12 @@ function mapRowToHealth(row: SceneArtWorkerStateRow): SceneArtWorkerHealthState 
     lastDurationMs: row.lastDurationMs,
     lastErrorAt: row.lastErrorAt ? row.lastErrorAt.toISOString() : null,
     lastErrorMessage: row.lastErrorMessage,
-    lastBatchSummary: row.lastBatchSummary
-      ? (row.lastBatchSummary as SceneArtWorkerBatchSummary)
-      : null,
+  lastBatchSummary: row.lastBatchSummary
+    ? (row.lastBatchSummary as SceneArtWorkerBatchSummary)
+    : null,
+  recentBatchHistory: row.batchHistory
+    ? (row.batchHistory as SceneArtWorkerBatchSummary[])
+    : [],
   };
 }
 
@@ -110,6 +115,7 @@ export const workerStateStore = {
     if (next.lastErrorAt !== undefined) data.lastErrorAt = next.lastErrorAt ? new Date(next.lastErrorAt) : null;
     if (next.lastErrorMessage !== undefined) data.lastErrorMessage = next.lastErrorMessage;
     if (next.lastBatchSummary !== undefined) data.lastBatchSummary = next.lastBatchSummary;
+    if (next.recentBatchHistory !== undefined) data.batchHistory = next.recentBatchHistory;
 
     if (Object.keys(data).length === 0) return;
 
@@ -132,6 +138,7 @@ export const workerStateStore = {
         lastErrorAt: null,
         lastErrorMessage: null,
         lastBatchSummary: null,
+        batchHistory: [],
       },
     });
   },

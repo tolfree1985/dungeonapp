@@ -23,6 +23,7 @@ const mockRow = {
   lastErrorAt: null,
   lastErrorMessage: null,
   lastBatchSummary: null,
+  batchHistory: null,
 };
 
 const { workerStateStore } = await import("@/lib/scene-art/workerStateStore");
@@ -85,6 +86,7 @@ describe("sceneArtWorkerStateStore", () => {
         lastErrorAt: null,
         lastErrorMessage: null,
         lastBatchSummary: null,
+        batchHistory: null,
       },
     });
   });
