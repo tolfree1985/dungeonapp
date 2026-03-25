@@ -105,6 +105,10 @@ export const prismaMock = {
         ...data,
         imageUrl: data.imageUrl ?? identityImageUrl(data.sceneKey, promptHash),
         attemptCount: data.attemptCount ?? 0,
+        totalCostUsd: data.totalCostUsd ?? 0,
+        lastAttemptCostUsd: data.lastAttemptCostUsd ?? null,
+        billableAttemptCount: data.billableAttemptCount ?? 0,
+        providerModel: data.providerModel ?? null,
         createdAt: data.createdAt ?? new Date(),
         status: data.status ?? "queued",
       };
@@ -126,6 +130,16 @@ export const prismaMock = {
         const increment = data.attemptCount.increment;
         const base = typeof existing.attemptCount === "number" ? existing.attemptCount : 0;
         updated.attemptCount = base + increment;
+      }
+      if (data.totalCostUsd && typeof data.totalCostUsd === "object" && "increment" in data.totalCostUsd) {
+        const inc = data.totalCostUsd.increment;
+        const base = typeof existing.totalCostUsd === "number" ? existing.totalCostUsd : 0;
+        updated.totalCostUsd = base + inc;
+      }
+      if (data.billableAttemptCount && typeof data.billableAttemptCount === "object" && "increment" in data.billableAttemptCount) {
+        const inc = data.billableAttemptCount.increment;
+        const base = typeof existing.billableAttemptCount === "number" ? existing.billableAttemptCount : 0;
+        updated.billableAttemptCount = base + inc;
       }
       store.set(promptHash, updated);
       return updated;
@@ -149,6 +163,16 @@ export const prismaMock = {
         const increment = data.attemptCount.increment;
         const base = typeof row.attemptCount === "number" ? row.attemptCount : 0;
         updated.attemptCount = base + increment;
+      }
+      if (data.totalCostUsd && typeof data.totalCostUsd === "object" && "increment" in data.totalCostUsd) {
+        const inc = data.totalCostUsd.increment;
+        const base = typeof row.totalCostUsd === "number" ? row.totalCostUsd : 0;
+        updated.totalCostUsd = base + inc;
+      }
+      if (data.billableAttemptCount && typeof data.billableAttemptCount === "object" && "increment" in data.billableAttemptCount) {
+        const inc = data.billableAttemptCount.increment;
+        const base = typeof row.billableAttemptCount === "number" ? row.billableAttemptCount : 0;
+        updated.billableAttemptCount = base + inc;
       }
       store.set(promptHash, updated);
       return { count: 1 };

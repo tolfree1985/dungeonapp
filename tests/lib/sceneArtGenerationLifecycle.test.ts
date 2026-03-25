@@ -217,6 +217,35 @@ describe("scene art async lifecycle", () => {
     expect(row.lastProviderAttemptAt).toBeInstanceOf(Date);
   });
 
+  const COST = Number(process.env.SCENE_ART_COST_PER_ATTEMPT_USD ?? "0.01");
+
+  it("tracks cost on successful attempt", async () => {
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await processSceneArtGeneration(identity);
+    const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.billableAttemptCount).toBe(1);
+    expect(row.totalCostUsd).toBeCloseTo(COST);
+    expect(row.lastAttemptCostUsd).toBeCloseTo(COST);
+    expect(row.providerModel).toBe("gpt-image-1");
+  });
+
+  it("records cost on terminal failure", async () => {
+    sceneArtGenerator.generateImage.mockRejectedValue(new Error("Image provider failed: 403"));
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await expect(processSceneArtGeneration(identity)).rejects.toThrow();
+    const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.billableAttemptCount).toBe(1);
+    expect(row.totalCostUsd).toBeCloseTo(COST);
+  });
+
+  it("does not change cost when merely queueing rows", async () => {
+    const result = await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    expect(result.status).toBe("pending");
+    const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: result.promptHash } } });
+    expect(row.billableAttemptCount).toBe(0);
+    expect(row.totalCostUsd).toBe(0);
+  });
+
   it("classifies timeout as retryable with timeout delay", async () => {
     const timeout = new Error("The request timed out");
     timeout.name = "AbortError";

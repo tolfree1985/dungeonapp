@@ -227,6 +227,10 @@ model SceneArt {
   imageUrl      String?
   engineVersion String?
   renderMode    RenderMode     @default(full)
+  totalCostUsd      Float     @default(0)
+  lastAttemptCostUsd Float?
+  billableAttemptCount Int    @default(0)
+  providerModel     String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   renderPriority SceneArtPriority @default(normal)

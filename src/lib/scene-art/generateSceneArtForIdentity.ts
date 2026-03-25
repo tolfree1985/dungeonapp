@@ -8,6 +8,7 @@ import type { RenderMode } from "@/generated/prisma";
 import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
 import { classifySceneArtProviderError } from "@/lib/scene-art/classifyProviderError";
 import { decideSceneArtRetry } from "@/lib/scene-art/decideProviderRetry";
+import { resolveSceneArtAttemptCost } from "@/lib/scene-art/providerCostConfig";
 
 const DEFAULT_PROVIDER_SOURCE = { provider: "remote" };
 
@@ -34,6 +35,7 @@ export async function generateSceneArtForExecutionContext(
   const current = await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
   const workerId = getSceneArtWorkerId();
 
+  const attemptCost = resolveSceneArtAttemptCost();
   try {
     const generated = await generateImage(context.renderPrompt, context.sceneKey, context.promptHash);
     const durationMs = current.generationStartedAt
@@ -61,6 +63,10 @@ export async function generateSceneArtForExecutionContext(
         lastProviderRetryDelayMs: null,
         lastProviderDurationMs: durationMs,
         lastProviderAttemptAt: new Date(),
+        lastAttemptCostUsd: attemptCost.attemptCostUsd,
+        totalCostUsd: { increment: attemptCost.attemptCostUsd },
+        billableAttemptCount: { increment: 1 },
+        providerModel: attemptCost.providerModel,
       },
     });
 
@@ -109,6 +115,10 @@ export async function generateSceneArtForExecutionContext(
         lastProviderRetryDelayMs: decision.retryDelayMs,
         lastProviderDurationMs: durationMs,
         lastProviderAttemptAt: new Date(),
+        lastAttemptCostUsd: attemptCost.attemptCostUsd,
+        totalCostUsd: { increment: attemptCost.attemptCostUsd },
+        billableAttemptCount: { increment: 1 },
+        providerModel: attemptCost.providerModel,
       },
     });
     if (result.count !== 1) {
