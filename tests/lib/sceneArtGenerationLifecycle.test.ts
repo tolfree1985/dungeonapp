@@ -189,6 +189,34 @@ describe("scene art async lifecycle", () => {
     expect(row.status).toBe(SceneArtStatus.ready);
   });
 
+  it("stores provider diagnostics when execution fails", async () => {
+    sceneArtGenerator.generateImage.mockRejectedValue(new Error("Image provider failed: 503"));
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await expect(processSceneArtGeneration(identity)).rejects.toThrow();
+    const row = await prisma.sceneArt.findUniqueOrThrow({ where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } } });
+    expect(row.status).toBe(SceneArtStatus.failed);
+    expect(row.lastProviderFailureClass).toBe("transient");
+    expect(row.lastProviderRetryable).toBe(true);
+    expect(row.lastProviderRetryDelayMs).toBe(10000);
+    expect(row.lastProviderDurationMs).toBeGreaterThanOrEqual(0);
+    expect(row.lastProviderAttemptAt).toBeInstanceOf(Date);
+  });
+
+  it("clears provider diagnostics after a successful attempt", async () => {
+    await queueSceneArtGeneration(identityInput, { autoProcess: false });
+    await processSceneArtGeneration(identity);
+    const row = await prisma.sceneArt.findUniqueOrThrow({
+      where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
+    });
+    expect(row.status).toBe(SceneArtStatus.ready);
+    expect(row.lastProviderFailureClass).toBeNull();
+    expect(row.lastProviderFailureReason).toBeNull();
+    expect(row.lastProviderRetryable).toBeNull();
+    expect(row.lastProviderRetryDelayMs).toBeNull();
+    expect(row.lastProviderDurationMs).toBeGreaterThanOrEqual(0);
+    expect(row.lastProviderAttemptAt).toBeInstanceOf(Date);
+  });
+
   it("recovery enqueues work without auto-processing when autoProcess is false", async () => {
     await queueSceneArtGeneration(identityInput, { autoProcess: false });
     await prisma.sceneArt.update({

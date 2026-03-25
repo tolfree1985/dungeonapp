@@ -133,9 +133,11 @@ export const prismaMock = {
 
     async updateMany({ where, data }: any) {
       const resolved = where.sceneKey_promptHash ?? where;
-      const { promptHash, status } = resolved;
+      const promptHash = resolved?.promptHash ?? where?.promptHash;
+      const status = resolved?.status ?? where?.status;
       const row = store.get(promptHash);
-      if (!row || row.status !== status) {
+      const leaseOwnerId = resolved?.leaseOwnerId ?? where?.leaseOwnerId;
+      if (!row || (status !== undefined && row.status !== status) || (leaseOwnerId !== undefined && row.leaseOwnerId !== leaseOwnerId)) {
         return { count: 0 };
       }
 

@@ -231,6 +231,12 @@ model SceneArt {
   updatedAt     DateTime       @updatedAt
   renderPriority SceneArtPriority @default(normal)
   sceneArtShotCaches SceneArtShotCache[]
+  lastProviderFailureClass String?
+  lastProviderFailureReason String?
+  lastProviderRetryable Boolean?
+  lastProviderRetryDelayMs Int?
+  lastProviderDurationMs Int?
+  lastProviderAttemptAt DateTime?
 
   @@index([status])
   @@unique([sceneKey, promptHash])

@@ -36,6 +36,9 @@ export async function generateSceneArtForExecutionContext(
 
   try {
     const generated = await generateImage(context.renderPrompt, context.sceneKey, context.promptHash);
+    const durationMs = current.generationStartedAt
+      ? Date.now() - current.generationStartedAt.getTime()
+      : 0;
     const claimResult = await prisma.sceneArt.updateMany({
       where: {
         ...uniqueWhere,
@@ -52,6 +55,12 @@ export async function generateSceneArtForExecutionContext(
         generationLeaseUntil: null,
         leaseOwnerId: null,
         leaseAcquiredAt: null,
+        lastProviderFailureClass: null,
+        lastProviderFailureReason: null,
+        lastProviderRetryable: null,
+        lastProviderRetryDelayMs: null,
+        lastProviderDurationMs: durationMs,
+        lastProviderAttemptAt: new Date(),
       },
     });
 
@@ -60,9 +69,6 @@ export async function generateSceneArtForExecutionContext(
     }
 
     const updated = await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
-    const durationMs = current.generationStartedAt
-      ? Date.now() - current.generationStartedAt.getTime()
-      : 0;
     logSceneArtEvent("scene.art.completed", {
       sceneKey: context.sceneKey,
       promptHash: context.promptHash,
@@ -76,6 +82,14 @@ export async function generateSceneArtForExecutionContext(
     });
     return updated;
   } catch (error) {
+    const durationMs = current.generationStartedAt
+      ? Date.now() - current.generationStartedAt.getTime()
+      : 0;
+    const classification = classifySceneArtProviderError(error);
+    const decision = decideSceneArtRetry(
+      classification.failureClass,
+      current.attemptCount ?? 0,
+    );
     const result = await prisma.sceneArt.updateMany({
       where: {
         ...uniqueWhere,
@@ -89,20 +103,18 @@ export async function generateSceneArtForExecutionContext(
         generationLeaseUntil: null,
         leaseOwnerId: null,
         leaseAcquiredAt: null,
+        lastProviderFailureClass: classification.failureClass,
+        lastProviderFailureReason: classification.reason,
+        lastProviderRetryable: classification.retryable,
+        lastProviderRetryDelayMs: decision.retryDelayMs,
+        lastProviderDurationMs: durationMs,
+        lastProviderAttemptAt: new Date(),
       },
     });
     if (result.count !== 1) {
       throw new Error("SCENE_ART_OWNERSHIP_VIOLATION");
     }
     await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
-    const durationMs = current.generationStartedAt
-      ? Date.now() - current.generationStartedAt.getTime()
-      : 0;
-    const classification = classifySceneArtProviderError(error);
-    const decision = decideSceneArtRetry(
-      classification.failureClass,
-      current.attemptCount ?? 0,
-    );
     logSceneArtEvent("scene.art.failed", {
       sceneKey: context.sceneKey,
       promptHash: context.promptHash,
