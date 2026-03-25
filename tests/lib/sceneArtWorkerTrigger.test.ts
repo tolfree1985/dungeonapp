@@ -163,3 +163,5 @@ describe("runNextQueuedSceneArtGeneration", () => {
     expect(row.leaseOwnerId).toBeNull();
   });
 });
+
+});

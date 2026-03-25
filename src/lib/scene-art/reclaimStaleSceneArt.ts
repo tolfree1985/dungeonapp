@@ -33,6 +33,9 @@ export async function reclaimStaleSceneArt(options?: { limit?: number }) {
         status: SceneArtStatus.queued,
         generationStartedAt: null,
         generationLeaseUntil: null,
+        leaseOwnerId: null,
+        leaseAcquiredAt: null,
+        lastRecoveredAt: now,
       },
     });
 
@@ -45,6 +48,9 @@ export async function reclaimStaleSceneArt(options?: { limit?: number }) {
       attemptCount: updated.attemptCount ?? 0,
       generationLeaseUntil: row.generationLeaseUntil ?? null,
       generationStartedAt: row.generationStartedAt ?? null,
+      previousLeaseOwnerId: row.leaseOwnerId ?? null,
+      expiredAt: row.generationLeaseUntil ?? null,
+      reclaimedAt: now,
     });
   }
 
