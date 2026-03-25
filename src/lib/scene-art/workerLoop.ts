@@ -29,6 +29,8 @@ export type SceneArtWorkerHealthSnapshot = {
   lastErrorMessage: string | null;
 };
 
+type WorkerStopReason = "stopped" | "drained" | "aborted" | "failed";
+
 export function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -202,7 +204,7 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
   const signal = options.signal;
   const limit = typeof options.maxIterations === "number" ? options.maxIterations : undefined;
   let iterations = 0;
-  let stopReason: string | null = null;
+  let stopReason: WorkerStopReason | null = null;
 
   await markWorkerStarted();
   logSceneArtEvent("scene.art.worker.started", {
@@ -213,7 +215,11 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
   });
 
   try {
-    while (!signal?.aborted) {
+    while (true) {
+      if (signal?.aborted) {
+        stopReason = "aborted";
+        break;
+      }
       const control = await workerStateStore.getControl();
       await recordWorkerTick(control);
       if (control.paused && !control.draining) {
@@ -250,13 +256,6 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
         }
         if (control.draining && batch.processedCount === 0) {
           stopReason = "drained";
-          logSceneArtEvent("scene.art.worker.stopped", {
-            sceneKey: "worker",
-            promptHash: "worker",
-            status: "ready",
-            attemptCount: 0,
-            reason: "drained",
-          });
           break;
         }
       } catch (error) {
@@ -274,18 +273,23 @@ export async function startSceneArtWorkerLoop(options: SceneArtWorkerLoopOptions
       }
 
       if (limit !== undefined && iterations >= limit) {
+        stopReason = stopReason ?? "stopped";
         break;
       }
     }
+  } catch (error) {
+    stopReason = "failed";
+    throw error;
   } finally {
-    if (!stopReason) {
-      logSceneArtEvent("scene.art.worker.stopped", {
-        sceneKey: "worker",
-        promptHash: "worker",
-        status: "failed",
-        attemptCount: 0,
-      });
-    }
+    const finalReason =
+      stopReason ?? (signal?.aborted ? "aborted" : "stopped");
+    logSceneArtEvent("scene.art.worker.stopped", {
+      sceneKey: "worker",
+      promptHash: "worker",
+      status: finalReason,
+      attemptCount: 0,
+      reason: finalReason,
+    });
     workerHealth.running = false;
     const finalControl = await workerStateStore.getControl();
     await workerStateStore.updateHealth({
