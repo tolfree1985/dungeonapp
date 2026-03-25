@@ -301,6 +301,35 @@ const summaryHealth = {
     expect(screen.getByText(/Lease expires:/)).toBeTruthy();
   });
 
+  it("shows signal badges", async () => {
+    const now = new Date();
+    const expiredRow = {
+      sceneKey: "dock_harbor",
+      promptHash: "signal-hash",
+      status: "generating",
+      attemptCount: 1,
+      generationStartedAt: null,
+      generationLeaseUntil: new Date(now.getTime() - 1000).toISOString(),
+      updatedAt: now.toISOString(),
+      leaseOwnerId: "worker-1",
+      lastRecoveredAt: null,
+      createdAt: now.toISOString(),
+      errorMessage: null,
+    };
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [expiredRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve(baseHealth) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    await waitFor(() => expect(screen.getByText("Lease Expired")).toBeTruthy());
+  });
+
   it("marks stale generating rows with a badge and updates stats", async () => {
     const staleRow = {
       sceneKey: "dock_office",

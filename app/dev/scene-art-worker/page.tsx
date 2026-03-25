@@ -11,6 +11,10 @@ type SceneArtRow = {
   generationLeaseUntil: string | null;
   updatedAt: string | null;
   errorMessage?: string | null;
+  leaseOwnerId?: string | null;
+  leaseAcquiredAt?: string | null;
+  lastRecoveredAt?: string | null;
+  createdAt?: string | null;
 };
 
 type SceneArtWorkerBatchSummary = {
@@ -183,6 +187,16 @@ export default function SceneArtWorkerPage() {
 
   const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString() : "-");
   const formatTime = (value: string | null) => (value ? new Date(value).toLocaleTimeString() : "-");
+
+  const getRowSignals = (row: SceneArtRow) => {
+    const now = Date.now();
+    const leaseUntil = row.generationLeaseUntil ? new Date(row.generationLeaseUntil).getTime() : null;
+    const expired = row.status === "generating" && leaseUntil !== null && leaseUntil < now;
+    const inFlight = row.status === "generating" && row.leaseOwnerId && leaseUntil !== null && leaseUntil >= now;
+    const repeatedFailure = row.status === "failed" && row.attemptCount >= 3;
+    const recovered = Boolean(row.lastRecoveredAt);
+    return { expired, inFlight, repeatedFailure, recovered };
+  };
 
   const healthStatus = useMemo(() => {
     if (!health) return "unknown";
@@ -488,6 +502,7 @@ export default function SceneArtWorkerPage() {
             <th className="pb-2">Scene</th>
             <th className="pb-2">PromptHash</th>
             <th className="pb-2">Status</th>
+            <th className="pb-2">Signals</th>
             <th className="pb-2">Attempts</th>
             <th className="pb-2">Lease</th>
             <th className="pb-2">Updated</th>
@@ -509,14 +524,31 @@ export default function SceneArtWorkerPage() {
                 <tr data-testid={`worker-row-${row.promptHash}`} className={rowClasses}>
                   <td className="py-2 font-medium">{row.sceneKey}</td>
                   <td className="py-2 font-mono text-xs">{row.promptHash}</td>
-                  <td className="py-2 capitalize">
-                    <span>{row.status}</span>
-                    {isStale && (
-                      <span className="ml-2 rounded border border-rose-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-600">
-                        Stale
-                      </span>
-                    )}
-                  </td>
+                <td className="py-2 capitalize">
+                  <span>{row.status}</span>
+                  {isStale && (
+                    <span className="ml-2 rounded border border-rose-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-600">
+                      Stale
+                    </span>
+                  )}
+                </td>
+                <td className="py-2">
+                  {(() => {
+                    const signals = getRowSignals(row);
+                    return (
+                      <div className="flex flex-wrap gap-1 text-[10px]">
+                        {signals.expired && <span className="rounded border border-rose-200 px-2 py-0.5 text-rose-600">Lease Expired</span>}
+                        {signals.repeatedFailure && (
+                          <span className="rounded border border-rose-200 px-2 py-0.5 text-rose-600">Repeated Failure</span>
+                        )}
+                        {signals.recovered && (
+                          <span className="rounded border border-amber-200 px-2 py-0.5 text-amber-600">Recovered</span>
+                        )}
+                        {signals.inFlight && <span className="rounded border border-slate-200 px-2 py-0.5 text-slate-600">In Flight</span>}
+                      </div>
+                    );
+                  })()}
+                </td>
                   <td className="py-2">{row.attemptCount}</td>
                   <td className="py-2">
                     {row.generationLeaseUntil ? new Date(row.generationLeaseUntil).toLocaleTimeString() : "-"}
