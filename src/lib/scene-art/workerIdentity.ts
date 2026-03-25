@@ -16,3 +16,7 @@ export function getSceneArtWorkerId() {
   cachedWorkerId = `scene-art:${pid}:${bootTs}`;
   return cachedWorkerId;
 }
+
+export function resetSceneArtWorkerId() {
+  cachedWorkerId = null;
+}

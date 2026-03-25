@@ -21,6 +21,8 @@ import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
 import * as sceneArtGenerator from "@/lib/sceneArtGenerator";
 import * as runModule from "@/lib/scene-art/runQueuedSceneArtGeneration";
 import { recoverSceneArt } from "@/lib/scene-art/recoverSceneArt";
+import { generateSceneArtForExecutionContext } from "@/lib/scene-art/generateSceneArtForIdentity";
+import { resetSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
 
 describe("scene art async lifecycle", () => {
   const sceneKey = "dock_office";
@@ -199,6 +201,140 @@ describe("scene art async lifecycle", () => {
       where: { sceneKey_promptHash: { sceneKey, promptHash: identity.promptHash } },
     });
     expect(row.status).toBe(SceneArtStatus.queued);
+  });
+
+  describe("lease ownership enforcement", () => {
+    const ownerA = "owner-A";
+    const ownerB = "owner-B";
+
+    function setWorkerIdOverride(value: string) {
+      process.env.SCENE_ART_WORKER_ID = value;
+      resetSceneArtWorkerId();
+    }
+
+    async function markGenerating(identity: SceneArtIdentity, ownerId: string) {
+      await prisma.sceneArt.update({
+        where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
+        data: {
+          status: SceneArtStatus.generating,
+          leaseOwnerId: ownerId,
+          leaseAcquiredAt: new Date(),
+          generationStartedAt: new Date(),
+          generationLeaseUntil: new Date(Date.now() + 60_000),
+        },
+      });
+    }
+
+    afterEach(() => {
+      delete process.env.SCENE_ART_WORKER_ID;
+      resetSceneArtWorkerId();
+    });
+
+    it("non-owner cannot finalize generation", async () => {
+      const identity = getSceneArtIdentity(identityInput);
+      await queueSceneArtGeneration(identityInput, { autoProcess: false });
+      await markGenerating(identity, ownerA);
+      setWorkerIdOverride(ownerB);
+      sceneArtGenerator.generateImage.mockResolvedValue({ imageUrl: identity.imageUrl, provider: "remote" });
+
+      await expect(
+        generateSceneArtForExecutionContext({
+          sceneKey: identity.sceneKey,
+          promptHash: identity.promptHash,
+          basePrompt: identity.basePrompt,
+          renderPrompt: identity.renderPrompt,
+          stylePreset: identity.stylePreset,
+          renderMode: identity.renderMode,
+          engineVersion: identity.engineVersion,
+        }),
+      ).rejects.toThrow("SCENE_ART_OWNERSHIP_VIOLATION");
+
+      const row = await prisma.sceneArt.findUniqueOrThrow({
+        where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
+      });
+      expect(row.status).toBe(SceneArtStatus.generating);
+      expect(row.leaseOwnerId).toBe(ownerA);
+    });
+
+    it("owner finalizes and clears lease", async () => {
+      const identity = getSceneArtIdentity(identityInput);
+      await queueSceneArtGeneration(identityInput, { autoProcess: false });
+      await markGenerating(identity, ownerA);
+      setWorkerIdOverride(ownerA);
+      sceneArtGenerator.generateImage.mockResolvedValue({ imageUrl: identity.imageUrl, provider: "remote" });
+
+      await generateSceneArtForExecutionContext({
+        sceneKey: identity.sceneKey,
+        promptHash: identity.promptHash,
+        basePrompt: identity.basePrompt,
+        renderPrompt: identity.renderPrompt,
+        stylePreset: identity.stylePreset,
+        renderMode: identity.renderMode,
+        engineVersion: identity.engineVersion,
+      });
+
+      const row = await prisma.sceneArt.findUniqueOrThrow({
+        where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
+      });
+      expect(row.status).toBe(SceneArtStatus.ready);
+      expect(row.leaseOwnerId).toBeNull();
+      expect(row.leaseAcquiredAt).toBeNull();
+      expect(row.generationLeaseUntil).toBeNull();
+    });
+
+    it("non-owner cannot fail generation", async () => {
+      const identity = getSceneArtIdentity(identityInput);
+      await queueSceneArtGeneration(identityInput, { autoProcess: false });
+      await markGenerating(identity, ownerA);
+      sceneArtGenerator.generateImage.mockRejectedValue(new Error("boom"));
+      setWorkerIdOverride(ownerB);
+
+      await expect(
+        generateSceneArtForExecutionContext({
+          sceneKey: identity.sceneKey,
+          promptHash: identity.promptHash,
+          basePrompt: identity.basePrompt,
+          renderPrompt: identity.renderPrompt,
+          stylePreset: identity.stylePreset,
+          renderMode: identity.renderMode,
+          engineVersion: identity.engineVersion,
+        }),
+      ).rejects.toThrow("SCENE_ART_OWNERSHIP_VIOLATION");
+
+      const row = await prisma.sceneArt.findUniqueOrThrow({
+        where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
+      });
+      expect(row.status).toBe(SceneArtStatus.generating);
+      expect(row.leaseOwnerId).toBe(ownerA);
+    });
+
+    it("owner failure clears lease", async () => {
+      const identity = getSceneArtIdentity(identityInput);
+      await queueSceneArtGeneration(identityInput, { autoProcess: false });
+      await markGenerating(identity, ownerA);
+      setWorkerIdOverride(ownerA);
+      sceneArtGenerator.generateImage.mockRejectedValue(new Error("boom"));
+
+      await expect(
+        generateSceneArtForExecutionContext({
+          sceneKey: identity.sceneKey,
+          promptHash: identity.promptHash,
+          basePrompt: identity.basePrompt,
+          renderPrompt: identity.renderPrompt,
+          stylePreset: identity.stylePreset,
+          renderMode: identity.renderMode,
+          engineVersion: identity.engineVersion,
+        }),
+      ).rejects.toThrow("boom");
+
+      const row = await prisma.sceneArt.findUniqueOrThrow({
+        where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
+      });
+      expect(row.status).toBe(SceneArtStatus.failed);
+      expect(row.leaseOwnerId).toBeNull();
+      expect(row.leaseAcquiredAt).toBeNull();
+      expect(row.generationLeaseUntil).toBeNull();
+    });
   });
 
 });

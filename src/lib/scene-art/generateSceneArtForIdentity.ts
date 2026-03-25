@@ -5,6 +5,7 @@ import { generateImage } from "@/lib/sceneArtGenerator";
 import type { SceneArtIdentity } from "@/lib/sceneArtIdentity";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import type { RenderMode } from "@/generated/prisma";
+import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
 
 const DEFAULT_PROVIDER_SOURCE = { provider: "remote" };
 
@@ -29,11 +30,16 @@ export async function generateSceneArtForExecutionContext(
     },
   };
   const current = await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
+  const workerId = getSceneArtWorkerId();
 
   try {
     const generated = await generateImage(context.renderPrompt, context.sceneKey, context.promptHash);
-    const updated = await prisma.sceneArt.update({
-      where: uniqueWhere,
+    const claimResult = await prisma.sceneArt.updateMany({
+      where: {
+        ...uniqueWhere,
+        status: SceneArtStatus.generating,
+        leaseOwnerId: workerId,
+      },
       data: {
         basePrompt: context.basePrompt,
         renderPrompt: context.renderPrompt,
@@ -42,8 +48,16 @@ export async function generateSceneArtForExecutionContext(
         tagsJson: JSON.stringify({ ...(generated.provider ? { provider: generated.provider } : DEFAULT_PROVIDER_SOURCE) }),
         generationStartedAt: null,
         generationLeaseUntil: null,
+        leaseOwnerId: null,
+        leaseAcquiredAt: null,
       },
     });
+
+    if (claimResult.count !== 1) {
+      throw new Error("SCENE_ART_OWNERSHIP_VIOLATION");
+    }
+
+    const updated = await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
     const durationMs = current.generationStartedAt
       ? Date.now() - current.generationStartedAt.getTime()
       : 0;
@@ -54,19 +68,31 @@ export async function generateSceneArtForExecutionContext(
       attemptCount: current.attemptCount ?? 0,
       generationStartedAt: current.generationStartedAt ?? null,
       generationLeaseUntil: current.generationLeaseUntil ?? null,
+      leaseOwnerId: workerId,
+      leaseAcquiredAt: current.leaseAcquiredAt ?? null,
       durationMs,
     });
     return updated;
   } catch (error) {
-    await prisma.sceneArt.update({
-      where: uniqueWhere,
+    const result = await prisma.sceneArt.updateMany({
+      where: {
+        ...uniqueWhere,
+        status: SceneArtStatus.generating,
+        leaseOwnerId: workerId,
+      },
       data: {
         status: SceneArtStatus.failed,
         tagsJson: null,
         generationStartedAt: null,
         generationLeaseUntil: null,
+        leaseOwnerId: null,
+        leaseAcquiredAt: null,
       },
     });
+    if (result.count !== 1) {
+      throw new Error("SCENE_ART_OWNERSHIP_VIOLATION");
+    }
+    await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
     const durationMs = current.generationStartedAt
       ? Date.now() - current.generationStartedAt.getTime()
       : 0;
@@ -77,6 +103,8 @@ export async function generateSceneArtForExecutionContext(
       attemptCount: current.attemptCount ?? 0,
       generationStartedAt: current.generationStartedAt ?? null,
       generationLeaseUntil: current.generationLeaseUntil ?? null,
+      leaseOwnerId: workerId,
+      leaseAcquiredAt: current.leaseAcquiredAt ?? null,
       durationMs,
       errorCode: "provider_error",
       errorMessage: error instanceof Error ? error.message : String(error),
