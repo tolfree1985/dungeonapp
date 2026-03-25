@@ -17,6 +17,7 @@ export function runWorkerProcess(options: RunWorkerProcessOptions = {}): Running
   const workerId = getSceneArtWorkerId();
   const controller = new AbortController();
   const signal = options.signal ?? controller.signal;
+  let stopReason: "stopped" | "aborted" = "stopped";
 
   console.info("scene.art.worker.external.started", {
     workerId,
@@ -24,12 +25,29 @@ export function runWorkerProcess(options: RunWorkerProcessOptions = {}): Running
     intervalMs: options.intervalMs,
   });
 
+  const handleSignal = (reason: typeof stopReason) => () => {
+    stopReason = reason;
+    controller.abort();
+  };
+
+  const listeners: Array<() => void> = [];
+  const register = (signalName: NodeJS.Signals, reason: typeof stopReason) => {
+    const listener = handleSignal(reason);
+    process.on(signalName, listener);
+    listeners.push(() => process.off(signalName, listener));
+  };
+
+  register("SIGINT", "aborted");
+  register("SIGTERM", "aborted");
+
   const done = startSceneArtWorkerLoop({
     ...options,
     signal,
   }).finally(() => {
+    listeners.forEach((dispose) => dispose());
     console.info("scene.art.worker.external.stopped", {
       workerId,
+      reason: stopReason,
     });
   });
 
