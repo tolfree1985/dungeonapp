@@ -48,6 +48,7 @@ export default function SceneArtWorkerPage() {
   const [reclaiming, setReclaiming] = useState(false);
   const [lastReclaimedCount, setLastReclaimedCount] = useState<number | null>(null);
   const [autoReclaimedCount, setAutoReclaimedCount] = useState(0);
+  const [requeueing, setRequeueing] = useState<string | null>(null);
   const [health, setHealth] = useState<WorkerHealth | null>(null);
   const [controlLoading, setControlLoading] = useState(false);
   const [drainLoading, setDrainLoading] = useState(false);
@@ -135,6 +136,23 @@ export default function SceneArtWorkerPage() {
       setReclaiming(false);
     }
   }, [refresh]);
+
+  const requeueRow = useCallback(
+    async (sceneKey: string, promptHash: string) => {
+      setRequeueing(promptHash);
+      try {
+        await fetch("/api/scene-art/worker/requeue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sceneKey, promptHash }),
+        });
+      } finally {
+        setRequeueing(null);
+        await refresh();
+      }
+    },
+    [refresh],
+  );
 
   const refreshQueue = useCallback(async () => {
     await refresh();
@@ -505,7 +523,15 @@ export default function SceneArtWorkerPage() {
                 </td>
                 <td className="py-2">{formatDate(row.updatedAt)}</td>
                 <td className="py-2 space-y-1">
-                  {canRunThis ? (
+                  {row.status === "failed" ? (
+                    <button
+                      className="rounded border border-emerald-500 px-2 py-1 text-xs"
+                      onClick={() => requeueRow(row.sceneKey, row.promptHash)}
+                      disabled={requeueing === row.promptHash}
+                    >
+                      {requeueing === row.promptHash ? "Requeueing..." : "Requeue"}
+                    </button>
+                  ) : canRunThis ? (
                     <button
                       className="rounded border px-2 py-1 text-xs"
                       onClick={() => runRow(row.promptHash)}

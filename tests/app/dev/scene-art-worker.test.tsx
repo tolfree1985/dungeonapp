@@ -231,6 +231,40 @@ const summaryHealth = {
     await waitFor(() => expect(screen.queryAllByRole("button", { name: "Run this" })).toHaveLength(0));
   });
 
+  it("shows a requeue button for failed rows", async () => {
+    const failedRow = {
+      sceneKey: "dock_house",
+      promptHash: "failed-hash",
+      status: "failed",
+      attemptCount: 3,
+      generationStartedAt: null,
+      generationLeaseUntil: null,
+      updatedAt: "2026-03-23T12:10:00Z",
+      errorMessage: "provider failed",
+    };
+
+    (fetch as unknown as vi.Mock).mockImplementation((url: string) => {
+      if (url === "/api/scene-art/worker/queue") {
+        return Promise.resolve({ json: () => Promise.resolve({ rows: [failedRow], autoReclaimedCount: 0 }) });
+      }
+      if (url === "/api/scene-art/worker/health") {
+        return Promise.resolve({ json: () => Promise.resolve(baseHealth) });
+      }
+      if (url === "/api/scene-art/worker/requeue") {
+        return Promise.resolve({ json: () => Promise.resolve({ ok: true }) });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<SceneArtWorkerPage />);
+    const button = await screen.findByRole("button", { name: "Requeue" });
+    expect(button).toBeTruthy();
+    button.click();
+    await waitFor(() =>
+      expect((fetch as unknown as vi.Mock).mock.calls.some((call) => call[0] === "/api/scene-art/worker/requeue")).toBe(true),
+    );
+  });
+
   it("marks stale generating rows with a badge and updates stats", async () => {
     const staleRow = {
       sceneKey: "dock_office",
