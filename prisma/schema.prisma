@@ -220,6 +220,9 @@ model SceneArt {
   status        SceneArtStatus @default(queued)
   generationStartedAt DateTime?
   generationLeaseUntil DateTime?
+  leaseOwnerId    String?
+  leaseAcquiredAt DateTime?
+  lastRecoveredAt DateTime?
   attemptCount  Int      @default(0)
   imageUrl      String?
   engineVersion String?

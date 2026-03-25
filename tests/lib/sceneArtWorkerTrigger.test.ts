@@ -5,6 +5,7 @@ import { SceneArtStatus } from "@/generated/prisma";
 import { queueSceneArtGeneration } from "@/lib/scene-art/queueSceneArtGeneration";
 import { runNextQueuedSceneArtGeneration } from "@/lib/scene-art/runNextQueuedSceneArtGeneration";
 import { getSceneArtIdentity } from "@/lib/sceneArtIdentity";
+import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
 import * as sceneArtGenerator from "@/lib/sceneArtGenerator";
 import * as runModule from "@/lib/scene-art/runQueuedSceneArtGeneration";
 
@@ -124,5 +125,41 @@ describe("runNextQueuedSceneArtGeneration", () => {
       where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
     });
     expect(processedRow.status).toBe(SceneArtStatus.ready);
+  });
+
+  it("claims queued rows with lease ownership", async () => {
+    const identity = getSceneArtIdentity(baseInput);
+    await queueSceneArtGeneration(baseInput, { autoProcess: false });
+
+    const result = await runNextQueuedSceneArtGeneration();
+    expect(result.promptHash).toBe(identity.promptHash);
+    expect(result.sceneKey).toBe(identity.sceneKey);
+
+    const row = await prisma.sceneArt.findUniqueOrThrow({
+      where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
+    });
+    expect(row.status).toBe(SceneArtStatus.ready);
+    expect(row.leaseOwnerId).toBe(getSceneArtWorkerId());
+    expect(row.leaseAcquiredAt).toBeInstanceOf(Date);
+    expect(row.generationLeaseUntil).toBeInstanceOf(Date);
+    expect(row.attemptCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not claim non-queued rows", async () => {
+    const identity = getSceneArtIdentity(baseInput);
+    await queueSceneArtGeneration(baseInput, { autoProcess: false });
+    await prisma.sceneArt.update({
+      where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
+      data: { status: SceneArtStatus.ready },
+    });
+
+    const result = await runNextQueuedSceneArtGeneration();
+    expect(result.sceneKey).toBeNull();
+    expect(result.promptHash).toBeNull();
+    const row = await prisma.sceneArt.findUniqueOrThrow({
+      where: { sceneKey_promptHash: { sceneKey: identity.sceneKey, promptHash: identity.promptHash } },
+    });
+    expect(row.status).toBe(SceneArtStatus.ready);
+    expect(row.leaseOwnerId).toBeNull();
   });
 });
