@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { resolveSceneRefreshDecision } from "./resolveSceneRefreshDecision";
+import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
 import type { SceneTransitionMemory } from "./sceneTypes";
+
+const identityFor = (sceneKey: string | null, promptHash?: string | null) =>
+  resolveCanonicalSceneIdentity({
+    sceneKey,
+    promptHash: promptHash ?? (sceneKey ? `${sceneKey}-hash` : null),
+  });
 
 describe("resolveSceneRefreshDecision", () => {
   it("does not queue renders when hold keeps the same key", () => {
     const decision = resolveSceneRefreshDecision({
       transitionType: "hold",
-      currentSceneKey: "key-a",
-      previousSceneKey: "key-a",
+      current: identityFor("key-a"),
+      previous: identityFor("key-a"),
       currentReady: true,
       previousReady: true,
     });
@@ -22,8 +29,8 @@ describe("resolveSceneRefreshDecision", () => {
   it("queues on hold when the key changes", () => {
     const decision = resolveSceneRefreshDecision({
       transitionType: "hold",
-      currentSceneKey: "key-b",
-      previousSceneKey: "key-a",
+      current: identityFor("key-b"),
+      previous: identityFor("key-a"),
       currentReady: false,
       previousReady: true,
     });
@@ -36,8 +43,8 @@ describe("resolveSceneRefreshDecision", () => {
   it("advances only when the key differs", () => {
     const decision = resolveSceneRefreshDecision({
       transitionType: "advance",
-      currentSceneKey: "key-b",
-      previousSceneKey: "key-a",
+      current: identityFor("key-b"),
+      previous: identityFor("key-a"),
       currentReady: false,
       previousReady: true,
     });
@@ -49,8 +56,8 @@ describe("resolveSceneRefreshDecision", () => {
   it("cuts and swaps immediately when the key changes", () => {
     const decision = resolveSceneRefreshDecision({
       transitionType: "cut",
-      currentSceneKey: "key-b",
-      previousSceneKey: "key-a",
+      current: identityFor("key-b"),
+      previous: identityFor("key-a"),
       currentReady: false,
       previousReady: true,
     });
@@ -71,8 +78,8 @@ describe("resolveSceneRefreshDecision", () => {
     };
     const decision = resolveSceneRefreshDecision({
       transitionType: "cut",
-      currentSceneKey: "key-b",
-      previousSceneKey: "key-a",
+      current: identityFor("key-b"),
+      previous: identityFor("key-a"),
       currentReady: true,
       previousReady: true,
       transitionMemory: memory,
@@ -85,8 +92,8 @@ describe("resolveSceneRefreshDecision", () => {
   it("reuses the current image when delta says none", () => {
     const decision = resolveSceneRefreshDecision({
       transitionType: "cut",
-      currentSceneKey: "scene-42",
-      previousSceneKey: "scene-43",
+      current: identityFor("scene-42"),
+      previous: identityFor("scene-43"),
       currentReady: true,
       previousReady: true,
       sceneDeltaKind: "none",
@@ -98,13 +105,22 @@ describe("resolveSceneRefreshDecision", () => {
   it("reuses the current image when delta says motif", () => {
     const decision = resolveSceneRefreshDecision({
       transitionType: "cut",
-      currentSceneKey: "scene-42",
-      previousSceneKey: "scene-42",
+      current: identityFor("scene-42"),
+      previous: identityFor("scene-42"),
       currentReady: true,
       previousReady: true,
       sceneDeltaKind: "motif",
     });
     expect(decision.renderPlan).toBe("reuse-current");
     expect(decision.shouldQueueRender).toBe(false);
+  });
+
+  it("normalizes canonical identity inputs", () => {
+    const identity = resolveCanonicalSceneIdentity({ sceneKey: "foo", promptHash: "hash" });
+    expect(identity).toEqual({ sceneKey: "foo", promptHash: "hash" });
+    const empty = resolveCanonicalSceneIdentity({ sceneKey: "", promptHash: "" });
+    expect(empty).toEqual({ sceneKey: null, promptHash: null });
+    const nullInput = resolveCanonicalSceneIdentity(null);
+    expect(nullInput).toEqual({ sceneKey: null, promptHash: null });
   });
 });

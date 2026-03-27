@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildSceneShotKey } from "./sceneShot";
 import { resolveSceneDeltaKind, type SceneDeltaSnapshot } from "./resolveSceneDeltaKind";
 import { resolveSceneRefreshDecision } from "./resolveSceneRefreshDecision";
+import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
 import type { SceneActorState } from "./resolveSceneActorState";
 import type { SceneFramingState } from "./resolveSceneFramingState";
 import type { SceneSubjectState } from "./resolveSceneSubjectState";
@@ -94,8 +95,8 @@ describe("scene continuity invariants", () => {
     expect(deltaKind).toBe("none");
     const refreshDecision = resolveSceneRefreshDecision({
       transitionType: "hold",
-      currentSceneKey: current.sceneKey,
-      previousSceneKey: previous.sceneKey,
+      current: resolveCanonicalSceneIdentity(current),
+      previous: resolveCanonicalSceneIdentity(previous),
       currentReady: true,
       previousReady: true,
       sceneDeltaKind: deltaKind,
@@ -114,8 +115,8 @@ describe("scene continuity invariants", () => {
     expect(deltaKind).toBe("environment");
     const refreshDecision = resolveSceneRefreshDecision({
       transitionType: "cut",
-      currentSceneKey: current.sceneKey,
-      previousSceneKey: previous.sceneKey,
+      current: resolveCanonicalSceneIdentity(current),
+      previous: resolveCanonicalSceneIdentity(previous),
       currentReady: false,
       previousReady: true,
       sceneDeltaKind: deltaKind,

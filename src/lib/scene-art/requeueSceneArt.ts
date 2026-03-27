@@ -36,6 +36,7 @@ export async function requeueSceneArt(identity: SceneArtIdentityInput) {
       generationLeaseUntil: null,
       leaseOwnerId: null,
       leaseAcquiredAt: null,
+      lastRecoveredAt: new Date(),
     },
   });
 
@@ -44,6 +45,12 @@ export async function requeueSceneArt(identity: SceneArtIdentityInput) {
     promptHash: updated.promptHash,
     status: updated.status,
     attemptCount: updated.attemptCount,
+  });
+
+  console.log("scene.art.dev.requeued", {
+    sceneKey: updated.sceneKey,
+    promptHash: updated.promptHash,
+    nextStatus: updated.status,
   });
 
   return updated;

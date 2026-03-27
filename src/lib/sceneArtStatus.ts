@@ -4,6 +4,7 @@ export type SceneArtStatusRecord = {
   sceneKey: string;
   status: SceneArtStatus;
   imageUrl: string | null;
+  promptHash: string | null;
 };
 
 export type SceneArtStatusResponse = {

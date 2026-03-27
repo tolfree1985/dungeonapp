@@ -85,7 +85,12 @@ export function SceneImagePanel({
   const finalSource = displayedImage.source;
   const focusLabel = focusState?.focusLabel ? `Focus: ${focusState.focusLabel}` : undefined;
   const normalizedLifecycle: SceneArtLifecycleStatus = sceneArtStatus ?? (pending ? "generating" : "ready");
-  const showImage = normalizedLifecycle === "ready" && Boolean(finalImageUrl);
+  const hasReadyImage =
+    normalizedLifecycle === "ready" &&
+    Boolean(finalImageUrl) &&
+    !finalImageUrl?.includes("generated-placeholder");
+  const generatedSceneUrl = hasReadyImage ? finalImageUrl : null;
+  const showGeneratedImage = Boolean(generatedSceneUrl);
 
   const sourceLabel = () => {
     switch (finalSource) {
@@ -113,14 +118,6 @@ export function SceneImagePanel({
         return null;
     }
   })();
-  const placeholderLabel = normalizedLifecycle === "failed"
-    ? "Render failed"
-    : normalizedLifecycle === "generating"
-      ? "Rendering scene..."
-      : normalizedLifecycle === "missing"
-        ? "Scene art artifact missing"
-        : "Preparing scene art...";
-
   const showRetryButton =
     (normalizedLifecycle === "failed" || normalizedLifecycle === "missing") &&
     !!retrySceneKey &&
@@ -134,12 +131,10 @@ export function SceneImagePanel({
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
       <div className="relative aspect-[16/9] w-full bg-stone-900">
-        {showImage ? (
-          <img src={finalImageUrl as string} alt={sourceLabel()} className="h-full w-full object-cover" />
+        {showGeneratedImage ? (
+          <img src={generatedSceneUrl!} alt={sourceLabel()} className="h-full w-full object-cover" />
         ) : (
-          <div className="scene-placeholder flex h-full items-center justify-center text-xs uppercase tracking-[0.35em] text-stone-500">
-            {placeholderLabel}
-          </div>
+          <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(120,120,120,0.14),_transparent_55%),linear-gradient(180deg,rgba(20,18,16,0.92),rgba(10,10,12,0.98))]" />
         )}
         <div className="absolute -top-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1 text-[10px] uppercase tracking-[0.3em]">
           <span className="text-white/60">Scene transition</span>
@@ -150,12 +145,18 @@ export function SceneImagePanel({
           )}
         </div>
         <div className="absolute -top-2 left-2 flex gap-2 text-[10px] uppercase tracking-[0.3em]">
-          <span className="rounded-md border border-white/15 bg-black/50 px-2 py-1 text-stone-200">{sourceLabel()}</span>
           {renderStateBadge ? (
             <span className="rounded-md border border-amber-500/40 bg-amber-950/70 px-2 py-1 text-amber-200">
               {renderStateBadge}
             </span>
           ) : null}
+        </div>
+        <div className="absolute top-4 left-2 text-[10px] uppercase tracking-[0.3em]">
+          <span
+            className={`rounded-md border px-2 py-1 ${hasReadyImage ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-200" : "border-white/15 bg-black/50 text-neutral-400"}`}
+          >
+            {hasReadyImage ? "GENERATED SCENE" : "DEFAULT BACKDROP"}
+          </span>
         </div>
         {transition && (
           <div className="absolute -top-2 right-2 flex gap-2 text-[10px] uppercase tracking-[0.3em]">

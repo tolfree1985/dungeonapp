@@ -1,7 +1,7 @@
 import { runWorkerProcess } from "@/lib/scene-art/runWorkerProcess";
 
 async function main() {
-  const worker = runWorkerProcess({ batchSize, intervalMs });
+  const worker = runWorkerProcess();
 
   try {
     await worker.done;

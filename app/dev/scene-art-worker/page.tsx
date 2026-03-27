@@ -596,7 +596,7 @@ export default function SceneArtWorkerPage() {
             const rowClasses = ["border-t", isHighlighted ? "bg-slate-50" : "", isStale ? "bg-rose-50/40" : ""].join(" ");
 
             return (
-              <Fragment key={row.promptHash}>
+            <Fragment key={`${row.sceneKey}:${row.promptHash}`}>
                 <tr data-testid={`worker-row-${row.promptHash}`} className={rowClasses}>
                   <td className="py-2 font-medium">{row.sceneKey}</td>
                   <td className="py-2 font-mono text-xs">{row.promptHash}</td>

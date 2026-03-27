@@ -1,8 +1,8 @@
-import type { SceneArtRow } from "@/lib/resolveTurnSceneArtPresentation";
 import type { ScenePresentation } from "@/lib/resolveTurnSceneArtPresentation";
 import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
 import type { PlayTurn } from "@/app/play/types";
+import type { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
 
 export type TurnInputPayload = {
   playerText: string;
@@ -14,6 +14,6 @@ export type TurnApiResponse = {
   turnIndex: number;
   sceneTransition?: SceneTransition | null;
   scenePresentation?: ScenePresentation | null;
-  sceneArt?: SceneArtRow | null;
+  sceneArt?: CanonicalSceneArtState | null;
   sceneContinuity?: SceneContinuityInfo | null;
 };

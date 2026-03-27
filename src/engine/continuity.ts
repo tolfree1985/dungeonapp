@@ -1,6 +1,6 @@
 import type { Turn } from "@prisma/client";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
-import { findSceneArt } from "@/lib/sceneArtRepo";
+import { buildSceneArtLookupIdentity, findSceneArt } from "@/lib/sceneArtRepo";
 import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";
 import type { PreviousSceneContinuity } from "@/lib/resolveTurnSceneArtPresentation";
 
@@ -25,7 +25,9 @@ export async function hydrateContinuity({
   const previousSceneKeyFromCanonical = previousSceneCanonicalPayload?.sceneKey ?? null;
   const previousSceneKeyFromContinuity = previousSceneContinuityInfo?.sceneKey ?? null;
   const previousCanonicalKey = previousSceneKeyFromCanonical ?? previousSceneKeyFromContinuity ?? null;
-  const previousSceneArtRow = previousCanonicalKey ? await findSceneArt(previousCanonicalKey) : null;
+  const previousSceneArtRow = previousSceneCanonicalPayload
+    ? await findSceneArt(buildSceneArtLookupIdentity(previousSceneCanonicalPayload))
+    : null;
   const previousSceneKeyMismatch =
     Boolean(previousSceneContinuityInfo && previousSceneCanonicalPayload) &&
     previousSceneContinuityInfo.sceneKey !== previousSceneCanonicalPayload.sceneKey;

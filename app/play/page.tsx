@@ -22,6 +22,9 @@ import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { buildPlayTurnPresentation } from "./normalizeTurnPresentation";
 import { randomUUID } from "node:crypto";
 import { createAdventureFromScenarioId } from "@/lib/game/createAdventureFromScenario";
+import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
+import { buildSceneArtLookupIdentity } from "@/lib/sceneArtRepo";
+import type { SceneArtPayload } from "@/lib/sceneArt";
 
 const PROTECTED_ADVENTURE_IDS = new Set(["canon_ui", "sandbox", "replay_lab", "dev_run"]);
 const DEV_DEFAULT_ADVENTURE = "85e17a2c-c8a9-4c48-9186-2ed7e3e9d983";
@@ -591,31 +594,66 @@ let persistedAdventureOwnerId: string | null = null;
     ? {
         sceneKey: sceneArtKey,
         basePrompt: resolvedSceneText || undefined,
+        promptHash: resolvedSceneImage.promptHash ?? null,
       }
     : buildCanonicalSceneArtPayload({
         turn: latestTurn,
         state: rawState,
       });
+  const canonicalPayloadIdentity =
+    sceneArt && "basePrompt" in sceneArt && sceneArt.basePrompt
+      ? buildSceneArtLookupIdentity(sceneArt as SceneArtPayload)
+      : null;
+  const sceneArtIdentitySource =
+    canonicalPayloadIdentity ?? {
+      sceneKey: sceneArt?.sceneKey ?? sceneArtKey,
+      promptHash: sceneArt?.promptHash ?? resolvedSceneImage.promptHash ?? null,
+    };
+  const currentSceneIdentity = resolveCanonicalSceneIdentity(sceneArtIdentitySource);
+  const resolvedSceneArtRow =
+    currentSceneIdentity.sceneKey && currentSceneIdentity.promptHash
+      ? await prisma.sceneArt.findUnique({
+          where: {
+            sceneKey_promptHash: {
+              sceneKey: currentSceneIdentity.sceneKey,
+              promptHash: currentSceneIdentity.promptHash,
+            },
+          },
+        })
+      : null;
+  const previousSceneIdentity = resolveCanonicalSceneIdentity(null);
   const sceneRefreshDecision = resolveSceneRefreshDecision({
     transitionType: null,
-    currentSceneKey: currentScene?.sceneKey ?? null,
-    previousSceneKey: null,
+    current: currentSceneIdentity,
+    previous: previousSceneIdentity,
     currentReady: resolvedSceneImage.status === "ready",
     previousReady: false,
   });
+  const artStatus = resolvedSceneArtRow?.status ?? "queued";
+  const artImageUrl = resolvedSceneArtRow?.imageUrl ?? null;
+  const artReady = artStatus === "ready" && Boolean(artImageUrl);
   console.log("scene.art.presentation", {
-    currentSceneKey: currentScene?.sceneKey ?? null,
-    artStatus: resolvedSceneImage.status,
-    promptHash: resolvedSceneImage.promptHash ?? null,
-    ready: resolvedSceneImage.status === "ready",
+    currentSceneKey: currentSceneIdentity.sceneKey,
+    artStatus,
+    promptHash: currentSceneIdentity.promptHash,
+    ready: artReady,
   });
   const visualDeltas = buildVisualDeltasFromLedger(latestTurn?.ledgerAdds ?? []);
   const sceneImageCaption =
-    resolvedSceneImage.status === "ready" &&
-    resolvedSceneImage.imageUrl &&
+    artReady &&
+    artImageUrl &&
     visualDeltas.length > 0
       ? getSceneImageUpdateCaption(visualDeltas)
       : null;
+
+  const initialSceneArt = {
+    ...resolvedSceneImage,
+    sceneKey: currentSceneIdentity.sceneKey,
+    promptHash: currentSceneIdentity.promptHash,
+    status: artStatus,
+    imageUrl: artImageUrl,
+    ready: artReady,
+  };
 
   return (
     <main className="mx-auto max-w-6xl p-6">
@@ -656,7 +694,7 @@ let persistedAdventureOwnerId: string | null = null;
           statePanel={statePanel}
           currentScenario={currentScenario}
           dbOffline={dbOffline}
-          sceneImage={resolvedSceneImage}
+          sceneImage={initialSceneArt}
           sceneImageCaption={sceneImageCaption}
           sceneRefreshDecision={sceneRefreshDecision}
           sceneKey={resolvedSceneKey}

@@ -32,6 +32,7 @@ import type { SceneArtStatus, SceneArtStatusResponse } from "@/lib/sceneArtStatu
 import type { TurnApiResponse, TurnInputPayload } from "@/lib/turnApi";
 import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";
 import { useRouter } from "next/navigation";
+import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
 
@@ -238,13 +239,14 @@ export default function PlayClient({
   const lastSceneKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const sceneKey = liveSceneArt?.sceneKey;
+    const promptHash = liveSceneArt?.promptHash ?? null;
     const currentStatus = liveSceneArt?.status ?? "missing";
     if (sceneKey !== lastSceneKeyRef.current) {
       lastSceneKeyRef.current = sceneKey;
       lastLoggedStatusRef.current = null;
     }
 
-    if (!sceneKey) {
+    if (!sceneKey || !promptHash) {
       return;
     }
 
@@ -337,7 +339,11 @@ export default function PlayClient({
         return;
       }
       try {
-        const response = await fetch(`/api/scene-art?sceneKey=${encodeURIComponent(sceneKey)}`);
+        const params = new URLSearchParams({
+          sceneKey,
+          promptHash,
+        });
+        const response = await fetch(`/api/scene-art?${params.toString()}`);
         if (cancelled) return;
         if (!response.ok) {
           handleFailure("missing");
@@ -345,7 +351,20 @@ export default function PlayClient({
         }
         const payload = (await response.json()) as SceneArtStatusResponse;
         if (cancelled) return;
-        const sceneArt = payload.sceneArt;
+        const identity = resolveCanonicalSceneIdentity(payload.sceneArt);
+        const sceneArt = payload.sceneArt
+          ? {
+              ...payload.sceneArt,
+              sceneKey: identity.sceneKey ?? payload.sceneArt.sceneKey,
+              promptHash: identity.promptHash ?? payload.sceneArt.promptHash ?? null,
+            }
+          : null;
+        console.log("scene.art.client.poll_result", {
+          sceneKey: sceneArt?.sceneKey ?? null,
+          promptHash: sceneArt?.promptHash ?? null,
+          status: sceneArt?.status ?? null,
+          imageUrl: sceneArt?.imageUrl ?? null,
+        });
         if (!sceneArt) {
           handleFailure("missing");
           return;
@@ -355,17 +374,28 @@ export default function PlayClient({
           return;
         }
 
-        const nextStatus = sceneArt.status ?? "missing";
-        logSceneArtStatus(nextStatus);
-        if (nextStatus !== "queued") {
-          if (nextStatus === "ready") {
-            logAndSetReady("ready", sceneArt.imageUrl ?? fallbackImageUrl);
-          } else {
-            handleFailure(nextStatus);
-          }
+        const resolvedImageUrl = sceneArt.imageUrl ?? null;
+        const sceneArtStatus = sceneArt.status ?? "missing";
+        const isSceneArtRendering = sceneArtStatus === "queued" || sceneArtStatus === "generating";
+        const isSceneArtReady =
+          sceneArtStatus === "ready" &&
+          !!resolvedImageUrl &&
+          !resolvedImageUrl.includes("generated-placeholder");
+        const isSceneArtFailed = sceneArtStatus === "failed";
+        const resolvedBackdropUrl = isSceneArtReady ? resolvedImageUrl : null;
+
+        if (isSceneArtReady && resolvedBackdropUrl) {
+          logAndSetReady("ready", resolvedBackdropUrl);
+          return;
+        }
+        if (isSceneArtFailed) {
+          handleFailure(sceneArtStatus);
           return;
         }
 
+        const normalizedSceneArt = {
+          ...sceneArt,
+        };
         setLiveSceneArt((prev) => {
           if (cancelled) return prev;
           if (
@@ -377,11 +407,13 @@ export default function PlayClient({
             return prev;
           }
           return {
+            ...normalizedSceneArt,
             imageUrl: sceneArt.imageUrl ?? fallbackImageUrl,
             source: "scene",
             pending: true,
             sceneKey,
             status: "queued",
+            promptHash: normalizedSceneArt.promptHash ?? null,
           };
         });
         logSceneArtStatus("queued");
@@ -485,13 +517,19 @@ export default function PlayClient({
       handleSceneTransitionUpdate(result.sceneTransition ?? null);
 
       if (result.sceneArt) {
-        setLiveSceneArt({
-          imageUrl: result.sceneArt.imageUrl,
-          source: "scene",
-          pending: result.sceneArt.status !== "ready",
-          sceneKey: result.sceneArt.sceneKey,
-          status: result.sceneArt.status,
-        });
+        if (!result.sceneArt.sceneKey || !result.sceneArt.promptHash) {
+          console.error("scene.art.client.identity_missing_after_turn", result.sceneArt);
+        } else {
+          setLiveSceneArt({
+            imageUrl: result.sceneArt.imageUrl,
+            source: "scene",
+            pending: !result.sceneArt.hasReadyImage,
+            sceneKey: result.sceneArt.sceneKey,
+            status: result.sceneArt.status,
+            promptHash: result.sceneArt.promptHash,
+            hasReadyImage: result.sceneArt.hasReadyImage,
+          });
+        }
       }
       setLiveSceneContinuity(result.sceneContinuity ?? null);
 
@@ -560,6 +598,13 @@ export default function PlayClient({
     return buildLatestTurnViewModel(latestDisplayTurn, displayPressureStage);
   }, [displayPressureStage, latestDisplayTurn]);
 
+  const liveStatus = liveSceneArt?.status ?? "missing";
+  const hasReadyImage =
+    liveStatus === "ready" &&
+    !!liveSceneArt?.imageUrl &&
+    !liveSceneArt.imageUrl.includes("generated-placeholder");
+  const resolvedBackdropUrl = hasReadyImage ? liveSceneArt?.imageUrl ?? null : null;
+
   const recentTurnRows = useMemo(
     () => recentDisplayTurns.map((turn) => buildAdventureHistoryRowViewModel(turn, displayPressureStage)),
     [displayPressureStage, recentDisplayTurns]
@@ -611,6 +656,15 @@ export default function PlayClient({
       turnDividerTimeoutRef.current = null;
     }
   }, []);
+
+  console.log("scene.art.client.render_state", {
+    liveStatus,
+    sceneKey: liveSceneArt?.sceneKey ?? null,
+    promptHash: liveSceneArt?.promptHash ?? null,
+    imageUrl: liveSceneArt?.imageUrl ?? null,
+    resolvedBackdropUrl,
+    hasReadyImage,
+  });
 
   const hero = useMemo(() => {
     if (!adventureId) return null;

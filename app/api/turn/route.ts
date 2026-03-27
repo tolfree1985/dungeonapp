@@ -32,7 +32,7 @@ import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
-import { findSceneArt, queueSceneArt, type RenderMode } from "@/lib/sceneArtRepo";
+import { buildSceneArtLookupIdentity, findSceneArt, queueSceneArt, type RenderMode } from "@/lib/sceneArtRepo";
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
@@ -78,6 +78,7 @@ import {
 } from "@/server/scene/continuity";
 
 import { deriveSceneIdentityFromTurnState } from "@/server/scene/derive-scene-identity";
+import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
 import { buildSceneKey as buildSceneIdentityKey, decideSceneDeltaKind, type SceneIdentity } from "@/server/scene/scene-identity";
 import { evaluateSceneArtVisualTrigger } from "@/lib/scene-art/visualTriggerIntegration";
 import { applyShotTransitionRules } from "@/server/scene/shot-transition";
@@ -107,6 +108,7 @@ import { resolveFinalizedComplicationDeltas } from "@/server/scene/finalized-com
 import { resolveNpcSuspicionStance } from "@/server/scene/npc-suspicion-stance";
 import type { NpcSuspicionStance } from "@/server/scene/npc-suspicion-stance";
 import { resolveNpcWatchfulness, type NpcWatchfulnessLevel } from "@/server/scene/npc-watchfulness";
+import { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
 import {
   deriveIntentMode,
   resolveWatchfulnessActionFlags,
@@ -123,6 +125,25 @@ import { buildResolverLadder } from "@/server/scene/build-resolver-ladder";
 
 function computeTimeAdvanceDelta(current: number, previous: number): number {
   return Math.max(0, current - previous);
+}
+
+function buildCanonicalSceneArtResponse(input: {
+  sceneKey: string | null;
+  promptHash: string | null;
+  status: string;
+  imageUrl: string | null;
+}): CanonicalSceneArtState | null {
+  const { sceneKey, promptHash, status, imageUrl } = input;
+  if (!sceneKey || !promptHash) {
+    return null;
+  }
+  return {
+    sceneKey,
+    promptHash,
+    status,
+    imageUrl,
+    hasReadyImage: status === "ready" && Boolean(imageUrl),
+  };
 }
 import { buildFinalizedConsequenceResult } from "@/server/scene/finalized-consequence-result";
 import { buildFinalizedConsequenceNarration } from "@/server/scene/finalized-consequence-narration";
@@ -343,6 +364,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
   let leaseKeyForCleanup = "";
   let requestBody: Partial<PostBody> | null = null;
   let user: AuthenticatedUser | null = deps.getUser ? deps.getUser(req) : getOptionalUser(req);
+  let renderMode: RenderMode = "full";
+  let failForwardComplication: string | null = null;
+  let opportunityResolutionModifier: string | null = null;
+  let opportunityCost: string | null = null;
 
   if (!user && process.env.NODE_ENV !== "production") {
     user = { id: "dev-user", authMethod: "session" } as AuthenticatedUser;
@@ -544,30 +569,41 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           state: persistedStateRecord,
           subject: persistedSubjectState,
         });
-        const canonicalPayload = buildCanonicalSceneArtPayload({
+        const fallbackRenderPayload = buildCanonicalSceneArtPayload({
           turn: persistedLatestTurn,
           state: persistedStateRecord,
         });
-        if (canonicalPayload) {
-          const existingSceneArt = await findSceneArt(canonicalPayload.sceneKey);
+        if (fallbackRenderPayload) {
+          const canonicalLookup = buildSceneArtLookupIdentity(fallbackRenderPayload);
+          const existingSceneArt = await findSceneArt(canonicalLookup);
+          const currentIdentity = resolveCanonicalSceneIdentity({
+            sceneKey: canonicalLookup.sceneKey,
+            promptHash: canonicalLookup.promptHash,
+          });
           const refreshDecision = resolveSceneRefreshDecision({
             transitionType: null,
-            currentSceneKey: canonicalPayload.sceneKey,
-            previousSceneKey: null,
+            current: currentIdentity,
+            previous: resolveCanonicalSceneIdentity(null),
             currentReady: existingSceneArt?.status === "ready",
             previousReady: false,
           });
+          console.log("scene.art.turn.identity.debug", {
+            fallbackRenderPayload,
+            currentIdentity,
+            source: "app/api/turn/route.ts:MODEL_ERROR-branch",
+          });
           console.log("sceneArt refresh decision", {
-            sceneKey: canonicalPayload.sceneKey,
+            sceneKey: currentIdentity.sceneKey,
+            promptHash: currentIdentity.promptHash,
             decision: refreshDecision,
             branch: "legacy",
             reason: "MODEL_ERROR",
           });
           const shouldQueue = refreshDecision.shouldQueueRender && !existingSceneArt;
           if (shouldQueue) {
-            const queued = await queueSceneArt(canonicalPayload, ENGINE_VERSION);
+            const queued = await queueSceneArt(fallbackRenderPayload, ENGINE_VERSION);
             sceneArtResult = {
-              sceneKey: canonicalPayload.sceneKey,
+              sceneKey: fallbackRenderPayload.sceneKey,
               status: queued.status,
               imageUrl: queued.imageUrl,
             };
@@ -588,10 +624,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           (persistedLatestTurnDebug?.sceneContinuityInfo as SceneContinuityInfo | null) ?? null;
         const fallbackTurnIndex = (persistedLatestTurn?.turnIndex ?? 0) + 1;
         const fallbackSceneContinuity =
-          canonicalPayload
+          fallbackRenderPayload
             ? buildFallbackContinuity({
-                currentSceneKey: canonicalPayload.sceneKey,
-                currentIdentityKey: canonicalPayload.sceneKey,
+                currentSceneKey: fallbackRenderPayload.sceneKey,
+                currentIdentityKey: fallbackRenderPayload.sceneKey,
                 previous: persistedLatestContinuityInfo,
                 turnIndex: fallbackTurnIndex,
               })
@@ -980,9 +1016,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       sceneArtPayload && currentShotKey
         ? await getCachedSceneArt(sceneArtPayload.sceneKey, currentShotKey)
         : null;
+    const sceneArtLookup = sceneArtPayload ? buildSceneArtLookupIdentity(sceneArtPayload) : null;
     let existingSceneArt =
       cachedSceneArt ??
-      (sceneArtPayload ? await findSceneArt(sceneArtPayload.sceneKey) : null);
+      (sceneArtLookup ? await findSceneArt(sceneArtLookup) : null);
     if (!cachedSceneArt && existingSceneArt) {
       await maybeCacheSceneArt(existingSceneArt);
     }
@@ -1175,7 +1212,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     let hasPreviousCanonicalPayload = false;
     let debugHasPreviousSceneArt = false;
     let renderDecisionOutcome: ReturnType<typeof decideRender> | null = null;
-    let renderMode: RenderMode = "full";
+    renderMode = "full";
     if (refreshDecision && canonicalPayload) {
       const isInitialTurn = previousTurn === null;
       const continuityReason: SceneContinuityReason = (() => {
@@ -1557,7 +1594,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           },
         }
       : null;
-    const failForwardComplication = resolveFailForwardComplication({
+    failForwardComplication = resolveFailForwardComplication({
       signal: failForwardSignal,
       encounterPhase: currentSceneIdentity.encounterPhase,
       deltaKind: finalizedSceneDeltaKind,
@@ -1653,6 +1690,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     stateRecord.complicationWeightDelta = complicationWeight.complicationWeightDelta;
     stateRecord.complicationTier = complicationTier.complicationTier;
     stateRecord.forcedComplicationCount = resolverLadder.forcedComplicationCount;
+    const forcedComplicationCount = resolverLadder.forcedComplicationCount ?? 0;
     const outcomeSeverity = resolverLadder.outcomeSeverity;
     stateRecord.outcomeSeverity = outcomeSeverity;
     stateRecord.consequenceBudgetExtraCostCount = resolverLadder.consequenceBudgetExtraCostCount;
@@ -1768,14 +1806,14 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           },
         }
       : null;
-    const complicationPolicyEntry = complicationSelectionPolicy.forcedComplicationCount > 0
+    const complicationPolicyEntry = forcedComplicationCount > 0
       ? {
           kind: "complication.policy",
           domain: "resolution",
           cause: "complication.tier",
           effect: `complication-policy.${complicationTier.complicationTier}`,
           data: {
-            forcedComplicationCount: complicationSelectionPolicy.forcedComplicationCount,
+            forcedComplicationCount,
             complicationTier: complicationTier.complicationTier,
             turnIndex: latestTurn?.turnIndex ?? null,
           },
@@ -1879,7 +1917,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           effect: `outcome-severity.${outcomeSeverity}` as FinalizedEffectSummary,
           data: {
             outcomeSeverity,
-            forcedComplicationCount: complicationSelectionPolicy.forcedComplicationCount,
+            forcedComplicationCount,
             turnIndex: latestTurn?.turnIndex ?? null,
           },
         }
@@ -1944,10 +1982,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             },
           }
         : null;
-    const opportunityResolutionModifier = resolveOpportunityResolutionModifier({
+    opportunityResolutionModifier = resolveOpportunityResolutionModifier({
       opportunityTier: opportunityWindowState.opportunityTier,
     });
-    const opportunityCost = resolveOpportunityCost({
+    opportunityCost = resolveOpportunityCost({
       opportunityResolutionModifier,
       deltaKind: finalizedSceneDeltaKind,
       encounterPhase: currentSceneIdentity.encounterPhase,
@@ -2084,10 +2122,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     });
     const complicationPolicyResult = enforceComplicationPolicy({
       finalizedComplications: resolvedFinalizedComplications,
-      forcedComplicationCount: complicationSelectionPolicy.forcedComplicationCount,
+      forcedComplicationCount,
     });
     const enforcedFinalizedComplications = complicationPolicyResult.finalizedComplications;
-    if (enforcedFinalizedComplications.length < complicationSelectionPolicy.forcedComplicationCount) {
+    if (enforcedFinalizedComplications.length < forcedComplicationCount) {
       throw new Error("COMPULSION_POLICY_INVARIANT_FAILED");
     }
     const finalizedComplicationDeltas = resolveFinalizedComplicationDeltas(enforcedFinalizedComplications);
@@ -2454,6 +2492,17 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     }
 
     await maybeCacheSceneArt(sceneArtResult);
+    const responseSceneArt = buildCanonicalSceneArtResponse({
+      sceneKey:
+        sceneArtResult?.sceneKey ??
+        canonicalPayload?.sceneKey ??
+        currentSceneIdentity.sceneKey ??
+        null,
+      promptHash:
+        sceneArtResult?.promptHash ?? canonicalPayload?.promptHash ?? currentSceneIdentity.promptHash ?? null,
+      status: sceneArtResult?.status ?? "queued",
+      imageUrl: sceneArtResult?.imageUrl ?? null,
+    });
 
     return NextResponse.json(
       {
@@ -2469,7 +2518,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         },
         stateDeltas: turnStateDeltas,
         ledgerAdds: ledgerAddsWithVisual,
-        sceneArt: sceneArtResult,
+        sceneArt: responseSceneArt,
         sceneTransition: sceneTransitionPayload,
         scenePresentation,
         sceneContinuity: finalContinuityInfo,

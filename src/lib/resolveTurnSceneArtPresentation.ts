@@ -25,6 +25,7 @@ import { resolveSceneCompositionBias, type SceneCompositionBias } from "@/lib/re
 import { resolveSceneThreatFraming, buildThreatFramingTags, type SceneThreatFraming } from "@/lib/resolveSceneThreatFraming";
 import { buildSceneCanonicalTags, DEFAULT_SCENE_CANONICAL_TAG_POLICY, type SceneCanonicalTagPolicy } from "@/lib/sceneCanonicalTagPolicy";
 import { resolveSceneDirectorDecision, type SceneDirectorDecision } from "@/lib/resolveSceneDirectorDecision";
+import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
 
 type SceneComposition = {
   visual: SceneVisualState;
@@ -119,7 +120,10 @@ export function resolveTurnSceneArtPresentation(
     canonicalPayload: null,
     sceneArt: null,
   };
-  const previousSceneKey = previousSceneContinuitySafe.sceneKey;
+  const previousSceneIdentity = resolveCanonicalSceneIdentity(
+    previousSceneContinuitySafe.canonicalPayload,
+  );
+  const previousSceneKey = previousSceneIdentity.sceneKey;
   const previousSceneArtForPreviousKey = previousSceneContinuitySafe.sceneArt;
   const previousSceneArtKeyMismatch = previousSceneContinuitySafe.sceneArtKeyMismatch ?? false;
 
@@ -287,6 +291,7 @@ export function resolveTurnSceneArtPresentation(
     revealStructureTags: canonicalTagResult.revealStructureTags,
     directorDecision: directorPresentation,
   });
+  const currentSceneIdentity = resolveCanonicalSceneIdentity(canonicalPayload);
 
   const adjustedDeltaKind = adjustDeltaKindForHold(
     args.sceneDeltaKind ?? null,
@@ -297,8 +302,8 @@ export function resolveTurnSceneArtPresentation(
   let refreshDecision = canonicalPayload
     ? resolveSceneRefreshDecision({
         transitionType: sceneTransition.type,
-        currentSceneKey: canonicalPayload.sceneKey,
-        previousSceneKey,
+        current: currentSceneIdentity,
+        previous: previousSceneIdentity,
         currentReady: previousSceneArt?.status === "ready",
         previousReady: previousSceneArtForPreviousKey?.status === "ready",
         transitionMemory,
@@ -320,8 +325,10 @@ export function resolveTurnSceneArtPresentation(
     refreshDecision?.renderPlan === "reuse-current" && degradedReason !== null;
   if (refreshDecision && shouldForceQueueForDegradedContinuity) {
     console.warn("scene.render.degraded_enqueue", {
-      sceneKey: canonicalPayload?.sceneKey ?? null,
+      sceneKey: currentSceneIdentity.sceneKey,
+      promptHash: currentSceneIdentity.promptHash,
       previousSceneKey,
+      previousPromptHash: previousSceneIdentity.promptHash,
       degradedReason,
     });
     refreshDecision = {

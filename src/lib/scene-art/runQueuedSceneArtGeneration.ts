@@ -5,6 +5,7 @@ import { SceneArtExecutionContext, generateSceneArtForExecutionContext } from "@
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
 import { getSceneArtWorkerRuntimeConfig } from "@/lib/scene-art/workerRuntimeConfig";
+import { findSceneArt } from "@/lib/sceneArtRepo";
 
 export type SceneArtIdentityInput = {
   sceneKey: string;
@@ -25,21 +26,27 @@ function buildExecutionContext(row: Prisma.SceneArtGetPayload<{}>): SceneArtExec
   };
 }
 
+export type SceneArtAttemptOutcome = "ready" | "queued" | "failed";
+
 export type SceneArtAttemptResult = {
   sceneKey: string;
   promptHash: string;
   lastAttemptCostUsd: number;
+  outcome: SceneArtAttemptOutcome;
+  billable: boolean;
 };
 
 export interface SceneArtAttemptError extends Error {
   attemptResult?: SceneArtAttemptResult;
 }
 
-function attemptResultFromRow(row: SceneArtRow): SceneArtAttemptResult {
+function attemptResultFromRow(row: SceneArtRow, outcome: SceneArtAttemptOutcome): SceneArtAttemptResult {
   return {
     sceneKey: row.sceneKey,
     promptHash: row.promptHash,
     lastAttemptCostUsd: row.lastAttemptCostUsd ?? 0,
+    outcome,
+    billable: true,
   };
 }
 
@@ -98,12 +105,13 @@ export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInpu
     return;
   }
 
-  const claimedRow = await prisma.sceneArt.findUniqueOrThrow({
-    where: {
-      sceneKey: row.sceneKey,
-      promptHash: row.promptHash,
-    },
+  const claimedRow = await findSceneArt({
+    sceneKey: row.sceneKey,
+    promptHash: row.promptHash,
   });
+  if (!claimedRow) {
+    throw new Error(`runQueuedSceneArtGeneration: row missing after claim ${row.sceneKey}/${row.promptHash}`);
+  }
   logSceneArtEvent("scene.art.claimed", {
     sceneKey: claimedRow.sceneKey,
     promptHash: claimedRow.promptHash,
@@ -118,17 +126,16 @@ export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInpu
   const context = buildExecutionContext(claimedRow);
   try {
     const updated = await generateSceneArtForExecutionContext(context, { force: true });
-    return attemptResultFromRow(updated);
+    return attemptResultFromRow(updated, "ready");
   } catch (error) {
-    const updated = await prisma.sceneArt.findUniqueOrThrow({
-      where: {
-        sceneKey: row.sceneKey,
-        promptHash: row.promptHash,
-      },
+    const updated = await findSceneArt({
+      sceneKey: row.sceneKey,
+      promptHash: row.promptHash,
     });
-    const attemptResult = attemptResultFromRow(updated);
-    const attemptError = (error as SceneArtAttemptError) || new Error(String(error));
-    attemptError.attemptResult = attemptResult;
-    throw attemptError;
+    if (!updated) {
+      throw new Error(`runQueuedSceneArtGeneration: row missing after failure ${row.sceneKey}/${row.promptHash}`);
+    }
+    const attemptResult = attemptResultFromRow(updated, updated.status === SceneArtStatus.queued ? "queued" : "failed");
+    return attemptResult;
   }
 }

@@ -1,5 +1,6 @@
 import type { SceneTransitionMemory } from "./sceneTypes";
 import type { SceneDeltaKind } from "./resolveSceneDeltaKind";
+import type { CanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
 
 export type SceneRefreshDecision = {
   shouldQueueRender: boolean;
@@ -10,8 +11,8 @@ export type SceneRefreshDecision = {
 
 export type ResolveSceneRefreshDecisionArgs = {
   transitionType: "hold" | "advance" | "cut" | null;
-  currentSceneKey: string | null;
-  previousSceneKey: string | null;
+  current: CanonicalSceneIdentity;
+  previous: CanonicalSceneIdentity;
   currentReady: boolean;
   previousReady: boolean;
   transitionMemory?: SceneTransitionMemory | null;
@@ -24,7 +25,23 @@ export function resolveSceneRefreshDecision(
   args: ResolveSceneRefreshDecisionArgs,
 ): SceneRefreshDecision {
   const type = args.transitionType ?? "cut";
-  const keysDiffer = args.currentSceneKey !== args.previousSceneKey;
+  const hasCurrentIdentity = Boolean(args.current.sceneKey && args.current.promptHash);
+  const hasPreviousIdentity = Boolean(args.previous.sceneKey && args.previous.promptHash);
+  if (!hasCurrentIdentity || !hasPreviousIdentity) {
+    console.debug("scene.delta.identity_missing", {
+      current: args.current,
+      previous: args.previous,
+    });
+    return {
+      shouldQueueRender: true,
+      shouldReuseCurrentImage: false,
+      shouldSwapImmediatelyWhenReady: false,
+      renderPlan: "queue-full-render",
+    };
+  }
+  const currentSceneKey = args.current.sceneKey;
+  const previousSceneKey = args.previous.sceneKey;
+  const keysDiffer = currentSceneKey !== previousSceneKey;
   const memory = args.transitionMemory ?? null;
   const deltaKind = args.sceneDeltaKind ?? null;
   const fullyPreserved =
@@ -48,8 +65,10 @@ export function resolveSceneRefreshDecision(
   if (deltaKind === null) {
     if (!isVitestTest && process.env.NODE_ENV !== "test") {
       console.warn("scene.delta.missing", {
-        sceneKey: args.currentSceneKey,
-        previousSceneKey: args.previousSceneKey,
+        sceneKey: currentSceneKey,
+        previousSceneKey,
+        currentPromptHash: args.current.promptHash,
+        previousPromptHash: args.previous.promptHash,
       });
     }
     const renderPlanFallback = keysDiffer ? "queue-full-render" : "reuse-current";
@@ -69,7 +88,7 @@ export function resolveSceneRefreshDecision(
   let renderPlan: SceneRenderPlan;
   if (reuseKinds.has(deltaKind)) {
     renderPlan = "reuse-current";
-  } else if (args.currentSceneKey && args.previousSceneKey && !keysDiffer) {
+  } else if (currentSceneKey && previousSceneKey && !keysDiffer) {
     renderPlan = "keep-current-while-queued";
   } else {
     renderPlan = "queue-full-render";
@@ -77,8 +96,8 @@ export function resolveSceneRefreshDecision(
 
   if (deltaKind === "full" && renderPlan === "reuse-current") {
     console.error("scene.render.invariant_violation", {
-      sceneKey: args.currentSceneKey,
-      previousSceneKey: args.previousSceneKey,
+      sceneKey: currentSceneKey,
+      previousSceneKey,
       deltaKind,
       renderPlan,
     });
