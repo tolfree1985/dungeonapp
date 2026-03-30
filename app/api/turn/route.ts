@@ -32,12 +32,14 @@ import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
-import { buildSceneArtLookupIdentity, findSceneArt, queueSceneArt, type RenderMode } from "@/lib/sceneArtRepo";
+import { findSceneArt, queueSceneArt, type RenderMode } from "@/lib/sceneArtRepo";
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
+import { SceneArtStatus } from "@/generated/prisma";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import { SceneTransition, resolveSceneTransition } from "@/lib/resolveSceneTransition";
+import { buildFinalSceneArtContract, resolveFinalSceneArtRow } from "@/lib/scene-art/sceneArtContract";
 import { resolveSceneTransitionMemory } from "@/lib/resolveSceneTransitionMemory";
 import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import type { SceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
@@ -122,6 +124,7 @@ import { resolveComplicationSelectionPolicy } from "@/server/scene/complication-
 import { enforceComplicationPolicy } from "@/server/scene/enforce-complication-policy";
 import { resolveOutcomeSeverity } from "@/server/scene/outcome-severity";
 import { buildResolverLadder } from "@/server/scene/build-resolver-ladder";
+import { assertSceneArtInvariant } from "@/lib/scene-art/assertSceneArtInvariant";
 
 function computeTimeAdvanceDelta(current: number, previous: number): number {
   return Math.max(0, current - previous);
@@ -144,6 +147,15 @@ function buildCanonicalSceneArtResponse(input: {
     imageUrl,
     hasReadyImage: status === "ready" && Boolean(imageUrl),
   };
+}
+
+function logFinalSceneArtContract(responseBody: { sceneArt?: CanonicalSceneArtState | null }) {
+  console.log("api.turn.final_scene_art_contract", {
+    hasSceneArt: !!responseBody.sceneArt,
+    sceneKey: responseBody.sceneArt?.sceneKey ?? null,
+    promptHash: responseBody.sceneArt?.promptHash ?? null,
+    status: responseBody.sceneArt?.status ?? null,
+  });
 }
 import { buildFinalizedConsequenceResult } from "@/server/scene/finalized-consequence-result";
 import { buildFinalizedConsequenceNarration } from "@/server/scene/finalized-consequence-narration";
@@ -513,7 +525,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       orderBy: { seq: "desc" },
     });
 
-    let sceneArtResult: { sceneKey: string; status: string; imageUrl: string | null } | null = null;
+    let sceneArtResult: CanonicalSceneArtState | null = null;
 
     if (prevApplied?.turnJson) {
       try {
@@ -569,53 +581,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           state: persistedStateRecord,
           subject: persistedSubjectState,
         });
-        const fallbackRenderPayload = buildCanonicalSceneArtPayload({
-          turn: persistedLatestTurn,
-          state: persistedStateRecord,
-        });
-        if (fallbackRenderPayload) {
-          const canonicalLookup = buildSceneArtLookupIdentity(fallbackRenderPayload);
-          const existingSceneArt = await findSceneArt(canonicalLookup);
-          const currentIdentity = resolveCanonicalSceneIdentity({
-            sceneKey: canonicalLookup.sceneKey,
-            promptHash: canonicalLookup.promptHash,
-          });
-          const refreshDecision = resolveSceneRefreshDecision({
-            transitionType: null,
-            current: currentIdentity,
-            previous: resolveCanonicalSceneIdentity(null),
-            currentReady: existingSceneArt?.status === "ready",
-            previousReady: false,
-          });
-          console.log("scene.art.turn.identity.debug", {
-            fallbackRenderPayload,
-            currentIdentity,
-            source: "app/api/turn/route.ts:MODEL_ERROR-branch",
-          });
-          console.log("sceneArt refresh decision", {
-            sceneKey: currentIdentity.sceneKey,
-            promptHash: currentIdentity.promptHash,
-            decision: refreshDecision,
-            branch: "legacy",
-            reason: "MODEL_ERROR",
-          });
-          const shouldQueue = refreshDecision.shouldQueueRender && !existingSceneArt;
-          if (shouldQueue) {
-            const queued = await queueSceneArt(fallbackRenderPayload, ENGINE_VERSION);
-            sceneArtResult = {
-              sceneKey: fallbackRenderPayload.sceneKey,
-              status: queued.status,
-              imageUrl: queued.imageUrl,
-            };
-          } else if (existingSceneArt) {
-            sceneArtResult = {
-              sceneKey: existingSceneArt.sceneKey,
-              status: existingSceneArt.status,
-              imageUrl: existingSceneArt.imageUrl,
-            };
-          }
-        }
-
         const persistedLatestTurnDebug = (asRecord(persistedLatestTurn?.debug ?? null) ?? {}) as Record<
           string,
           unknown
@@ -623,15 +588,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         const persistedLatestContinuityInfo =
           (persistedLatestTurnDebug?.sceneContinuityInfo as SceneContinuityInfo | null) ?? null;
         const fallbackTurnIndex = (persistedLatestTurn?.turnIndex ?? 0) + 1;
-        const fallbackSceneContinuity =
-          fallbackRenderPayload
-            ? buildFallbackContinuity({
-                currentSceneKey: fallbackRenderPayload.sceneKey,
-                currentIdentityKey: fallbackRenderPayload.sceneKey,
-                previous: persistedLatestContinuityInfo,
-                turnIndex: fallbackTurnIndex,
-              })
-            : null;
+        const fallbackSceneContinuity = null;
         if (fallbackSceneContinuity && persistedLatestTurn?.id) {
           await db.turn.update({
             where: { id: persistedLatestTurn.id },
@@ -643,22 +600,56 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             },
           });
         }
-        return NextResponse.json(
-          {
-            ok: true,
-            replayed: true,
-            idempotencyKey,
-            turnEventId: prevApplied.eventId,
-            action: action ?? null,
-            tags,
-            rollTotal: rollTotal ?? null,
-            stateDeltas: [],
-            ledgerAdds: [],
-            sceneArt: sceneArtResult,
-            sceneContinuity: fallbackSceneContinuity,
-          },
-          { status: 200 }
-        );
+        const persistedScenePresentation = persistedLatestTurnDebug?.scenePresentation as Record<string, unknown> | null;
+        const persistedSceneIdentity = persistedLatestTurnDebug?.sceneIdentity as Record<string, unknown> | null;
+        const persistedSceneContinuity = persistedLatestTurnDebug?.sceneContinuityInfo as Record<string, unknown> | null;
+        const replaySceneKey =
+          (typeof persistedSceneIdentity?.sceneKey === "string" && persistedSceneIdentity.sceneKey) ??
+          (typeof persistedScenePresentation?.currentSceneKey === "string" && persistedScenePresentation.currentSceneKey) ??
+          (typeof persistedSceneContinuity?.sceneKey === "string" && persistedSceneContinuity.sceneKey) ??
+          null;
+        const replayPromptHash =
+          (typeof persistedSceneIdentity?.promptHash === "string" && persistedSceneIdentity.promptHash) ??
+          (typeof persistedScenePresentation?.promptHash === "string" && persistedScenePresentation.promptHash) ??
+          (typeof persistedSceneContinuity?.promptHash === "string" && persistedSceneContinuity.promptHash) ??
+          null;
+        const existingSceneArtRow =
+          replaySceneKey && replayPromptHash
+            ? await db.sceneArt.findUnique({
+                where: {
+                  sceneKey_promptHash: {
+                    sceneKey: replaySceneKey,
+                    promptHash: replayPromptHash,
+                  },
+                },
+              })
+            : null;
+        const finalSceneArtRow = await resolveFinalSceneArtRow({
+          existingSceneArt: existingSceneArtRow,
+          refreshDecision: null,
+          sceneArtPayload: null,
+          renderPriority: "normal",
+          renderMode: "full",
+          engineVersion: ENGINE_VERSION,
+        });
+
+        const finalSceneArt = buildFinalSceneArtContract(finalSceneArtRow);
+        console.log("TURN_SCENE_ART_RETURN (replay)", finalSceneArt);
+        const responseBody = {
+          ok: true,
+          replayed: true,
+          idempotencyKey,
+          turnEventId: prevApplied.eventId,
+          action: action ?? null,
+          tags,
+          rollTotal: rollTotal ?? null,
+          stateDeltas: [],
+          ledgerAdds: [],
+          sceneArt: finalSceneArt,
+          sceneContinuity: fallbackSceneContinuity,
+        };
+        logFinalSceneArtContract(responseBody);
+        return NextResponse.json(responseBody, { status: 200 });
       }
     }
 
@@ -984,13 +975,39 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     };
     const currentShotKey = buildSceneShotKey(currentShotIdentity);
     const shotPersisted = previousShotKey !== null && currentShotKey === previousShotKey;
-    const sceneArtPayload =
-      shotPersisted && previousSceneContinuity.canonicalPayload
-        ? previousSceneContinuity.canonicalPayload
-        : buildCanonicalSceneArtPayload({
-            turn: latestTurn,
-            state: stateRecord,
-          });
+    const shouldReuseCachedPayload =
+      shotPersisted &&
+      previousSceneContinuity.canonicalPayload &&
+      typeof previousSceneContinuity.canonicalPayload.promptHash === "string" &&
+      previousSceneContinuity.canonicalPayload.promptHash.length > 0;
+    const canonicalSceneArtPayload = shouldReuseCachedPayload
+      ? previousSceneContinuity.canonicalPayload!
+      : buildCanonicalSceneArtPayload({
+          turn: latestTurn,
+          state: stateRecord,
+        });
+    if (canonicalSceneArtPayload && !canonicalSceneArtPayload.promptHash) {
+      throw new Error("scene-art invariant violated: canonical payload missing promptHash");
+    }
+    const sceneIdentity =
+      canonicalSceneArtPayload?.sceneKey && canonicalSceneArtPayload?.promptHash
+        ? {
+            sceneKey: canonicalSceneArtPayload.sceneKey,
+            promptHash: canonicalSceneArtPayload.promptHash,
+          }
+        : null;
+    const canonicalSceneIdentityLog = {
+      sceneKey: sceneIdentity?.sceneKey ?? null,
+      promptHash: sceneIdentity?.promptHash ?? null,
+    };
+    console.log("scene.identity.canonical_source", canonicalSceneIdentityLog);
+    if (canonicalSceneArtPayload && !sceneIdentity) {
+      console.error("scene.identity.invalid", {
+        sceneKey: canonicalSceneArtPayload.sceneKey ?? null,
+        promptHash: canonicalSceneArtPayload.promptHash ?? null,
+      });
+    }
+    const sceneArtPayload = canonicalSceneArtPayload;
     if (sceneArtPayload) {
       void runSceneArtTriggerIntegration({
         sceneArtPayload,
@@ -1016,7 +1033,9 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       sceneArtPayload && currentShotKey
         ? await getCachedSceneArt(sceneArtPayload.sceneKey, currentShotKey)
         : null;
-    const sceneArtLookup = sceneArtPayload ? buildSceneArtLookupIdentity(sceneArtPayload) : null;
+    const sceneArtLookup = sceneIdentity
+      ? { sceneKey: sceneIdentity.sceneKey, promptHash: sceneIdentity.promptHash }
+      : null;
     let existingSceneArt =
       cachedSceneArt ??
       (sceneArtLookup ? await findSceneArt(sceneArtLookup) : null);
@@ -1509,8 +1528,19 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       legacyRefreshDecision: refreshDecision,
       finalRenderDecision: renderDecisionOutcome,
     });
+    if (sceneArtPayload && (!sceneIdentity?.sceneKey || !sceneIdentity?.promptHash)) {
+      console.error("scene.identity.invalid_before_persist", {
+        sceneArtPayload,
+        sceneIdentity,
+      });
+    }
     if (finalContinuityInfo && latestTurn?.id) {
       const latestTurnDebug = asRecord(latestTurn.debug ?? null) ?? {};
+      const debugSceneIdentity = latestTurnDebug.sceneIdentity ?? null;
+      console.log("scene.identity.persist_write", {
+        sceneIdentity,
+        debugSceneIdentity,
+      });
       latestTurnDebug.failForwardComplication = failForwardComplication ?? null;
       await db.turn.update({
         where: { id: latestTurn.id },
@@ -1518,6 +1548,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           debug: {
             ...latestTurnDebug,
             sceneContinuityInfo: finalContinuityInfo,
+            sceneIdentity: sceneIdentity ?? null,
           },
         },
       });
@@ -1936,6 +1967,140 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           },
         }
       : null;
+    const opportunityCostEffect = resolveOpportunityCostEffect({ opportunityCost });
+    const opportunityCostEffectEntry =
+      (opportunityCostEffect.riskLevelDelta || opportunityCostEffect.costBudgetDelta)
+        ? {
+            kind: "opportunity.cost.effect",
+            domain: "resolution",
+            cause: "opportunity.tier",
+            effect: "opportunity.cost.effect",
+            data: {
+              riskLevelDelta: opportunityCostEffect.riskLevelDelta,
+              costBudgetDelta: opportunityCostEffect.costBudgetDelta,
+              turnIndex: latestTurn?.turnIndex ?? null,
+            },
+          }
+        : null;
+    const watchfulnessCostDelta = watchfulness.costDelta;
+    const resolutionCostBaseDelta = opportunityCostEffect.riskLevelDelta ?? 0;
+    const resolutionCostDelta = resolutionCostBaseDelta + watchfulnessCostDelta;
+    const previousResolutionCost = Number(stateRecord.resolutionCost ?? 0);
+    const nextResolutionCost = Math.max(0, previousResolutionCost + resolutionCostDelta);
+    stateRecord.resolutionCost = nextResolutionCost;
+    const resolutionCostEntry =
+      resolutionCostDelta
+        ? {
+            kind: "resolution.cost",
+            domain: "resolution",
+            cause: "opportunity.cost",
+            effect: "resolution.cost",
+            data: {
+              delta: resolutionCostDelta,
+              value: nextResolutionCost,
+              turnIndex: latestTurn?.turnIndex ?? null,
+              watchfulnessCostDelta,
+            },
+          }
+        : null;
+    const resolutionCostEffect = resolveResolutionCostEffect({ resolutionCost: nextResolutionCost });
+    const resolutionCostEffectEntry = resolutionCostEffect.higherComplicationRisk
+      ? {
+          kind: "resolution.cost.effect",
+          domain: "resolution",
+          cause: "resolution.cost",
+          effect: "higher-complication-risk",
+          data: {
+            resolutionCost: nextResolutionCost,
+            turnIndex: latestTurn?.turnIndex ?? null,
+          },
+        }
+      : null;
+    const complicationRiskEffect = resolveComplicationRiskEffect({
+      higherComplicationRisk: resolutionCostEffect.higherComplicationRisk,
+    });
+    const complicationRiskEntry = complicationRiskEffect.complicationLikely
+      ? {
+          kind: "resolution.complication",
+          domain: "resolution",
+          cause: "complication.risk",
+          effect: "complication-likely",
+          data: {
+            turnIndex: latestTurn?.turnIndex ?? null,
+            resolutionCost: nextResolutionCost,
+          },
+        }
+      : null;
+    const complicationOutcomeEffect = resolveComplicationOutcomeEffect({
+      complicationLikely: complicationRiskEffect.complicationLikely,
+    });
+    const complicationOutcomeEntry =
+      complicationOutcomeEffect.minimumComplicationCount > 0
+        ? {
+            kind: "complication.outcome",
+            domain: "resolution",
+            cause: "complication.likely",
+            effect: "complication-likely",
+            data: {
+              minimumComplicationCount: complicationOutcomeEffect.minimumComplicationCount,
+              turnIndex: latestTurn?.turnIndex ?? null,
+            },
+          }
+        : null;
+    const resolvedFinalizedComplications = resolveFinalizedComplications({
+      minimumComplicationCount: complicationOutcomeEffect.minimumComplicationCount,
+      failForwardComplication,
+    });
+    const complicationPolicyResult = enforceComplicationPolicy({
+      finalizedComplications: resolvedFinalizedComplications,
+      forcedComplicationCount,
+    });
+    const enforcedFinalizedComplications = complicationPolicyResult.finalizedComplications;
+    if (enforcedFinalizedComplications.length < forcedComplicationCount) {
+      throw new Error("COMPULSION_POLICY_INVARIANT_FAILED");
+    }
+    const finalizedComplicationDeltas = resolveFinalizedComplicationDeltas(enforcedFinalizedComplications);
+    const hasComplicationDelta =
+      (finalizedComplicationDeltas.noise ?? 0) ||
+      (finalizedComplicationDeltas.npcSuspicion ?? 0) ||
+      (finalizedComplicationDeltas.positionPenalty ?? 0) ||
+      (finalizedComplicationDeltas.timeAdvance ?? 0);
+    const applyComplicationDeltas = hasComplicationDelta && !failForwardComplication;
+    if (applyComplicationDeltas) {
+      turnStateDeltas.push({
+        key: "Finalized complications",
+        detail: finalizedComplicationDeltas,
+      });
+    }
+    if (failForwardComplication && applyComplicationDeltas) {
+      throw new Error("FINALIZED_COMPILATION_DOUBLE_APPLY");
+    }
+    if (!failForwardComplication && hasComplicationDelta && !applyComplicationDeltas) {
+      throw new Error("FINALIZED_COMPILATION_NOT_APPLIED");
+    }
+    if (failForwardComplication) {
+      const normalizedFinalizedComplicationDeltas = {
+        noise: finalizedComplicationDeltas.noise ?? 0,
+        npcSuspicion: finalizedComplicationDeltas.npcSuspicion ?? 0,
+        positionPenalty: finalizedComplicationDeltas.positionPenalty ?? 0,
+        timeAdvance: finalizedComplicationDeltas.timeAdvance ?? 0,
+      };
+      const normalizedFailForwardDelta = {
+        noise: complicationStateDelta?.noise ?? 0,
+        npcSuspicion: complicationStateDelta?.npcSuspicion ?? 0,
+        positionPenalty: complicationStateDelta?.positionPenalty ?? 0,
+        timeAdvance: complicationStateDelta?.timeAdvance ?? 0,
+      };
+      if (
+        normalizedFinalizedComplicationDeltas.noise !== normalizedFailForwardDelta.noise ||
+        normalizedFinalizedComplicationDeltas.npcSuspicion !== normalizedFailForwardDelta.npcSuspicion ||
+        normalizedFinalizedComplicationDeltas.positionPenalty !== normalizedFailForwardDelta.positionPenalty ||
+        normalizedFinalizedComplicationDeltas.timeAdvance !== normalizedFailForwardDelta.timeAdvance
+      ) {
+        throw new Error("FINALIZED_COMPILATION_DELTA_MISMATCH");
+      }
+    }
+
     const finalizedEffectSummaries: FinalizedEffectSummary[] = [
       ...(noiseEscalationEntry ? ["noise.escalation"] : []),
       ...(npcSuspicionEntry ? ["npc.suspicion"] : []),
@@ -2016,87 +2181,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           },
         }
       : null;
-    const opportunityCostEffect = resolveOpportunityCostEffect({ opportunityCost });
-    const opportunityCostEffectEntry =
-      (opportunityCostEffect.riskLevelDelta || opportunityCostEffect.costBudgetDelta)
-        ? {
-            kind: "opportunity.cost.effect",
-            domain: "resolution",
-            cause: "opportunity.tier",
-            effect: "opportunity.cost.effect",
-            data: {
-              riskLevelDelta: opportunityCostEffect.riskLevelDelta,
-              costBudgetDelta: opportunityCostEffect.costBudgetDelta,
-              turnIndex: latestTurn?.turnIndex ?? null,
-            },
-          }
-        : null;
-
-    const watchfulnessCostDelta = watchfulness.costDelta;
-    const resolutionCostBaseDelta = opportunityCostEffect.riskLevelDelta ?? 0;
-    const resolutionCostDelta = resolutionCostBaseDelta + watchfulnessCostDelta;
-    const previousResolutionCost = Number(stateRecord.resolutionCost ?? 0);
-    const nextResolutionCost = Math.max(0, previousResolutionCost + resolutionCostDelta);
-    stateRecord.resolutionCost = nextResolutionCost;
-    const resolutionCostEntry =
-      resolutionCostDelta
-        ? {
-            kind: "resolution.cost",
-            domain: "resolution",
-            cause: "opportunity.cost",
-            effect: "resolution.cost",
-            data: {
-              delta: resolutionCostDelta,
-              value: nextResolutionCost,
-              turnIndex: latestTurn?.turnIndex ?? null,
-              watchfulnessCostDelta,
-            },
-          }
-        : null;
-    const resolutionCostEffect = resolveResolutionCostEffect({ resolutionCost: nextResolutionCost });
-    const resolutionCostEffectEntry = resolutionCostEffect.higherComplicationRisk
-      ? {
-          kind: "resolution.cost.effect",
-          domain: "resolution",
-          cause: "resolution.cost",
-          effect: "higher-complication-risk",
-          data: {
-            resolutionCost: nextResolutionCost,
-            turnIndex: latestTurn?.turnIndex ?? null,
-          },
-        }
-      : null;
-    const complicationRiskEffect = resolveComplicationRiskEffect({
-      higherComplicationRisk: resolutionCostEffect.higherComplicationRisk,
-    });
-    const complicationRiskEntry = complicationRiskEffect.complicationLikely
-      ? {
-          kind: "resolution.complication",
-          domain: "resolution",
-          cause: "complication.risk",
-          effect: "complication-likely",
-          data: {
-            turnIndex: latestTurn?.turnIndex ?? null,
-            resolutionCost: nextResolutionCost,
-          },
-        }
-      : null;
-    const complicationOutcomeEffect = resolveComplicationOutcomeEffect({
-      complicationLikely: complicationRiskEffect.complicationLikely,
-    });
-    const complicationOutcomeEntry =
-      complicationOutcomeEffect.minimumComplicationCount > 0
-        ? {
-            kind: "complication.outcome",
-            domain: "resolution",
-            cause: "complication.likely",
-            effect: "complication-likely",
-            data: {
-              minimumComplicationCount: complicationOutcomeEffect.minimumComplicationCount,
-              turnIndex: latestTurn?.turnIndex ?? null,
-            },
-          }
-        : null;
     const opportunityCostStateDeltaRecord =
       resolutionCostDelta || opportunityCostEffect.costBudgetDelta
         ? {
@@ -2116,73 +2200,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       stateRecord.stats = { ...statsRecord };
     }
 
-    const resolvedFinalizedComplications = resolveFinalizedComplications({
-      minimumComplicationCount: complicationOutcomeEffect.minimumComplicationCount,
-      failForwardComplication,
-    });
-    const complicationPolicyResult = enforceComplicationPolicy({
-      finalizedComplications: resolvedFinalizedComplications,
-      forcedComplicationCount,
-    });
-    const enforcedFinalizedComplications = complicationPolicyResult.finalizedComplications;
-    if (enforcedFinalizedComplications.length < forcedComplicationCount) {
-      throw new Error("COMPULSION_POLICY_INVARIANT_FAILED");
-    }
-    const finalizedComplicationDeltas = resolveFinalizedComplicationDeltas(enforcedFinalizedComplications);
-    const hasComplicationDelta =
-      (finalizedComplicationDeltas.noise ?? 0) ||
-      (finalizedComplicationDeltas.npcSuspicion ?? 0) ||
-      (finalizedComplicationDeltas.positionPenalty ?? 0) ||
-      (finalizedComplicationDeltas.timeAdvance ?? 0);
-    const applyComplicationDeltas = hasComplicationDelta && !failForwardComplication;
-    if (applyComplicationDeltas) {
-      turnStateDeltas.push({
-        key: "Finalized complications",
-        detail: finalizedComplicationDeltas,
-      });
-    }
-    if (failForwardComplication && applyComplicationDeltas) {
-      throw new Error("FINALIZED_COMPILATION_DOUBLE_APPLY");
-    }
-    if (!failForwardComplication && hasComplicationDelta && !applyComplicationDeltas) {
-      throw new Error("FINALIZED_COMPILATION_NOT_APPLIED");
-    }
-    const actualComplicationDelta = {
-      noise: currentNoise - previousNoise,
-      npcSuspicion: currentNpcSuspicion - previousNpcSuspicion,
-      positionPenalty: currentPositionPenalty - previousPositionPenalty,
-      timeAdvance: currentTimeAdvance - previousTimeAdvance,
-    };
-    if (
-      actualComplicationDelta.noise !== (finalizedComplicationDeltas.noise ?? 0) ||
-      actualComplicationDelta.npcSuspicion !== (finalizedComplicationDeltas.npcSuspicion ?? 0) ||
-      actualComplicationDelta.positionPenalty !== (finalizedComplicationDeltas.positionPenalty ?? 0) ||
-      actualComplicationDelta.timeAdvance !== (finalizedComplicationDeltas.timeAdvance ?? 0)
-    ) {
-      throw new Error("FINALIZED_COMPILATION_DELTA_MISMATCH");
-    }
-    if (failForwardComplication) {
-      const normalizedFinalizedComplicationDeltas = {
-        noise: finalizedComplicationDeltas.noise ?? 0,
-        npcSuspicion: finalizedComplicationDeltas.npcSuspicion ?? 0,
-        positionPenalty: finalizedComplicationDeltas.positionPenalty ?? 0,
-        timeAdvance: finalizedComplicationDeltas.timeAdvance ?? 0,
-      };
-      const normalizedFailForwardDelta = {
-        noise: complicationStateDelta?.noise ?? 0,
-        npcSuspicion: complicationStateDelta?.npcSuspicion ?? 0,
-        positionPenalty: complicationStateDelta?.positionPenalty ?? 0,
-        timeAdvance: complicationStateDelta?.timeAdvance ?? 0,
-      };
-      if (
-        normalizedFinalizedComplicationDeltas.noise !== normalizedFailForwardDelta.noise ||
-        normalizedFinalizedComplicationDeltas.npcSuspicion !== normalizedFailForwardDelta.npcSuspicion ||
-        normalizedFinalizedComplicationDeltas.positionPenalty !== normalizedFailForwardDelta.positionPenalty ||
-        normalizedFinalizedComplicationDeltas.timeAdvance !== normalizedFailForwardDelta.timeAdvance
-      ) {
-        throw new Error("FINALIZED_COMPILATION_DELTA_MISMATCH");
-      }
-    }
     const complicationAppliedEntry = enforcedFinalizedComplications.includes("complication-applied")
       ? {
           kind: "complication",
@@ -2491,40 +2508,68 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       }
     }
 
-    await maybeCacheSceneArt(sceneArtResult);
-    const responseSceneArt = buildCanonicalSceneArtResponse({
-      sceneKey:
-        sceneArtResult?.sceneKey ??
-        canonicalPayload?.sceneKey ??
-        currentSceneIdentity.sceneKey ??
-        null,
-      promptHash:
-        sceneArtResult?.promptHash ?? canonicalPayload?.promptHash ?? currentSceneIdentity.promptHash ?? null,
-      status: sceneArtResult?.status ?? "queued",
-      imageUrl: sceneArtResult?.imageUrl ?? null,
+    let baseSceneArtRow = sceneArtResult ?? existingSceneArt ?? null;
+    if (baseSceneArtRow && !baseSceneArtRow.promptHash) {
+      console.error("scene.art.row.missing_prompt_hash", {
+        stage: "base",
+        sceneKey: baseSceneArtRow.sceneKey ?? null,
+        promptHash: baseSceneArtRow.promptHash ?? null,
+        status: baseSceneArtRow.status,
+      });
+      baseSceneArtRow = null;
+    }
+    let finalSceneArtRow = await resolveFinalSceneArtRow({
+      existingSceneArt: baseSceneArtRow,
+      refreshDecision,
+      sceneArtPayload,
+      renderPriority,
+      renderMode,
+      engineVersion: ENGINE_VERSION,
     });
 
-    return NextResponse.json(
-      {
-        ok: true,
-        action: action ?? null,
-        tags,
-        rollTotal: rollTotal ?? null,
-        ...finalized,
-        turn: {
-          ...(finalized as any).turn,
-          stateDeltas: turnStateDeltas,
-          ledgerAdds: ledgerAddsWithVisual,
-        },
+    if (finalSceneArtRow && !finalSceneArtRow.promptHash) {
+      console.error("scene.art.row.missing_prompt_hash", {
+        stage: "final",
+        sceneKey: finalSceneArtRow.sceneKey,
+        promptHash: finalSceneArtRow.promptHash,
+        status: finalSceneArtRow.status,
+      });
+      finalSceneArtRow = null;
+    }
+
+    await maybeCacheSceneArt(finalSceneArtRow);
+    const finalSceneArt = buildFinalSceneArtContract(finalSceneArtRow);
+    console.log("TURN_SCENE_ART_RETURN", finalSceneArt);
+
+    const responseBody = {
+      ok: true,
+      action: action ?? null,
+      tags,
+      rollTotal: rollTotal ?? null,
+      ...finalized,
+      turn: {
+        ...(finalized as any).turn,
         stateDeltas: turnStateDeltas,
         ledgerAdds: ledgerAddsWithVisual,
-        sceneArt: responseSceneArt,
-        sceneTransition: sceneTransitionPayload,
-        scenePresentation,
-        sceneContinuity: finalContinuityInfo,
       },
-      { status: 200 }
-    );
+      stateDeltas: turnStateDeltas,
+      ledgerAdds: ledgerAddsWithVisual,
+      sceneArt: finalSceneArt,
+      sceneTransition: sceneTransitionPayload,
+      scenePresentation,
+      sceneContinuity: finalContinuityInfo,
+    };
+
+    if (finalSceneArt) {
+      assertSceneArtInvariant({
+        status: finalSceneArt.status as SceneArtStatus,
+        imageUrl: finalSceneArt.imageUrl,
+        errorCode: null,
+      });
+    }
+
+    logFinalSceneArtContract(responseBody);
+    return NextResponse.json(responseBody, { status: 200 });
   } catch (err: unknown) {
     if (isRequestBodyTooLargeError(err)) {
       return errorResponse(413, "Payload too large");

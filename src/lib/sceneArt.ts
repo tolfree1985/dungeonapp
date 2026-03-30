@@ -56,6 +56,7 @@ export type SceneArtPayload = {
   title?: string;
   basePrompt: string;
   renderPrompt: string;
+  promptHash: string;
   stylePreset: keyof typeof STYLE_PRESETS;
   tags: string[];
 };

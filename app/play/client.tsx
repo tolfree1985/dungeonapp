@@ -33,6 +33,7 @@ import type { TurnApiResponse, TurnInputPayload } from "@/lib/turnApi";
 import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";
 import { useRouter } from "next/navigation";
 import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
+import type { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
 
@@ -986,3 +987,31 @@ export default function PlayClient({
   );
 
 }
+  useEffect(() => {
+    if (!sceneArt || !sceneArt.sceneKey || !sceneArt.promptHash) return;
+    if (sceneArt.liveStatus !== "queued" && sceneArt.liveStatus !== "generating") return;
+
+    const interval = setInterval(async () => {
+      const response = await fetch(
+        `/api/scene-art/by-identity?sceneKey=${encodeURIComponent(sceneArt.sceneKey)}&promptHash=${encodeURIComponent(
+          sceneArt.promptHash,
+        )}`,
+      );
+      if (!response.ok) return;
+      const data = (await response.json()) as CanonicalSceneArtState;
+      if (data.status === "ready") {
+        setLiveSceneArt({
+          imageUrl: data.imageUrl,
+          source: "scene",
+          pending: false,
+          sceneKey: data.sceneKey,
+          status: data.status,
+          promptHash: data.promptHash,
+          hasReadyImage: true,
+        });
+        clearInterval(interval);
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [sceneArt?.sceneKey, sceneArt?.promptHash, sceneArt?.liveStatus]);

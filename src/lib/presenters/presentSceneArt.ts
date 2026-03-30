@@ -9,6 +9,8 @@ import {
   type CanonicalScenePromptMetadata,
   type SceneArtPayload,
 } from "@/lib/sceneArt";
+import { buildPromptHash } from "@/lib/sceneArtGenerator";
+import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
@@ -139,6 +141,10 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
   ];
 
   const renderPrompt = buildRenderScenePrompt({ segments: renderPromptSegments });
+  const promptHash = buildPromptHash(basePrompt, ENGINE_VERSION);
+  if (!promptHash) {
+    throw new Error("presentSceneArt invariant violated: missing promptHash");
+  }
 
   visualTags.push(`framing:${framing.frameKind}`);
   visualTags.push(`shot:${framing.shotScale}`);
@@ -172,6 +178,7 @@ export function presentSceneArt(input: PresentSceneArtInput): SceneArtPayload {
     title: input.title,
     basePrompt,
     renderPrompt,
+    promptHash,
     stylePreset,
     tags,
   };

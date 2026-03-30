@@ -52,6 +52,7 @@ const payload: SceneArtPayload = {
   },
   basePrompt: "base prompt",
   renderPrompt: "render prompt",
+  promptHash: "trigger-hash",
   stylePreset: "victorian-gothic-cinematic",
   tags: [],
 };

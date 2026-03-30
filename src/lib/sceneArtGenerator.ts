@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SceneVisualState } from "@/lib/sceneArt";
 import { deriveSceneVisualState } from "@/lib/sceneArt";
+import { type SceneArtProviderResponse } from "@/lib/scene-art/providerResponse";
 
 export type BuildScenePromptInput = {
   sceneKey: string;
@@ -80,16 +81,11 @@ const STATIC_SCENES: Record<string, string> = {
   castle_hall: "/scene-art/castle.jpg",
 };
 
-export type GeneratedImageResult = {
-  imageUrl: string;
-  provider: "remote" | "static-fallback" | "placeholder";
-};
-
 export async function generateImage(
   prompt: string,
   sceneKey?: string,
   promptHash?: string
-): Promise<GeneratedImageResult> {
+): Promise<SceneArtProviderResponse> {
   console.log("GENERATING IMAGE:", prompt);
   const providerUrl = process.env.IMAGE_PROVIDER_URL;
   const authToken = process.env.IMAGE_PROVIDER_AUTH_TOKEN;
@@ -118,8 +114,9 @@ export async function generateImage(
 
       if (typeof data.imageUrl === "string" && data.imageUrl.length > 0) {
         return {
-          imageUrl: data.imageUrl,
+          ok: true,
           provider: "remote",
+          imageUrl: data.imageUrl,
         };
       }
 
@@ -129,18 +126,27 @@ export async function generateImage(
         sceneKey,
         message: error instanceof Error ? error.message : String(error),
       });
+      return {
+        ok: false,
+        provider: "remote",
+        error: error instanceof Error ? error.message : "Image provider error",
+        retryable: true,
+      };
     }
   }
 
   if (sceneKey && STATIC_SCENES[sceneKey]) {
     return {
-      imageUrl: STATIC_SCENES[sceneKey],
+      ok: true,
       provider: "static-fallback",
+      imageUrl: STATIC_SCENES[sceneKey],
     };
   }
 
   return {
-    imageUrl: "/scene-art/generated-placeholder.jpg",
+    ok: false,
     provider: "placeholder",
+    error: "No real provider output configured",
+    retryable: false,
   };
 }
