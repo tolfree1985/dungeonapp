@@ -4,8 +4,8 @@ import { SceneArtStatus } from "@/generated/prisma";
 import { SceneArtExecutionContext, generateSceneArtForExecutionContext } from "@/lib/scene-art/generateSceneArtForIdentity";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
 import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
-import { getSceneArtWorkerRuntimeConfig } from "@/lib/scene-art/workerRuntimeConfig";
 import { findSceneArt } from "@/lib/sceneArtRepo";
+import { getLeaseDurationMs } from "@/lib/scene-art/sceneArtLease";
 
 export type SceneArtIdentityInput = {
   sceneKey: string;
@@ -14,7 +14,13 @@ export type SceneArtIdentityInput = {
 
 type SceneArtRow = Prisma.SceneArtGetPayload<{}>;
 
-function buildExecutionContext(row: Prisma.SceneArtGetPayload<{}>): SceneArtExecutionContext {
+export type RunQueuedSceneArtGenerationInput = SceneArtIdentityInput & {
+  skipClaim?: boolean;
+  claimedRow?: SceneArtRow | null;
+  workerId?: string;
+};
+
+function buildExecutionContext(row: Prisma.SceneArtGetPayload<{}>, workerId: string): SceneArtExecutionContext {
   return {
     sceneKey: row.sceneKey,
     promptHash: row.promptHash,
@@ -23,6 +29,7 @@ function buildExecutionContext(row: Prisma.SceneArtGetPayload<{}>): SceneArtExec
     stylePreset: row.stylePreset,
     renderMode: row.renderMode,
     engineVersion: row.engineVersion,
+    workerId,
   };
 }
 
@@ -50,8 +57,16 @@ function attemptResultFromRow(row: SceneArtRow, outcome: SceneArtAttemptOutcome)
   };
 }
 
-export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInput): Promise<SceneArtAttemptResult | null> {
-  const { sceneKey, promptHash } = identity;
+export async function runQueuedSceneArtGeneration(
+  input: RunQueuedSceneArtGenerationInput,
+): Promise<SceneArtAttemptResult | null> {
+  const {
+    sceneKey,
+    promptHash,
+    skipClaim = false,
+    claimedRow: preclaimedRow,
+    workerId,
+  } = input;
 
   if (!sceneKey) {
     throw new Error("SCENE_ART_INVALID_IDENTITY: missing sceneKey");
@@ -60,58 +75,83 @@ export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInpu
     throw new Error("SCENE_ART_INVALID_IDENTITY: missing promptHash");
   }
 
-  const row = await prisma.sceneArt.findFirst({
-    where: { sceneKey, promptHash },
-    select: {
-      sceneKey: true,
-      promptHash: true,
-      status: true,
-      attemptCount: true,
-      generationStartedAt: true,
-      generationLeaseUntil: true,
-      basePrompt: true,
-      renderPrompt: true,
-      stylePreset: true,
-      renderMode: true,
-      engineVersion: true,
-    },
-  });
+  let row = preclaimedRow;
+  if (!row) {
+    row = await prisma.sceneArt.findFirst({
+      where: { sceneKey, promptHash },
+      select: {
+        id: true,
+        sceneKey: true,
+        promptHash: true,
+        status: true,
+        attemptCount: true,
+        generationStartedAt: true,
+        generationLeaseUntil: true,
+        basePrompt: true,
+        renderPrompt: true,
+        stylePreset: true,
+        renderMode: true,
+        engineVersion: true,
+        leaseOwnerId: true,
+      },
+    });
+  }
 
   if (!row) {
     throw new Error(`runQueuedSceneArtGeneration: row missing for ${sceneKey}/${promptHash}`);
   }
 
-  const leaseStartedAt = new Date();
-  const leaseMs = getSceneArtWorkerRuntimeConfig().leaseMs;
-  const leaseUntil = new Date(leaseStartedAt.getTime() + leaseMs);
-  const workerId = getSceneArtWorkerId();
-  const claimed = await prisma.sceneArt.updateMany({
-    where: {
+  const resolvedWorkerId = workerId ?? getSceneArtWorkerId();
+
+  if (!skipClaim) {
+    const leaseStartedAt = new Date();
+    const leaseUntil = new Date(leaseStartedAt.getTime() + getLeaseDurationMs());
+    const claimed = await prisma.sceneArt.updateMany({
+      where: {
+        sceneKey: row.sceneKey,
+        promptHash: row.promptHash,
+        status: SceneArtStatus.queued,
+        OR: [
+          { generationLeaseUntil: null },
+          { generationLeaseUntil: { lt: new Date() } },
+        ],
+      },
+      data: {
+        status: SceneArtStatus.generating,
+        leaseOwnerId: resolvedWorkerId,
+        leaseAcquiredAt: leaseStartedAt,
+        generationStartedAt: leaseStartedAt,
+        generationLeaseUntil: leaseUntil,
+        attemptCount: { increment: 1 },
+      },
+    });
+
+    if (claimed.count !== 1) {
+      return null;
+    }
+
+    const updatedRow = await findSceneArt({
       sceneKey: row.sceneKey,
       promptHash: row.promptHash,
-      status: SceneArtStatus.queued,
-    },
-    data: {
-      status: SceneArtStatus.generating,
-      leaseOwnerId: workerId,
-      leaseAcquiredAt: leaseStartedAt,
-      generationStartedAt: leaseStartedAt,
-      generationLeaseUntil: leaseUntil,
-      attemptCount: { increment: 1 },
-    },
-  });
-
-  if (claimed.count !== 1) {
-    return;
+    });
+    if (!updatedRow) {
+      throw new Error(`runQueuedSceneArtGeneration: row missing after claim ${row.sceneKey}/${row.promptHash}`);
+    }
+    row = updatedRow;
+  } else if (row.status !== SceneArtStatus.generating) {
+    return null;
+  } else if (row.leaseOwnerId && row.leaseOwnerId !== resolvedWorkerId) {
+    return null;
   }
-
-  const claimedRow = await findSceneArt({
-    sceneKey: row.sceneKey,
-    promptHash: row.promptHash,
+  const claimedRow = row;
+  console.log("scene.art.worker.claim.updated", {
+    id: claimedRow.id,
+    sceneKey: claimedRow.sceneKey,
+    promptHash: claimedRow.promptHash,
+    status: claimedRow.status,
+    leaseOwnerId: claimedRow.leaseOwnerId,
+    generationLeaseUntil: claimedRow.generationLeaseUntil,
   });
-  if (!claimedRow) {
-    throw new Error(`runQueuedSceneArtGeneration: row missing after claim ${row.sceneKey}/${row.promptHash}`);
-  }
   logSceneArtEvent("scene.art.claimed", {
     sceneKey: claimedRow.sceneKey,
     promptHash: claimedRow.promptHash,
@@ -123,11 +163,35 @@ export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInpu
     leaseAcquiredAt: claimedRow.leaseAcquiredAt ?? null,
   });
 
-  const context = buildExecutionContext(claimedRow);
+  const context = buildExecutionContext(claimedRow, resolvedWorkerId);
   try {
+    console.log("scene.art.worker.provider.request", {
+      id: claimedRow.id,
+      sceneKey: claimedRow.sceneKey,
+      promptHash: claimedRow.promptHash,
+    });
     const updated = await generateSceneArtForExecutionContext(context, { force: true });
+    console.log("scene.art.worker.provider.success", {
+      id: claimedRow.id,
+      sceneKey: claimedRow.sceneKey,
+      promptHash: claimedRow.promptHash,
+      imageUrl: updated.imageUrl,
+    });
+    console.log("scene.art.worker.persist.ready", {
+      id: updated.id,
+      sceneKey: updated.sceneKey,
+      promptHash: updated.promptHash,
+      status: updated.status,
+      imageUrl: updated.imageUrl,
+    });
     return attemptResultFromRow(updated, "ready");
   } catch (error) {
+    console.error("scene.art.worker.provider.failure", {
+      id: claimedRow.id,
+      sceneKey: claimedRow.sceneKey,
+      promptHash: claimedRow.promptHash,
+      error: error instanceof Error ? error.message : String(error),
+    });
     const updated = await findSceneArt({
       sceneKey: row.sceneKey,
       promptHash: row.promptHash,
@@ -137,5 +201,5 @@ export async function runQueuedSceneArtGeneration(identity: SceneArtIdentityInpu
     }
     const attemptResult = attemptResultFromRow(updated, updated.status === SceneArtStatus.queued ? "queued" : "failed");
     return attemptResult;
+    }
   }
-}
