@@ -22,6 +22,9 @@ const LOOK_KEYWORDS = [
   "check",
   "investigate",
   "look around",
+  "look at",
+  "peek",
+  "survey",
 ];
 const DO_KEYWORDS = [
   "sneak",
@@ -42,6 +45,12 @@ const DO_KEYWORDS = [
   "adjust",
   "move silently",
   "move quietly",
+  "open",
+  "push",
+  "pull",
+  "drive",
+  "pull",
+  "push",
 ];
 const SAY_KEYWORDS = [
   "bluff",
@@ -62,6 +71,12 @@ const SAY_KEYWORDS = [
   "confront",
   "order",
   "intimidate",
+  "tell",
+  "say",
+  "speak",
+  "answer",
+  "request",
+  "demand",
 ];
 
 const buildLedgerEntry = (delta: StateDelta, tier: OutcomeTier, detail: string): LedgerEntry => ({

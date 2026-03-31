@@ -2280,6 +2280,14 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             margin: effectiveRollTotal - adjustedDifficulty,
           }
         : null;
+    const normalizedInput = playerText.trim().toLowerCase();
+    if (playerIntentMode === "LOOK" || playerIntentMode === "DO" || playerIntentMode === "SAY") {
+      console.log("turn.authored.input", {
+        playerIntentMode,
+        normalizedInput,
+        outcomeTier: resolvedOutcomeTier,
+      });
+    }
     const authoredEffects =
       playerIntentMode === "LOOK" || playerIntentMode === "DO" || playerIntentMode === "SAY"
         ? resolveActionEffects({
