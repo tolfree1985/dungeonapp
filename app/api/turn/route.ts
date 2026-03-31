@@ -2254,6 +2254,16 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           },
         }
       : null;
+    const authoredEffects =
+      playerIntentMode === "LOOK" || playerIntentMode === "DO" || playerIntentMode === "SAY"
+        ? resolveActionEffects({
+            mode: playerIntentMode ?? "LOOK",
+            playerText,
+            state: stateRecord,
+            outcomeTier: resolvedOutcomeTier,
+          })
+        : null;
+
     const ledgerAddsWithVisual = [
       ...turnLedgerAdds,
       ...visualLedgerEntries,
@@ -2602,15 +2612,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             difficulty: adjustedDifficulty,
             margin: effectiveRollTotal - adjustedDifficulty,
           }
-        : null;
-    const authoredEffects =
-      playerIntentMode === "LOOK" || playerIntentMode === "DO"
-        ? resolveActionEffects({
-            mode: playerIntentMode ?? "LOOK",
-            playerText,
-            state: stateRecord,
-            outcomeTier: resolvedOutcomeTier,
-          })
         : null;
     const baseStateDeltas = [
       ...turnStateDeltas,
