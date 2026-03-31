@@ -543,22 +543,24 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     const tier = coerceTier(body.tier);
     const monthKey = monthKeyUtc(now);
 
-    // Prefer client idempotency, else deterministic hash
-    const idempotencyKey =
-      typeof body.idempotencyKey === "string" && body.idempotencyKey.trim()
-        ? body.idempotencyKey.trim()
-        : hashHex(`${adventureId}|${userId}|${tier}|${monthKey}|${playerText}|${action ?? ""}|${tags.join(",")}|${rollTotal ?? ""}`);
+    const providedIdempotencyKey = typeof body.idempotencyKey === "string" && body.idempotencyKey.trim();
+    // Prefer explicit client idempotency; otherwise fall back to deterministic hash
+    const idempotencyKey = providedIdempotencyKey
+      ? providedIdempotencyKey
+      : hashHex(`${adventureId}|${userId}|${tier}|${monthKey}|${playerText}|${action ?? ""}|${tags.join(",")}|${rollTotal ?? ""}`);
 
     // Idempotency replay: if we've already applied this idempotencyKey for this adventure,
     // return the previously persisted payload and do NOT re-run billing or create new Turn/TurnEvent.
-    const prevApplied = await db.turnEvent.findFirst({
-      where: {
-        adventureId,
-        idempotencyKey,
-        status: "APPLIED",
-      },
-      orderBy: { seq: "desc" },
-    });
+    const prevApplied = providedIdempotencyKey
+      ? await db.turnEvent.findFirst({
+          where: {
+            adventureId,
+            idempotencyKey,
+            status: "APPLIED",
+          },
+          orderBy: { seq: "desc" },
+        })
+      : null;
 
     let sceneArtResult: CanonicalSceneArtState | null = null;
 
