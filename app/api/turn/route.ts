@@ -2250,10 +2250,36 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             effect: "complication.deltas",
             data: {
               detail: finalizedComplicationDeltas,
-            turnIndex: latestTurn?.turnIndex ?? null,
-          },
-        }
-      : null;
+              turnIndex: latestTurn?.turnIndex ?? null,
+            },
+          }
+        : null;
+    const modifiers = applyWorldStateModifiers({
+      stateRecord,
+      mode: playerIntentMode ?? "LOOK",
+    });
+    const baseDifficulty = Number(stateRecord.difficulty ?? 0);
+    const adjustedDifficulty = baseDifficulty + modifiers.difficultyModifier;
+    const effectiveRollTotal =
+      typeof rollTotal === "number" && Number.isFinite(rollTotal)
+        ? rollTotal + modifiers.rollAdjustment
+        : null;
+    const hasRoll = effectiveRollTotal !== null;
+    const resolvedOutcomeTier: OutcomeTier = hasRoll
+      ? resolveOutcomeTier({
+          rollTotal: effectiveRollTotal,
+          difficulty: adjustedDifficulty,
+        })
+      : "mixed";
+    const resolvedRoll =
+      hasRoll
+        ? {
+            formula: "turn-resolution",
+            total: effectiveRollTotal,
+            difficulty: adjustedDifficulty,
+            margin: effectiveRollTotal - adjustedDifficulty,
+          }
+        : null;
     const authoredEffects =
       playerIntentMode === "LOOK" || playerIntentMode === "DO" || playerIntentMode === "SAY"
         ? resolveActionEffects({
@@ -2587,32 +2613,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     const finalSceneArt = buildFinalSceneArtContract(finalSceneArtRow);
     console.log("TURN_SCENE_ART_RETURN", finalSceneArt);
 
-    const modifiers = applyWorldStateModifiers({
-      stateRecord,
-      mode: playerIntentMode ?? "LOOK",
-    });
-    const baseDifficulty = Number(stateRecord.difficulty ?? 0);
-    const adjustedDifficulty = baseDifficulty + modifiers.difficultyModifier;
-    const effectiveRollTotal =
-      typeof rollTotal === "number" && Number.isFinite(rollTotal)
-        ? rollTotal + modifiers.rollAdjustment
-        : null;
-    const hasRoll = effectiveRollTotal !== null;
-    const resolvedOutcomeTier: OutcomeTier = hasRoll
-      ? resolveOutcomeTier({
-          rollTotal: effectiveRollTotal,
-          difficulty: adjustedDifficulty,
-        })
-      : "mixed";
-    const resolvedRoll =
-      hasRoll
-        ? {
-            formula: "turn-resolution",
-            total: effectiveRollTotal,
-            difficulty: adjustedDifficulty,
-            margin: effectiveRollTotal - adjustedDifficulty,
-          }
-        : null;
     const baseStateDeltas = [
       ...turnStateDeltas,
       ...(authoredEffects?.stateDeltas ?? []),
