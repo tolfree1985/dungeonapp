@@ -2657,20 +2657,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
 
     await maybeCacheSceneArt(finalSceneArtRow);
     const finalSceneArt = buildFinalSceneArtContract(finalSceneArtRow);
-    console.log("turn.debug.summary", {
-      playerIntentMode,
-      normalizedInput,
-      outcomeTier: resolvedOutcomeTier,
-      rawRoll: rollTotal ?? null,
-      effectiveRollTotal,
-      difficulty: adjustedDifficulty,
-      margin,
-      actionTags: authoredEffects?.tags ?? [],
-      authoredDeltaKinds: (authoredEffects?.stateDeltas ?? []).map((delta) => delta.kind ?? (delta as any).op ?? "unknown"),
-      authoredLedgerCount: authoredEffects?.ledgerAdds?.length ?? 0,
-      hasProgress: classification.hasProgress,
-      hasCost: classification.hasCost,
-    });
     console.log("TURN_SCENE_ART_RETURN", finalSceneArt);
 
     const baseStateDeltas = [
