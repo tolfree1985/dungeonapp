@@ -112,7 +112,7 @@ import type { NpcSuspicionStance } from "@/server/scene/npc-suspicion-stance";
 import { resolveNpcWatchfulness, type NpcWatchfulnessLevel } from "@/server/scene/npc-watchfulness";
 import { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
 import {
-  deriveIntentMode,
+  normalizeIntentMode,
   resolveWatchfulnessActionFlags,
   type WatchfulnessActionFlags,
 } from "@/lib/watchfulness-action-flags";
@@ -447,7 +447,12 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
 
     const adventureId: string = body.adventureId;
     const playerText: string = body.playerText;
-    const playerIntentMode = deriveIntentMode(action, playerText);
+    const requestedMode = normalizeIntentMode(typeof body.mode === "string" ? body.mode : null);
+    if (!requestedMode) {
+      logInvalidRequest("missing/invalid mode");
+      return errorResponse(400, "Missing/invalid mode");
+    }
+    const playerIntentMode: IntentMode = requestedMode;
     // note: action/tags/rollTotal already derived above
 
     const now = new Date();

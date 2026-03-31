@@ -30,6 +30,8 @@ export function deriveIntentMode(action: string | null | undefined, playerText: 
   return "DO";
 }
 
+export { normalizeIntentMode };
+
 export function resolveWatchfulnessActionFlags(params: {
   watchfulness: WatchfulnessLevel;
   mode: IntentMode;
