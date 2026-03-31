@@ -38,8 +38,7 @@ export function SceneImagePanel({
     sceneArt?.imageUrl ??
     sceneArt?.resolvedBackdropUrl ??
     null;
-  const hasValidImage = Boolean(resolvedImageUrl) && !resolvedImageUrl.includes("generated-placeholder");
-  const hasReadyImage = sceneArt?.status === "ready" && hasValidImage;
+  const canRenderSceneImage = !!sceneArt?.imageUrl && sceneArt?.status === "ready";
   const isUnavailable =
     sceneArt?.status === "failed" &&
     sceneArt?.lastProviderRetryable === false;
@@ -68,16 +67,25 @@ export function SceneImagePanel({
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
       <div className="relative aspect-[16/9] w-full bg-stone-900">
-        {hasValidImage ? (
+        {canRenderSceneImage ? (
             <img
               src={resolvedImageUrl!}
             alt={sceneArt?.sceneKey ?? "Scene art"}
             className="h-full w-full object-cover"
             onError={(event) => {
+              const src = (event.currentTarget as HTMLImageElement).src;
+              if (sceneArt?.status === "queued") {
+                console.warn("scene.art.image_not_ready_yet", {
+                  sceneKey: sceneArt?.sceneKey ?? null,
+                  promptHash: sceneArt?.promptHash ?? null,
+                  src,
+                });
+                return;
+              }
               console.error("scene.art.image_load_failed", {
                 sceneKey: sceneArt?.sceneKey ?? null,
                 promptHash: sceneArt?.promptHash ?? null,
-                src: (event.currentTarget as HTMLImageElement).src,
+                src,
                 status: sceneArt?.status ?? null,
               });
             }}
@@ -104,7 +112,7 @@ export function SceneImagePanel({
             <span
               className={`rounded-md border px-2 py-1 ${hasReadyImage ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-200" : "border-white/15 bg-black/50 text-neutral-400"}`}
             >
-              {hasReadyImage ? "GENERATED SCENE" : hasValidImage ? "SCENE ART" : isUnavailable ? "SCENE ART UNAVAILABLE" : "DEFAULT BACKDROP"}
+              {canRenderSceneImage ? "GENERATED SCENE" : isUnavailable ? "SCENE ART UNAVAILABLE" : "DEFAULT BACKDROP"}
           </span>
         </div>
         {transition && (
