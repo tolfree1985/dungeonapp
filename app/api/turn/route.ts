@@ -2706,6 +2706,21 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       });
     }
 
+    console.log("turn.debug.summary", {
+      playerIntentMode,
+      normalizedInput,
+      outcomeTier: resolvedOutcomeTier,
+      rawRoll: rollTotal ?? null,
+      effectiveRollTotal,
+      difficulty: adjustedDifficulty,
+      margin,
+      actionTags: authoredEffects?.tags ?? [],
+      authoredDeltaKinds: (authoredEffects?.stateDeltas ?? []).map((delta) => delta.kind ?? (delta as any).op ?? "unknown"),
+      authoredLedgerCount: authoredEffects?.ledgerAdds?.length ?? 0,
+      hasProgress: classification.hasProgress,
+      hasCost: classification.hasCost,
+    });
+
     const responseBody = {
       ok: true,
       action: action ?? null,
