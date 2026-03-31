@@ -447,6 +447,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
 
     const adventureId: string = body.adventureId;
     const playerText: string = body.playerText;
+    const normalizedInput = playerText.trim().toLowerCase();
     const requestedMode = normalizeIntentMode(typeof body.mode === "string" ? body.mode : null);
     if (!requestedMode) {
       logInvalidRequest("missing/invalid mode");
@@ -668,6 +669,37 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         });
 
         const finalSceneArt = buildFinalSceneArtContract(finalSceneArtRow);
+        console.log("turn.mode.summary", {
+          mode: playerIntentMode ?? null,
+          actionTags: [],
+          progressDetected: null,
+          costDetected: null,
+        });
+        console.log("turn.outcome.classification", {
+          rawRoll: rollTotal ?? null,
+          effectiveRollTotal: null,
+          difficulty: null,
+          margin: null,
+          progressDetected: null,
+          costDetected: null,
+          selectedTier: null,
+          modifiers: null,
+          actionTags: [],
+        });
+        console.log("turn.debug.summary", {
+          playerIntentMode,
+          normalizedInput: playerText?.trim().toLowerCase() ?? null,
+          outcomeTier: null,
+          rawRoll: rollTotal ?? null,
+          effectiveRollTotal: null,
+          difficulty: null,
+          margin: null,
+          actionTags: [],
+          authoredDeltaKinds: [],
+          authoredLedgerCount: 0,
+          hasProgress: null,
+          hasCost: null,
+        });
         console.log("TURN_SCENE_ART_RETURN (replay)", finalSceneArt);
         const responseBody = {
           ok: true,
@@ -2285,7 +2317,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             margin: effectiveRollTotal - adjustedDifficulty,
           }
         : null;
-    const normalizedInput = playerText.trim().toLowerCase();
     if (playerIntentMode === "LOOK" || playerIntentMode === "DO" || playerIntentMode === "SAY") {
       console.log("turn.authored.input", {
         playerIntentMode,
