@@ -38,10 +38,10 @@ export function SceneImagePanel({
     sceneArt?.imageUrl ??
     sceneArt?.resolvedBackdropUrl ??
     null;
-  const canRenderSceneImage = !!sceneArt?.imageUrl && sceneArt?.status === "ready";
   const isUnavailable =
     sceneArt?.status === "failed" &&
     sceneArt?.lastProviderRetryable === false;
+  const hasReadyImage = !!sceneArt?.imageUrl && sceneArt?.status === "ready";
   const isInFlight =
     sceneArt?.status === "queued" ||
     sceneArt?.status === "generating" ||
@@ -51,9 +51,11 @@ export function SceneImagePanel({
     ? "Scene art ready"
     : isUnavailable
     ? "Scene art unavailable"
-    : isInFlight
-    ? "Rendering scene art"
-    : "Scene art missing";
+    : sceneArt?.status === "queued"
+    ? "Scene art queued"
+    : sceneArt?.status === "generating"
+    ? "Generating scene art"
+    : "Default scene";
   const showRetryButton =
     (isUnavailable || renderStateBadge === "Scene art missing") &&
     !!retrySceneKey &&
