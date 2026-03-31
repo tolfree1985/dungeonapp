@@ -8,29 +8,31 @@ const baseInput = {
 };
 
 describe("resolveActionEffects (LOOK)", () => {
-  it("emits progress-only deltas for success", () => {
+  it("emits clue progress with no pressure on success", () => {
     const result = resolveActionEffects({ ...baseInput, outcomeTier: "success" });
     expect(result.stateDeltas.some((delta) => delta.kind === "inventory.add")).toBe(true);
     expect(result.stateDeltas.every((delta) => delta.kind !== "pressure.add")).toBe(true);
     expect(result.tags).toEqual(["action:look"]);
   });
 
-  it("adds costs when the tier is success_with_cost", () => {
+  it("adds suspicion/time cost on success_with_cost", () => {
     const result = resolveActionEffects({ ...baseInput, outcomeTier: "success_with_cost" });
-    expect(result.stateDeltas.filter((delta) => delta.kind === "pressure.add").length).toBeGreaterThan(0);
-    expect(result.stateDeltas.some((delta) => delta.kind === "inventory.add")).toBe(true);
+    expect(result.stateDeltas.some((delta) => delta.kind === "pressure.add")).toBe(true);
+    expect(result.stateDeltas.some((delta) => (delta as any).domain === "time")).toBe(true);
+    expect(result.stateDeltas.some((delta) => (delta as any).domain === "suspicion")).toBe(true);
   });
 
-  it("marks mixed as partial progress with noise/time cost", () => {
+  it("marks mixed as partial progress with heavy time and suspicion cost", () => {
     const result = resolveActionEffects({ ...baseInput, outcomeTier: "mixed" });
     expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "observed.partial")).toBe(true);
-    expect(result.stateDeltas.some((delta) => delta.kind === "pressure.add" && (delta as any).domain === "noise")).toBe(true);
+    expect(result.stateDeltas.some((delta) => (delta as any).domain === "time")).toBe(true);
+    expect(result.stateDeltas.some((delta) => (delta as any).domain === "suspicion")).toBe(true);
   });
 
-  it("produces only cost for failure", () => {
+  it("produces time cost when failure" , () => {
     const result = resolveActionEffects({ ...baseInput, outcomeTier: "failure" });
     expect(result.stateDeltas.every((delta) => delta.kind === "pressure.add")).toBe(true);
-    expect(result.stateDeltas.some((delta) => delta.domain === "time")).toBe(true);
+    expect(result.stateDeltas.some((delta) => (delta as any).domain === "time")).toBe(true);
   });
 
   it("falls through when not a LOOK keyword", () => {
@@ -69,16 +71,19 @@ describe("resolveActionEffects (SAY)", () => {
   it("emits relation gains on success", () => {
     const result = resolveActionEffects({ ...sayInput, outcomeTier: "success" });
     expect(result.stateDeltas.some((delta) => delta.kind === "relation.shift" && (delta as any).amount > 0)).toBe(true);
+    expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "status.compliant")).toBe(true);
   });
 
   it("adds suspicion on mixed", () => {
     const result = resolveActionEffects({ ...sayInput, outcomeTier: "mixed" });
     expect(result.stateDeltas.some((delta) => delta.kind === "pressure.add" && (delta as any).domain === "suspicion")).toBe(true);
+    expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "status.escalated")).toBe(true);
   });
 
   it("escalates when failure is a threat", () => {
     const threatInput = { ...sayInput, playerText: "threaten the guard", outcomeTier: "failure" as const };
     const result = resolveActionEffects(threatInput);
     expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "status.escalated")).toBe(true);
+    expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "status.hostile")).toBe(true);
   });
 });

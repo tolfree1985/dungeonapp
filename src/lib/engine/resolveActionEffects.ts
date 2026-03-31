@@ -76,8 +76,8 @@ const buildLookEffects = (tier: OutcomeTier): ResolveActionEffectsResult => {
   const clueProgress: StateDelta = { kind: "inventory.add", itemId: "ledger_fragment", quantity: 1 };
   const partialClue: StateDelta = { kind: "flag.set", key: "observed.partial", value: true };
   const timeCost: StateDelta = { kind: "pressure.add", domain: "time", amount: 1 };
+  const heavyTime: StateDelta = { kind: "pressure.add", domain: "time", amount: 2 };
   const suspicionCost: StateDelta = { kind: "pressure.add", domain: "suspicion", amount: 1 };
-  const noiseCost: StateDelta = { kind: "pressure.add", domain: "noise", amount: 1 };
   switch (tier) {
     case "success":
       return {
@@ -96,10 +96,10 @@ const buildLookEffects = (tier: OutcomeTier): ResolveActionEffectsResult => {
       };
     case "mixed":
       return {
-        stateDeltas: [partialClue, timeCost, noiseCost],
+        stateDeltas: [partialClue, heavyTime, suspicionCost],
         ledgerAdds: [
           buildLedgerEntry(partialClue, tier, "Partial clue found"),
-          buildLedgerEntry(noiseCost, tier, "Noise creeps up"),
+          buildLedgerEntry(heavyTime, tier, "Time stretches as you probe"),
         ],
         tags: ["action:look"],
       };
@@ -124,18 +124,18 @@ const buildLookEffects = (tier: OutcomeTier): ResolveActionEffectsResult => {
 
 const buildDoEffects = (tier: OutcomeTier): ResolveActionEffectsResult => {
   const stealthProgress: StateDelta = { kind: "flag.set", key: "position.advanced", value: true };
-  const stealthNoise: StateDelta = { kind: "pressure.add", domain: "noise", amount: 1 };
+  const stealthNoise: StateDelta = { kind: "pressure.add", domain: "noise", amount: 2 };
   const stealthDanger: StateDelta = { kind: "pressure.add", domain: "danger", amount: 1 };
   const forceProgress: StateDelta = { kind: "flag.set", key: "obstacle.cleared", value: true };
-  const forceNoise: StateDelta = { kind: "pressure.add", domain: "noise", amount: 2 };
-  const forceDanger: StateDelta = { kind: "pressure.add", domain: "danger", amount: 1 };
+  const forceNoise: StateDelta = { kind: "pressure.add", domain: "noise", amount: 3 };
+  const forceDanger: StateDelta = { kind: "pressure.add", domain: "danger", amount: 2 };
   const toolProgress: StateDelta = { kind: "flag.set", key: "access.partial", value: true };
-  const toolTime: StateDelta = { kind: "pressure.add", domain: "time", amount: 1 };
-  const toolSuspicion: StateDelta = { kind: "pressure.add", domain: "suspicion", amount: 1 };
+  const toolNoise: StateDelta = { kind: "pressure.add", domain: "noise", amount: 2 };
+  const toolDanger: StateDelta = { kind: "pressure.add", domain: "danger", amount: 1 };
   switch (tier) {
     case "success":
       return {
-        stateDeltas: [forceProgress, stealthProgress, stealthNoise],
+        stateDeltas: [forceProgress, stealthProgress, stealthNoise, stealthDanger],
         ledgerAdds: [
           buildLedgerEntry(forceProgress, tier, "Obstacle cleared"),
           buildLedgerEntry(stealthProgress, tier, "Position advanced"),
@@ -145,7 +145,7 @@ const buildDoEffects = (tier: OutcomeTier): ResolveActionEffectsResult => {
       };
     case "success_with_cost":
       return {
-        stateDeltas: [forceProgress, forceNoise, toolTime],
+        stateDeltas: [forceProgress, forceNoise, forceDanger],
         ledgerAdds: [
           buildLedgerEntry(forceProgress, tier, "Forceful breakthrough"),
           buildLedgerEntry(forceNoise, tier, "Noise spikes"),
@@ -154,19 +154,19 @@ const buildDoEffects = (tier: OutcomeTier): ResolveActionEffectsResult => {
       };
     case "mixed":
       return {
-        stateDeltas: [toolProgress, toolTime, stealthNoise],
+        stateDeltas: [toolProgress, toolNoise, toolDanger],
         ledgerAdds: [
           buildLedgerEntry(toolProgress, tier, "Partial access gained"),
-          buildLedgerEntry(toolTime, tier, "Time ticks as you fiddle"),
+          buildLedgerEntry(toolNoise, tier, "Noise climbs during the attempt"),
         ],
         tags: ["action:do"],
       };
     case "failure_with_progress":
       return {
-        stateDeltas: [toolProgress, toolSuspicion],
+        stateDeltas: [toolProgress, forceDanger],
         ledgerAdds: [
           buildLedgerEntry(toolProgress, tier, "Lock partially loosened"),
-          buildLedgerEntry(toolSuspicion, tier, "Suspicion rises"),
+          buildLedgerEntry(forceDanger, tier, "Danger alarms react"),
         ],
         tags: ["action:do"],
       };
@@ -185,25 +185,38 @@ const buildDoEffects = (tier: OutcomeTier): ResolveActionEffectsResult => {
 
 const buildSayEffects = (tier: OutcomeTier, normalized: string): ResolveActionEffectsResult => {
   const bluffProgress: StateDelta = { kind: "flag.set", key: "relation.access", value: true };
+  const complianceFlag: StateDelta = { kind: "flag.set", key: "status.compliant", value: true };
   const clueFlag: StateDelta = { kind: "flag.set", key: "knowledge.gained", value: true };
-  const suspicionCost: StateDelta = { kind: "pressure.add", domain: "suspicion", amount: 1 };
-  const hostilityCost: StateDelta = { kind: "pressure.add", domain: "danger", amount: 1 };
-  const timeCost: StateDelta = { kind: "pressure.add", domain: "time", amount: 1 };
-  const relationGain: StateDelta = { kind: "relation.shift", actorId: "npc", metric: "favor", amount: 1 };
+  const suspicionCost: StateDelta = { kind: "pressure.add", domain: "suspicion", amount: 2 };
+  const whisperCost: StateDelta = { kind: "pressure.add", domain: "suspicion", amount: 1 };
+  const relationGain: StateDelta = { kind: "relation.shift", actorId: "npc", metric: "favor", amount: 2 };
   const relationHit: StateDelta = { kind: "relation.shift", actorId: "npc", metric: "favor", amount: -1 };
   const escalationFlag: StateDelta = { kind: "flag.set", key: "status.escalated", value: true };
-  const isThreat = normalized.includes("threaten") || normalized.includes("demand") || normalized.includes("accuse") || normalized.includes("confront") || normalized.includes("order") || normalized.includes("intimidate");
-  const isAsk = normalized.includes("ask") || normalized.includes("question") || normalized.includes("probe") || normalized.includes("persuade") || normalized.includes("convince") || normalized.includes("press");
+  const threatFlag: StateDelta = { kind: "flag.set", key: "status.hostile", value: true };
+  const isThreat =
+    normalized.includes("threaten") ||
+    normalized.includes("demand") ||
+    normalized.includes("accuse") ||
+    normalized.includes("confront") ||
+    normalized.includes("order") ||
+    normalized.includes("intimidate");
+  const isAsk =
+    normalized.includes("ask") ||
+    normalized.includes("question") ||
+    normalized.includes("probe") ||
+    normalized.includes("persuade") ||
+    normalized.includes("convince") ||
+    normalized.includes("press");
   switch (tier) {
     case "success":
       return {
-        stateDeltas: [relationGain, bluffProgress],
+        stateDeltas: [relationGain, bluffProgress, complianceFlag],
         ledgerAdds: [buildLedgerEntry(relationGain, tier, "Social gain")],
         tags: ["action:say"],
       };
     case "success_with_cost":
       return {
-        stateDeltas: [relationGain, suspicionCost, timeCost],
+        stateDeltas: [relationGain, bluffProgress, suspicionCost],
         ledgerAdds: [
           buildLedgerEntry(relationGain, tier, "Social leverage with cost"),
           buildLedgerEntry(suspicionCost, tier, "Suspicion rises"),
@@ -212,10 +225,10 @@ const buildSayEffects = (tier: OutcomeTier, normalized: string): ResolveActionEf
       };
     case "mixed":
       return {
-        stateDeltas: [clueFlag, suspicionCost, hostilityCost],
+        stateDeltas: [clueFlag, suspicionCost, escalationFlag],
         ledgerAdds: [
           buildLedgerEntry(clueFlag, tier, "Partial truth revealed"),
-          buildLedgerEntry(hostilityCost, tier, "Hostility spikes"),
+          buildLedgerEntry(escalationFlag, tier, "Tension spikes"),
         ],
         tags: ["action:say"],
       };
@@ -231,9 +244,9 @@ const buildSayEffects = (tier: OutcomeTier, normalized: string): ResolveActionEf
     case "failure":
     default:
       return {
-        stateDeltas: isThreat ? [hostilityCost, relationHit, escalationFlag] : [suspicionCost, timeCost],
+        stateDeltas: isThreat ? [suspicionCost, relationHit, escalationFlag, threatFlag] : [whisperCost, relationHit],
         ledgerAdds: [
-          buildLedgerEntry(isThreat ? hostilityCost : suspicionCost, tier, "Social backlash"),
+          buildLedgerEntry(isThreat ? suspicionCost : whisperCost, tier, "Social backlash"),
         ],
         tags: ["action:say"],
       };
