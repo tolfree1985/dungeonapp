@@ -38,7 +38,8 @@ export function SceneImagePanel({
     sceneArt?.imageUrl ??
     sceneArt?.resolvedBackdropUrl ??
     null;
-  const hasReadyImage = sceneArt?.status === "ready" && Boolean(resolvedImageUrl);
+  const hasValidImage = Boolean(resolvedImageUrl) && !resolvedImageUrl.includes("generated-placeholder");
+  const hasReadyImage = sceneArt?.status === "ready" && hasValidImage;
   const isUnavailable =
     sceneArt?.status === "failed" &&
     sceneArt?.lastProviderRetryable === false;
@@ -67,7 +68,7 @@ export function SceneImagePanel({
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
       <div className="relative aspect-[16/9] w-full bg-stone-900">
-        {hasReadyImage ? (
+        {hasValidImage ? (
             <img
               src={resolvedImageUrl!}
             alt={sceneArt?.sceneKey ?? "Scene art"}
@@ -103,7 +104,7 @@ export function SceneImagePanel({
             <span
               className={`rounded-md border px-2 py-1 ${hasReadyImage ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-200" : "border-white/15 bg-black/50 text-neutral-400"}`}
             >
-              {hasReadyImage ? "GENERATED SCENE" : isUnavailable ? "SCENE ART UNAVAILABLE" : "DEFAULT BACKDROP"}
+              {hasReadyImage ? "GENERATED SCENE" : hasValidImage ? "SCENE ART" : isUnavailable ? "SCENE ART UNAVAILABLE" : "DEFAULT BACKDROP"}
           </span>
         </div>
         {transition && (
