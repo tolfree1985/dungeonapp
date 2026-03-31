@@ -1,0 +1,427 @@
+
+> dungeonpp@0.1.0 dev /Users/craigtolfree/dungeonpp
+> next dev --hostname 127.0.0.1 --port 3001
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://127.0.0.1:3001
+- Network:       http://127.0.0.1:3001
+- Environments: .env.local, .env
+
+✓ Starting...
+✓ Ready in 435ms
+ GET / 200 in 317ms (compile: 142ms, render: 174ms)
+ GET /dev/scene-art-worker 200 in 1203ms (compile: 1149ms, render: 53ms)
+ GET /dev/scene-art-worker 200 in 1210ms (compile: 1168ms, render: 41ms)
+ GET /api/scene-art/worker/queue 200 in 115ms (compile: 69ms, render: 46ms)
+ GET /api/scene-art/worker/queue 200 in 127ms (compile: 87ms, render: 40ms)
+ GET /api/scene-art/worker/health 200 in 38ms (compile: 24ms, render: 15ms)
+ GET /api/scene-art/worker/health 200 in 45ms (compile: 35ms, render: 11ms)
+PLAY SESSION USER admin
+PLAY ADVENTURE ID ef95f3c6-9060-4070-b68c-cdef1542fe7f
+scene.delta.missing {
+  sceneKey: 'dock_office',
+  previousSceneKey: null,
+  currentPromptHash: '9559b7531b9a377bda2497ebf124ba24ab342e2257ce4a5c7f0d24269a14ac47',
+  previousPromptHash: null
+}
+scene.art.presentation {
+  currentSceneKey: 'dock_office',
+  artStatus: 'failed',
+  promptHash: '9559b7531b9a377bda2497ebf124ba24ab342e2257ce4a5c7f0d24269a14ac47',
+  ready: false
+}
+scene.art.client.render_state {
+  liveStatus: 'failed',
+  sceneKey: 'dock_office',
+  promptHash: '9559b7531b9a377bda2497ebf124ba24ab342e2257ce4a5c7f0d24269a14ac47',
+  imageUrl: null,
+  resolvedBackdropUrl: null,
+  hasReadyImage: false
+}
+ GET /play?adventureId=ef95f3c6-9060-4070-b68c-cdef1542fe7f 200 in 2.3s (compile: 1524ms, render: 763ms)
+ GET /api/scene-art/worker/queue 200 in 30ms (compile: 12ms, render: 18ms)
+ GET /api/scene-art/worker/health 200 in 12ms (compile: 4ms, render: 8ms)
+ POST /api/scene-art/worker/requeue 400 in 42ms (compile: 35ms, render: 7ms)
+ POST /api/scene-art/worker/requeue 400 in 11ms (compile: 4ms, render: 7ms)
+turn.branch {
+  userId: 'admin',
+  adventureId: 'ef95f3c6-9060-4070-b68c-cdef1542fe7f',
+  branch: 'legacy'
+}
+turn.duration { userId: 'admin', branch: 'legacy', ms: 14 }
+turn.health {
+  userId: 'admin',
+  adventureId: 'ef95f3c6-9060-4070-b68c-cdef1542fe7f',
+  branch: 'legacy',
+  normalizedInputLength: 12,
+  idempotencyKey: '4bb4e35eaddc13f6b055c35d0d7d0c21e7f61b0c9780f1a6fb93a343bc52a88b',
+  softRateAllowed: true,
+  usageAllowed: true,
+  durationMs: 14,
+  success: true
+}
+scene.previousTurn.lookup {
+  adventureId: 'ef95f3c6-9060-4070-b68c-cdef1542fe7f',
+  turnIndex: 1,
+  previousTurnFound: true,
+  previousTurnHasContinuityInfo: false,
+  hydratedPreviousSceneKey: null,
+  hydratedPreviousIdentityKey: 'unknown::none::none::investigation'
+}
+scene.continuity.hydration {
+  previousTurnIndex: 0,
+  previousTurnSceneKey: null,
+  hasPreviousContinuityInfo: false,
+  hasPreviousCanonicalPayload: false,
+  hasPreviousSceneArt: false,
+  hydratedPreviousSceneKey: null
+}
+scene.art.trigger {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: 'c743d2418cbbe63444bfe39be406123d4abe0c4141dd8d075d92c59cc0c70e56',
+  shouldGenerate: true,
+  reason: 'location_entered',
+  tier: 'low'
+}
+scene.art.queued {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: 'c743d2418cbbe63444bfe39be406123d4abe0c4141dd8d075d92c59cc0c70e56',
+  status: 'queued',
+  attemptCount: 0,
+  generationLeaseUntil: null
+}
+scene.art.triggered {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: 'c743d2418cbbe63444bfe39be406123d4abe0c4141dd8d075d92c59cc0c70e56',
+  triggerReason: 'location_entered',
+  triggerTier: 'low',
+  triggerMilestoneKind: null
+}
+scene.render.degraded_enqueue {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: null,
+  previousSceneKey: null,
+  previousPromptHash: null,
+  degradedReason: 'NO_PREVIOUS_CANONICAL_PAYLOAD'
+}
+scene.identity.stabilization {
+  turnIndex: 1,
+  rawCurrentSceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  correctedSceneKey: null,
+  appliedCorrection: false,
+  effectiveSceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082'
+}
+scene.keys {
+  previousCanonicalKey: null,
+  currentCanonicalKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  previousSceneIdentityKey: 'unknown::none::none::investigation',
+  currentSceneIdentityKey: 'room_start::none::signal_source::investigation',
+  derivedSceneDeltaKind: 'full',
+  sameScene: false,
+  sceneClockDeltaOverride: null,
+  sceneClockPressureEffect: null,
+  currentSceneClock: 0
+}
+scene.render.queued {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  deltaKind: 'full',
+  renderPlan: 'queue-full-render',
+  renderMode: 'full',
+  reason: 'NO_PREVIOUS_CANONICAL_PAYLOAD',
+  continuityBucket: 'degraded',
+  renderMetrics: { reused: 0, rendered: 1, reuseRate: 0 },
+  renderReasons: {
+    fullSceneChange: 0,
+    cameraChange: 0,
+    subjectChange: 0,
+    environmentChange: 0,
+    degradedContinuity: 1
+  },
+  counts: { queued: 1, skipped: 0 }
+}
+scene.render.plan {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  deltaKind: 'full',
+  renderPlan: 'queue-full-render',
+  renderMode: 'full',
+  reason: 'NO_PREVIOUS_CANONICAL_PAYLOAD',
+  continuityBucket: 'degraded',
+  renderMetrics: { reused: 0, rendered: 1, reuseRate: 0 },
+  renderReasons: {
+    fullSceneChange: 0,
+    cameraChange: 0,
+    subjectChange: 0,
+    environmentChange: 0,
+    degradedContinuity: 1
+  },
+  counts: { queued: 1, skipped: 0 }
+}
+scene.director.decision {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  emphasis: 'observe',
+  shotScale: 'wide',
+  cameraAngle: 'eye',
+  focusSubject: 'environment',
+  compositionBias: 'asymmetric'
+}
+scene.continuity.persisted {
+  adventureId: 'ef95f3c6-9060-4070-b68c-cdef1542fe7f',
+  turnIndex: 1,
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  identityKey: 'room_start::none::signal_source::investigation',
+  previousSceneKey: null,
+  deltaKind: 'full',
+  renderPlan: 'queue-full-render',
+  shotKey: '1e4102c0328ed36e2f243a60291238592b3de4d919d8e57b6d0c1974efdf1a8e',
+  previousShotKey: null,
+  shotDuration: 1,
+  reuseRate: 0,
+  persistedTurnId: 'cmn8juusd0004r4tgxei144p2'
+}
+scene.timeline {
+  turnIndex: 1,
+  shotKey: '1e4102c0328ed36e2f243a60291238592b3de4d919d8e57b6d0c1974efdf1a8e',
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  shotPersisted: false,
+  shotDuration: 1,
+  deltaKind: 'full',
+  renderPlan: 'queue-full-render',
+  renderMode: 'full',
+  reuseRate: 0
+}
+scene.system.metrics {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  turnIndex: 1,
+  reuseRate: 0,
+  shotDuration: 1,
+  renderPlan: 'queue-full-render',
+  deltaKind: 'full'
+}
+scene.continuity.lineage {
+  turnIndex: 1,
+  previousSceneKey: null,
+  currentSceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  shotKey: '1e4102c0328ed36e2f243a60291238592b3de4d919d8e57b6d0c1974efdf1a8e',
+  shotDuration: 1
+}
+scene.continuity.previousSceneKey.null_after_bootstrap {
+  adventureId: 'ef95f3c6-9060-4070-b68c-cdef1542fe7f',
+  turnIndex: 1,
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082'
+}
+scene.continuity.debug {
+  previousTurnIndex: 0,
+  previousSceneKey: null,
+  previousIdentityKey: 'unknown::none::none::investigation',
+  currentSceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  currentIdentityKey: 'room_start::none::signal_source::investigation',
+  sceneKeysMatch: false,
+  fullMemoryPreserved: false,
+  sameScene: false,
+  deltaKind: 'full',
+  renderPlan: 'queue-full-render',
+  transitionMemory: {
+    preserveFraming: false,
+    preserveSubject: false,
+    preserveActor: false,
+    preserveFocus: false
+  },
+  transition: {
+    type: 'reset',
+    preserveFraming: false,
+    preserveSubject: false,
+    preserveActor: false,
+    preserveFocus: false,
+    focusHeld: false
+  },
+  legacyRefreshDecision: {
+    shouldQueueRender: true,
+    shouldReuseCurrentImage: false,
+    shouldSwapImmediatelyWhenReady: false,
+    renderPlan: 'queue-full-render'
+  },
+  finalRenderDecision: {
+    canUseSceneDelta: false,
+    canReusePreviousSceneArt: false,
+    renderPlan: 'queue-full-render',
+    shouldQueueRender: true,
+    shouldReuseCurrentImage: false,
+    renderMode: 'full'
+  }
+}
+scene.art.claimed {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: 'c743d2418cbbe63444bfe39be406123d4abe0c4141dd8d075d92c59cc0c70e56',
+  status: 'generating',
+  attemptCount: 1,
+  generationStartedAt: 2026-03-27T06:58:05.556Z,
+  generationLeaseUntil: 2026-03-27T06:59:05.556Z,
+  leaseOwnerId: 'scene-art:25684:1774594685556',
+  leaseAcquiredAt: 2026-03-27T06:58:05.556Z
+}
+scene.art.provider.start {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: 'c743d2418cbbe63444bfe39be406123d4abe0c4141dd8d075d92c59cc0c70e56',
+  attemptCount: 1
+}
+GENERATING IMAGE: 01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082 at Day, clear, intact, victorian-gothic-cinematic, cinematic environment, moody lighting, high detail, dark fantasy
+turn.failure {
+  context: 'turn.post',
+  code: 'INTERNAL_ERROR',
+  message: "Cannot access 'resolutionCostDelta' before initialization",
+  details: {
+    adventureId: 'ef95f3c6-9060-4070-b68c-cdef1542fe7f',
+    userId: 'admin'
+  }
+}
+ReferenceError: Cannot access 'resolutionCostDelta' before initialization
+    at postTurn (app/api/turn/route.ts:1932:11)
+    at async (src/lib/api/routeLogging.ts:9:24)
+  1930 |       ...(opportunityResolutionModifier ? [opportunityResolutionModifier] : []),
+  1931 |       ...(opportunityCost ? [opportunityCost] : []),
+> 1932 |       ...(resolutionCostDelta > 0 ? ["resolution.cost"] : []),
+       |           ^
+  1933 |       ...(resolutionCostEffect.higherComplicationRisk ? ["higher-complication-risk"] : []),
+  1934 |       ...(complicationRiskEffect.complicationLikely ? ["complication-likely"] : []),
+  1935 |       ...(complicationOutcomeEffect.minimumComplicationCount > 0 ? ["complication.outcome"] : []),
+{"event":"api_route","route":"POST /api/turn","status":500,"durationMs":212}
+ POST /api/turn 500 in 312ms (compile: 98ms, render: 214ms)
+scene.art.provider.catch {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: 'c743d2418cbbe63444bfe39be406123d4abe0c4141dd8d075d92c59cc0c70e56',
+  error: 'scene-art: provider timeout'
+}
+scene.art.provider.finish {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: 'c743d2418cbbe63444bfe39be406123d4abe0c4141dd8d075d92c59cc0c70e56',
+  outcome: 'retryable'
+}
+scene.art.failed {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: 'c743d2418cbbe63444bfe39be406123d4abe0c4141dd8d075d92c59cc0c70e56',
+  status: 'queued',
+  attemptCount: 1,
+  generationStartedAt: 2026-03-27T06:58:05.556Z,
+  generationLeaseUntil: 2026-03-27T06:59:05.556Z,
+  leaseOwnerId: 'scene-art:25684:1774594685556',
+  leaseAcquiredAt: 2026-03-27T06:58:05.556Z,
+  durationMs: 40015,
+  errorCode: 'provider_error',
+  errorMessage: 'scene-art: provider timeout',
+  failureClass: 'timeout',
+  failureRetryable: true,
+  failureReason: 'scene-art: provider timeout',
+  failureRetryDelayMs: 5000,
+  failureMaxAttemptsReached: false,
+  failureDecisionReason: 'maxAttempts=3 attempt=1 failure=timeout'
+}
+ POST /api/image-provider 200 in 43s (compile: 17ms, render: 43s)
+scene.delta.missing {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  previousSceneKey: null,
+  currentPromptHash: '2b9b86a56f4b612794aae7ad85f07f593ebbbcbbe3362a08972471fff6b435b7',
+  previousPromptHash: null
+}
+scene.art.turn.identity.debug {
+  fallbackRenderPayload: {
+    sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+    identity: {
+      locationId: 'room_start',
+      pressureStage: 'calm',
+      lightingState: 'stable',
+      atmosphereState: 'still',
+      environmentWear: 'intact',
+      threatPresence: 'absent',
+      frameKind: 'wide_environment',
+      shotScale: 'wide',
+      subjectFocus: 'environment',
+      cameraAngle: 'level',
+      primarySubjectKind: 'environment',
+      primarySubjectId: 'environment',
+      actorVisible: false,
+      primaryActorId: null
+    },
+    promptMetadata: {
+      latestTurnScene: 'You study the room long enough to find the useful clue, but the extra attention gives the environment time to turn wary. A scrape in the wood suggests the frame was forced recently. The extra time spent reading the scene gives the pressure room to build.',
+      timeValue: '1',
+      directorDecision: [Object]
+    },
+    title: 'You study the room long enough to find the useful clue, but the extra attention gives the environment time to turn wary. A scrape in the wood suggests the frame was forced recently. The extra time spent reading the scene gives the pressure room to build.',
+    basePrompt: 'room_start, 1, calm, focus-environment',
+    renderPrompt: 'room_start\n' +
+      '1 calm\n' +
+      'subject environment environment\n' +
+      'camera wide_environment, shot wide, focus environment, angle level, intent observe\n' +
+      'lighting stable\n' +
+      'atmosphere still\n' +
+      'environment wear intact, threat absent, focus-environment\n' +
+      'Victorian gothic interior environment art, cinematic dark fantasy matte painting, restrained realism, desaturated palette, moody volumetric lighting, atmospheric dust, subtle texture, high environmental detail, no text, no UI',
+    stylePreset: 'victorian-gothic-cinematic',
+    tags: [
+      'focus-environment',
+      'lighting:stable',
+      'atmosphere:still',
+      'wear:intact',
+      'threat:absent',
+      'focus:environment',
+      'framing:wide_environment',
+      'shot:wide',
+      'angle:level',
+      'subject:environment',
+      'focus-label:environment',
+      'subject-label:environment',
+      'intent:observe'
+    ]
+  },
+  currentIdentity: {
+    sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+    promptHash: '2b9b86a56f4b612794aae7ad85f07f593ebbbcbbe3362a08972471fff6b435b7'
+  },
+  source: 'app/api/turn/route.ts:MODEL_ERROR-branch'
+}
+sceneArt refresh decision {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: '2b9b86a56f4b612794aae7ad85f07f593ebbbcbbe3362a08972471fff6b435b7',
+  decision: {
+    shouldQueueRender: true,
+    shouldReuseCurrentImage: false,
+    shouldSwapImmediatelyWhenReady: true,
+    renderPlan: 'queue-full-render'
+  },
+  branch: 'legacy',
+  reason: 'MODEL_ERROR'
+}
+scene.render.queue_request {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  renderMode: 'full'
+}
+scene.art.queue.persisted {
+  sceneKey: '01014f8d3d15d2cb21e92a5f67ee1fdf2690fd8f4084bf6c7d1fcc543f27d082',
+  promptHash: '2b9b86a56f4b612794aae7ad85f07f593ebbbcbbe3362a08972471fff6b435b7',
+  status: 'queued',
+  attemptCount: 0,
+  generationStartedAt: null,
+  generationLeaseUntil: null,
+  leaseOwnerId: null,
+  leaseAcquiredAt: null
+}
+{"event":"api_route","route":"POST /api/turn","status":200,"durationMs":18}
+ POST /api/turn 200 in 70ms (compile: 46ms, render: 24ms)
+  Reload env: .env.local
+ GET /dev/scene-art-worker 200 in 218ms (compile: 63ms, render: 155ms)
+ GET /dev/scene-art-worker 200 in 20ms (compile: 3ms, render: 17ms)
+PLAY SESSION USER admin
+PLAY ADVENTURE ID ef95f3c6-9060-4070-b68c-cdef1542fe7f
+scene.delta.missing {
+  sceneKey: 'dock_office',
+  previousSceneKey: null,
+  currentPromptHash: '9559b7531b9a377bda2497ebf124ba24ab342e2257ce4a5c7f0d24269a14ac47',
+  previousPromptHash: null
+}
+scene.art.presentation {
+  currentSceneKey: 'dock_office',
+  artStatus: 'failed',
+  promptHash: '9559b7531b9a377bda2497ebf124ba24ab342e2257ce4a5c7f0d24269a14ac47',
+  ready: false
+}
+ GET /play?adventureId=ef95f3c6-9060-4070-b68c-cdef1542fe7f 200 in 279ms (compile: 152ms, render: 127ms)

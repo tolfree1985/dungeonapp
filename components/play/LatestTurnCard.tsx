@@ -69,6 +69,18 @@ const EFFECT_LABELS: Record<FinalizedEffectSummary, string> = {
   "consequence-budget.extraCost-1": "Extra consequence cost",
   "consequence-budget.extraCost-2": "Extra consequence cost x2",
 };
+const THRESHOLD_EVENT_LABELS: Record<string, string> = {
+  guard_alerted: "Guard alerted",
+  area_compromised: "Area compromised",
+  window_narrowed: "Window narrowed",
+  situation_critical: "Situation critical",
+};
+const PRESSURE_DOMAIN_LABELS: Record<string, string> = {
+  suspicion: "Suspicion",
+  noise: "Noise",
+  time: "Time",
+  danger: "Danger",
+};
 const OPPORTUNITY_WINDOW_LABELS = {
   normal: "Opportunity steady",
   reduced: "Opportunity reduced",
@@ -99,6 +111,8 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
 
   const ledgerEntries = model?.ledgerEntries ?? [];
   const stateDeltas = model?.stateDeltas ?? [];
+  const pressureChanges = model?.pressureChanges ?? [];
+  const thresholdEvents = model?.thresholdEvents ?? [];
   const [showAllConsequences, setShowAllConsequences] = useState(false);
   const consequences = useMemo(() => {
     const entries = ledgerEntries.map((entry) => ({
@@ -166,20 +180,42 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
         </div>
       </header>
 
-      <div className="space-y-4">
-        <div className="space-y-3 border-b border-white/5 pb-4">
-          <div className={sectionHeading}>Command</div>
-          <p className="text-lg font-semibold text-white">{model?.playerInput ?? "Command missing"}</p>
-        </div>
-        <div className="space-y-2 border-b border-white/5 pb-3">
-          <div className={sectionHeading}>Scene</div>
-          <p className="text-sm text-slate-300">{model?.sceneText ?? "Scene text unavailable"}</p>
-        </div>
-        <ResolutionStrip resolution={resolution} pressureStage={model.pressureStage} />
-        {model?.notesLabel ? (
+        <div className="space-y-4">
+          <div className="space-y-3 border-b border-white/5 pb-4">
+            <div className={sectionHeading}>Command</div>
+            <p className="text-lg font-semibold text-white">{model?.playerInput ?? "Command missing"}</p>
+          </div>
           <div className="space-y-2 border-b border-white/5 pb-3">
-            <div className={sectionHeading}>Notes</div>
-            <p className="text-sm text-white/60">{model.notesLabel}</p>
+            <div className={sectionHeading}>Scene</div>
+            <p className="text-sm text-slate-300">{model?.sceneText ?? "Scene text unavailable"}</p>
+          </div>
+          <ResolutionStrip resolution={resolution} pressureStage={model.pressureStage} />
+          {model.pressureChanges.length > 0 && (
+            <div className="space-y-1 border-b border-white/5 pb-3">
+              <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">Pressure changes</div>
+              <ul className="text-sm text-white/80">
+                {model.pressureChanges.map((change) => (
+                  <li key={`${change.domain}-${change.amount}`}>
+                    {PRESSURE_DOMAIN_LABELS[change.domain] ?? change.domain} +{change.amount}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {model.thresholdEvents.length > 0 && (
+            <div className="space-y-1 border-b border-white/5 pb-3">
+              <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">Threshold events</div>
+              <ul className="text-sm font-semibold text-amber-200">
+                {model.thresholdEvents.map((event) => (
+                  <li key={event}>{event}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {model?.notesLabel ? (
+            <div className="space-y-2 border-b border-white/5 pb-3">
+              <div className={sectionHeading}>Notes</div>
+              <p className="text-sm text-white/60">{model.notesLabel}</p>
           </div>
         ) : null}
       </div>

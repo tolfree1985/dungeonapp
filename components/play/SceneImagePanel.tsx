@@ -1,5 +1,4 @@
 "use client";
-import { useEffect, useState } from "react";
 import type { ResolvedSceneImage, SceneArtLifecycleStatus } from "@/lib/sceneArt";
 import type { SceneContinuityState } from "@/lib/sceneContinuity";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
@@ -12,41 +11,8 @@ const transitionBadgeTone: Record<SceneTransition["type"], string> = {
   cut: "border-rose-500/40 bg-rose-950/50 text-rose-200",
 };
 
-type DisplayedImage = {
-  imageUrl: string | null;
-  source: ResolvedSceneImage["source"];
-};
-
-function resolveDisplayedImage(
-  current: DisplayedImage,
-  next: DisplayedImage,
-  transition: SceneTransition | null,
-  continuity: SceneContinuityState | null
-): DisplayedImage {
-  if (!continuity) return next;
-
-  if (continuity.shouldReuseImage) {
-    if (transition?.type === "hold") {
-      return current;
-    }
-    if (continuity.shouldRequestRefresh) {
-      return current;
-    }
-    if (next.imageUrl && next.imageUrl !== current.imageUrl) {
-      return next;
-    }
-    return current;
-  }
-
-  return next;
-}
-
 export function SceneImagePanel({
-  imageUrl,
-  source,
-  pending,
-  status,
-  sceneArtStatus,
+  sceneArt,
   caption,
   transition,
   continuity,
@@ -56,7 +22,8 @@ export function SceneImagePanel({
   retrySceneText,
   retryStylePreset,
   retryRenderMode = "full",
-}: ResolvedSceneImage & {
+}: {
+  sceneArt: (ResolvedSceneImage & { resolvedBackdropUrl?: string | null }) | null;
   caption?: string | null;
   transition?: SceneTransition | null;
   continuity?: SceneContinuityState | null;
@@ -67,63 +34,32 @@ export function SceneImagePanel({
   retryStylePreset?: string | null;
   retryRenderMode?: "full" | "preview";
 }) {
-  const [displayedImage, setDisplayedImage] = useState<DisplayedImage>({
-    imageUrl: imageUrl ?? null,
-    source: source ?? "default",
-  });
-
-  useEffect(() => {
-    const nextImage: DisplayedImage = {
-      imageUrl: imageUrl ?? null,
-      source: source ?? "default",
-    };
-
-    setDisplayedImage((current) => resolveDisplayedImage(current, nextImage, transition ?? null, continuity ?? null));
-  }, [imageUrl, source, transition, continuity]);
-
-  const finalImageUrl = displayedImage.imageUrl;
-  const finalSource = displayedImage.source;
+  const resolvedImageUrl =
+    sceneArt?.imageUrl ??
+    sceneArt?.resolvedBackdropUrl ??
+    null;
+  const hasReadyImage = sceneArt?.status === "ready" && Boolean(resolvedImageUrl);
+  const isUnavailable =
+    sceneArt?.status === "failed" &&
+    sceneArt?.lastProviderRetryable === false;
+  const isInFlight =
+    sceneArt?.status === "queued" ||
+    sceneArt?.status === "generating" ||
+    sceneArt?.status === "retryable";
   const focusLabel = focusState?.focusLabel ? `Focus: ${focusState.focusLabel}` : undefined;
-  const normalizedLifecycle: SceneArtLifecycleStatus = sceneArtStatus ?? (pending ? "generating" : "ready");
-  const hasReadyImage =
-    normalizedLifecycle === "ready" &&
-    Boolean(finalImageUrl) &&
-    !finalImageUrl?.includes("generated-placeholder");
-  const generatedSceneUrl = hasReadyImage ? finalImageUrl : null;
-  const showGeneratedImage = Boolean(generatedSceneUrl);
-
-  const sourceLabel = () => {
-    switch (finalSource) {
-      case "scene":
-        return "Current Scene";
-      case "previous":
-        return "Previous Scene";
-      case "location":
-        return "Location Backdrop";
-      default:
-        return "Default Backdrop";
-    }
-  };
-  const renderStateBadge = (() => {
-    switch (normalizedLifecycle) {
-      case "pending":
-        return "Preparing scene art";
-      case "generating":
-        return "Rendering scene art";
-      case "missing":
-        return "Scene art missing";
-      case "failed":
-        return "Scene art failed";
-      default:
-        return null;
-    }
-  })();
+  const renderStateBadge = hasReadyImage
+    ? "Scene art ready"
+    : isUnavailable
+    ? "Scene art unavailable"
+    : isInFlight
+    ? "Rendering scene art"
+    : "Scene art missing";
   const showRetryButton =
-    (normalizedLifecycle === "failed" || normalizedLifecycle === "missing") &&
+    (isUnavailable || renderStateBadge === "Scene art missing") &&
     !!retrySceneKey &&
     !!retrySceneText;
   const showForce =
-    (normalizedLifecycle === "ready" || normalizedLifecycle === "failed" || normalizedLifecycle === "missing") &&
+    (hasReadyImage || isUnavailable || renderStateBadge === "Scene art missing") &&
     !!retrySceneKey &&
     !!retrySceneText;
   const showActionButtons = (showRetryButton || showForce) && !!retrySceneKey && !!retrySceneText;
@@ -131,10 +67,22 @@ export function SceneImagePanel({
   return (
     <div className="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/80">
       <div className="relative aspect-[16/9] w-full bg-stone-900">
-        {showGeneratedImage ? (
-          <img src={generatedSceneUrl!} alt={sourceLabel()} className="h-full w-full object-cover" />
+        {hasReadyImage ? (
+            <img
+              src={resolvedImageUrl!}
+            alt={sceneArt?.sceneKey ?? "Scene art"}
+            className="h-full w-full object-cover"
+            onError={(event) => {
+              console.error("scene.art.image_load_failed", {
+                sceneKey: sceneArt?.sceneKey ?? null,
+                promptHash: sceneArt?.promptHash ?? null,
+                src: (event.currentTarget as HTMLImageElement).src,
+                status: sceneArt?.status ?? null,
+              });
+            }}
+          />
         ) : (
-          <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(120,120,120,0.14),_transparent_55%),linear-gradient(180deg,rgba(20,18,16,0.92),rgba(10,10,12,0.98))]" />
+          <DefaultBackdrop />
         )}
         <div className="absolute -top-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1 text-[10px] uppercase tracking-[0.3em]">
           <span className="text-white/60">Scene transition</span>
@@ -152,10 +100,10 @@ export function SceneImagePanel({
           ) : null}
         </div>
         <div className="absolute top-4 left-2 text-[10px] uppercase tracking-[0.3em]">
-          <span
-            className={`rounded-md border px-2 py-1 ${hasReadyImage ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-200" : "border-white/15 bg-black/50 text-neutral-400"}`}
-          >
-            {hasReadyImage ? "GENERATED SCENE" : "DEFAULT BACKDROP"}
+            <span
+              className={`rounded-md border px-2 py-1 ${hasReadyImage ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-200" : "border-white/15 bg-black/50 text-neutral-400"}`}
+            >
+              {hasReadyImage ? "GENERATED SCENE" : isUnavailable ? "SCENE ART UNAVAILABLE" : "DEFAULT BACKDROP"}
           </span>
         </div>
         {transition && (
@@ -186,28 +134,36 @@ export function SceneImagePanel({
         {showActionButtons ? (
           <div className="absolute bottom-3 right-3 flex flex-col gap-2">
             {showRetryButton && (
-              <SceneArtActionButton
-                sceneKey={retrySceneKey!}
-                sceneText={retrySceneText!}
-                stylePreset={retryStylePreset}
-                renderMode={retryRenderMode}
-                action="retry"
-                label="Retry render"
-              />
+            <SceneArtActionButton
+              sceneKey={retrySceneKey!}
+              promptHash={sceneArt?.promptHash ?? ""}
+              sceneText={retrySceneText!}
+              stylePreset={retryStylePreset}
+              renderMode={retryRenderMode}
+              action="retry"
+              label="Retry render"
+            />
             )}
             {showForce && (
-              <SceneArtActionButton
-                sceneKey={retrySceneKey!}
-                sceneText={retrySceneText!}
-                stylePreset={retryStylePreset}
-                renderMode={retryRenderMode}
-                action="force-regenerate"
-                label="Force regenerate"
+            <SceneArtActionButton
+              sceneKey={retrySceneKey!}
+              promptHash={sceneArt?.promptHash ?? ""}
+              sceneText={retrySceneText!}
+              stylePreset={retryStylePreset}
+              renderMode={retryRenderMode}
+              action="force-regenerate"
+              label="Force regenerate"
               />
             )}
           </div>
         ) : null}
       </div>
     </div>
+  );
+}
+
+function DefaultBackdrop() {
+  return (
+    <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(120,120,120,0.14),_transparent_55%),linear-gradient(180deg,rgba(20,18,16,0.92),rgba(10,10,12,0.98))]" />
   );
 }

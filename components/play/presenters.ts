@@ -133,6 +133,32 @@ function describeResolutionNotes(resolution: ResolvedResolution | null): string 
   return null;
 }
 
+const THRESHOLD_EVENT_LABELS: Record<string, string> = {
+  guard_alerted: "Guard alerted",
+  area_compromised: "Area compromised",
+  window_narrowed: "Window narrowed",
+  situation_critical: "Situation critical",
+};
+
+function extractPressureChange(delta: unknown): { domain: string; amount: number } | null {
+  if (!delta || typeof delta !== "object" || Array.isArray(delta)) return null;
+  const record = delta as Record<string, unknown>;
+  if (record.kind !== "pressure.add") return null;
+  const domain = typeof record.domain === "string" ? record.domain : null;
+  const amount = typeof record.amount === "number" ? record.amount : null;
+  if (!domain || amount === null) return null;
+  return { domain, amount };
+}
+
+function extractThresholdEvent(delta: unknown): string | null {
+  if (!delta || typeof delta !== "object" || Array.isArray(delta)) return null;
+  const record = delta as Record<string, unknown>;
+  if (record.kind !== "flag.set") return null;
+  const key = typeof record.key === "string" ? record.key : null;
+  if (!key) return null;
+  return THRESHOLD_EVENT_LABELS[key] ?? null;
+}
+
 type RollInfo = {
   rollTotal?: number;
   dice?: number[];
@@ -194,6 +220,8 @@ export type LatestTurnViewModel = {
     key: string;
     value: string;
   }>;
+  pressureChanges: Array<{ domain: string; amount: number }>;
+  thresholdEvents: string[];
   rollSummary?: string | null;
   rollDetail?: string | null;
   outcomeTierLabel?: string | null;
@@ -264,6 +292,12 @@ export type StatePanelViewModel = {
   turns: number | null;
   risk: StateTier | null;
   pressureStage: PressureStage;
+  pressureTotals: {
+    suspicion: number;
+    noise: number;
+    time: number;
+    danger: number;
+  };
 };
 
 export type AdventureHistoryRowViewModel = {
@@ -537,6 +571,13 @@ export function buildLatestTurnViewModel(
   const deltas = Array.isArray(turn.stateDeltas)
     ? turn.stateDeltas.map((delta) => describeStateDelta(delta)).filter(Boolean)
     : [];
+  const rawStateDeltas = Array.isArray(turn.stateDeltas) ? turn.stateDeltas : [];
+  const pressureChanges = rawStateDeltas
+    .map(extractPressureChange)
+    .filter((entry): entry is { domain: string; amount: number } => Boolean(entry));
+  const thresholdEvents = rawStateDeltas
+    .map(extractThresholdEvent)
+    .filter((label): label is string => Boolean(label));
   const resolutionSource = turn.resolutionJson ?? turn.resolution;
   const normalizedResolution = normalizeResolutionValue(resolutionSource);
   const rollInfo = extractRollInfo(resolutionSource);
@@ -589,6 +630,8 @@ export function buildLatestTurnViewModel(
     pressureLabel,
     ledgerEntries,
     stateDeltas: deltas,
+    pressureChanges,
+    thresholdEvents,
     rollSummary,
     rollDetail,
     outcomeTierLabel,
@@ -853,6 +896,21 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     alertValue !== null && noiseValue !== null && heatValue !== null
       ? presentOverallRiskTier({ alert: alertValue, noise: noiseValue, heat: heatValue })
       : null;
+
+  const statMap = new Map<string, number>();
+  state.stats.forEach((stat) => {
+    const key = normalizeLabel(stat.key).toLowerCase();
+    const value = parseNumericStateValue(stat.value);
+    if (value !== null) {
+      statMap.set(key, value);
+    }
+  });
+  const pressureTotals = {
+    suspicion: statMap.get("suspicion") ?? statMap.get("npc suspicion") ?? 0,
+    noise: statMap.get("noise") ?? 0,
+    time: statMap.get("time") ?? statMap.get("time advance") ?? 0,
+    danger: statMap.get("danger") ?? statMap.get("heat") ?? statMap.get("position penalty") ?? 0,
+  };
   const inputTurnsValue =
     typeof (state as PlayStatePanel & { latestTurnIndex?: number }).latestTurnIndex === "number"
       ? (state as PlayStatePanel & { latestTurnIndex?: number }).latestTurnIndex
@@ -873,5 +931,6 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     turns: turnsValue,
     risk,
     pressureStage: resolvedPressureStage,
+    pressureTotals,
   };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 import { SceneArtPayload } from "@/lib/sceneArt";
+import { buildPromptHash } from "@/lib/sceneArtGenerator";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
@@ -72,6 +73,9 @@ function buildPresentationArgs(turn: PlayTurn, state: Record<string, unknown> | 
 }
 
 describe("POST /api/turn helpers", () => {
+  const basePrompt = "test prompt";
+  const renderPrompt = "test render";
+  const promptHash = buildPromptHash(basePrompt, ENGINE_VERSION);
   const payload: SceneArtPayload = {
     sceneKey: "scene-test-key",
     identity: {
@@ -95,8 +99,9 @@ describe("POST /api/turn helpers", () => {
       timeValue: null,
       directorDecision: { emphasis: null, compositionBias: null },
     },
-    basePrompt: "test prompt",
-    renderPrompt: "test render",
+    basePrompt,
+    renderPrompt,
+    promptHash,
     stylePreset: "victorian-gothic-cinematic",
     tags: [],
   };

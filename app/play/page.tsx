@@ -629,9 +629,10 @@ let persistedAdventureOwnerId: string | null = null;
     currentReady: resolvedSceneImage.status === "ready",
     previousReady: false,
   });
-  const artStatus = resolvedSceneArtRow?.status ?? "queued";
-  const artImageUrl = resolvedSceneArtRow?.imageUrl ?? null;
-  const artReady = artStatus === "ready" && Boolean(artImageUrl);
+  const artRow = resolvedSceneArtRow;
+  const artStatus = artRow?.status ?? null;
+  const artImageUrl = artRow?.imageUrl ?? null;
+  const artReady = artRow?.status === "ready" && Boolean(artImageUrl);
   console.log("scene.art.presentation", {
     currentSceneKey: currentSceneIdentity.sceneKey,
     artStatus,
@@ -646,14 +647,18 @@ let persistedAdventureOwnerId: string | null = null;
       ? getSceneImageUpdateCaption(visualDeltas)
       : null;
 
-  const initialSceneArt = {
-    ...resolvedSceneImage,
-    sceneKey: currentSceneIdentity.sceneKey,
-    promptHash: currentSceneIdentity.promptHash,
-    status: artStatus,
-    imageUrl: artImageUrl,
-    ready: artReady,
-  };
+  const initialSceneArt = artRow
+    ? {
+        sceneKey: currentSceneIdentity.sceneKey,
+        promptHash: currentSceneIdentity.promptHash,
+        status: artStatus ?? undefined,
+        imageUrl: artReady ? artImageUrl : null,
+      }
+    : null;
+
+  console.log("play.server.scene_art_prop", {
+    initialSceneArt,
+  });
 
   return (
     <main className="mx-auto max-w-6xl p-6">

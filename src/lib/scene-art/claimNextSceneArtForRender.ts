@@ -80,6 +80,7 @@ export async function claimNextSceneArtForRender(
         stylePreset: true,
         renderMode: true,
         engineVersion: true,
+        status: true,
         attemptCount: true,
         billableAttemptCount: true,
         generationLeaseUntil: true,
@@ -98,10 +99,12 @@ export async function claimNextSceneArtForRender(
     const leaseStartedAt = now;
     const leaseDurationMs = getLeaseDurationMs();
     const leaseUntil = new Date(leaseStartedAt.getTime() + leaseDurationMs);
-    const leased = await tx.sceneArt.update({
+
+    const claimed = await tx.sceneArt.updateMany({
       where: {
         id: candidate.id,
-        status: { not: SceneArtStatus.ready },
+        status: candidate.status,
+        generationLeaseUntil: candidate.generationLeaseUntil,
       },
       data: {
         status: SceneArtStatus.generating,
@@ -111,6 +114,14 @@ export async function claimNextSceneArtForRender(
         generationLeaseUntil: leaseUntil,
         attemptCount: { increment: 1 },
       },
+    });
+
+    if (claimed.count !== 1) {
+      return null;
+    }
+
+    const leased = await tx.sceneArt.findUnique({
+      where: { id: candidate.id },
       select: {
         id: true,
         sceneKey: true,
@@ -126,6 +137,10 @@ export async function claimNextSceneArtForRender(
       },
     });
 
-    return leased;
+    if (!leased) {
+      return null;
+    }
+
+    return leased as ClaimedSceneArtJob;
   });
 }

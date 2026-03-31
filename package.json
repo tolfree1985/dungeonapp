@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3001",
+    "dev:scene-art-worker": "tsx src/lib/scene-art/runWorkerProcess.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

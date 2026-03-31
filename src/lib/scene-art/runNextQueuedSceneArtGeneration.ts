@@ -1,6 +1,8 @@
-import { SceneArtStatus } from "@/generated/prisma";
-import { prisma } from "@/lib/prisma";
-import { runQueuedSceneArtGeneration } from "@/lib/scene-art/runQueuedSceneArtGeneration";
+import {
+  runQueuedSceneArtGeneration,
+  type SceneArtAttemptResult,
+} from "@/lib/scene-art/runQueuedSceneArtGeneration";
+import { claimNextSceneArtForRender } from "@/lib/scene-art/claimNextSceneArtForRender";
 import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
 
 export type RunNextResult = {
@@ -9,72 +11,54 @@ export type RunNextResult = {
   attemptResult?: SceneArtAttemptResult;
 };
 
-export async function runNextQueuedSceneArtGeneration(): Promise<RunNextResult> {
+export async function runNextQueuedSceneArtGeneration(options?: { batchId?: string }): Promise<RunNextResult> {
   const workerId = getSceneArtWorkerId();
+  const batchId = options?.batchId ?? null;
   const now = new Date();
-  const nextQueued = await prisma.sceneArt.findFirst({
-    where: {
-      status: SceneArtStatus.queued,
-      OR: [
-        { generationLeaseUntil: null },
-        { generationLeaseUntil: { lt: now } },
-      ],
-    },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      sceneKey: true,
-      promptHash: true,
-      attemptCount: true,
-      leaseOwnerId: true,
-      generationLeaseUntil: true,
-    },
-  });
+  console.log("scene.art.worker.claim.search.begin", { workerId, batchId });
+  const job = await claimNextSceneArtForRender(now, workerId);
 
-
-  if (!nextQueued) {
+  if (!job) {
     return { sceneKey: null, promptHash: null };
   }
-  if (!nextQueued.sceneKey || !nextQueued.promptHash) {
-    await prisma.sceneArt.update({
-      where: { id: nextQueued.id },
-      data: { status: SceneArtStatus.failed },
-    });
 
-    throw new Error("SCENE_ART_INVALID_IDENTITY: queued row missing sceneKey or promptHash");
-  }
-
-  console.log("scene.art.reclaim.execute", {
-    sceneKey: nextQueued.sceneKey,
-    promptHash: nextQueued.promptHash,
+  console.log("scene.art.worker.claim.found", {
+    workerId,
+    batchId,
+    jobId: job.id,
+    sceneKey: job.sceneKey,
+    promptHash: job.promptHash,
   });
+
   const attemptResult = await runQueuedSceneArtGeneration({
-    sceneKey: nextQueued.sceneKey,
-    promptHash: nextQueued.promptHash,
+    sceneKey: job.sceneKey,
+    promptHash: job.promptHash,
+    skipClaim: true,
+    workerId,
   });
 
   if (!attemptResult || !attemptResult.outcome) {
     console.error("scene.art.claim.invalid_result", {
-      sceneKey: nextQueued.sceneKey,
-      promptHash: nextQueued.promptHash,
+      sceneKey: job.sceneKey,
+      promptHash: job.promptHash,
       attemptResult,
     });
   }
 
   console.log("scene.art.claim.result", {
-    sceneKey: nextQueued.sceneKey,
-    promptHash: nextQueued.promptHash,
+    sceneKey: job.sceneKey,
+    promptHash: job.promptHash,
     attemptResult: attemptResult?.outcome ?? "none",
   });
 
   console.log("scene.art.claim.return", {
-    sceneKey: nextQueued.sceneKey,
-    promptHash: nextQueued.promptHash,
+    sceneKey: job.sceneKey,
+    promptHash: job.promptHash,
     outcome: attemptResult?.outcome ?? null,
   });
   return {
-    sceneKey: nextQueued.sceneKey,
-    promptHash: nextQueued.promptHash,
+    sceneKey: job.sceneKey,
+    promptHash: job.promptHash,
     attemptResult: attemptResult ?? undefined,
   };
 }

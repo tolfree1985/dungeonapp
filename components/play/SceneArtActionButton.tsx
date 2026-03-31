@@ -3,11 +3,12 @@
 import { useState } from "react";
 
 type SceneArtActionButtonProps = {
+  action: "retry" | "force-regenerate" | "clear-and-regenerate";
   sceneKey: string;
+  promptHash: string;
   sceneText: string;
   stylePreset?: string | null;
   renderMode?: "full" | "preview";
-  action: "retry" | "force-regenerate";
   label: string;
 };
 
@@ -25,10 +26,17 @@ export default function SceneArtActionButton({
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch(`/api/scene-art/recover/${encodeURIComponent(sceneKey)}`, {
+      const response = await fetch("/api/scene-art/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, sceneText, stylePreset, renderMode }),
+        body: JSON.stringify({
+          action,
+          sceneKey,
+          promptHash,
+          sceneText,
+          stylePreset,
+          renderMode,
+        }),
       });
       if (!response.ok) throw new Error(`Scene art ${action} failed`);
       window.location.reload();

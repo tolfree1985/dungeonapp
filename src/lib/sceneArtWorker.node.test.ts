@@ -26,7 +26,7 @@ if (!shouldRunDbTests) {
 
     const result = await processQueuedSceneArt({
       limit: 10,
-      renderer: async () => ({
+      generator: async () => ({
         imageUrl: "/test-scene.png",
       }),
     });
@@ -57,7 +57,7 @@ if (!shouldRunDbTests) {
 
     await processQueuedSceneArt({
       limit: 10,
-      renderer: async () => {
+      generator: async () => {
         throw new Error("renderer failed");
       },
     });
@@ -93,7 +93,7 @@ if (!shouldRunDbTests) {
     const seen: string[] = [];
     await processQueuedSceneArt({
       limit: 5,
-      renderer: async ({ sceneKey }) => {
+      generator: async ({ sceneKey }) => {
         seen.push(sceneKey);
         return { imageUrl: `/order-${sceneKey}.png` };
       },

@@ -1,65 +1,20 @@
 import { prisma } from "@/lib/prisma";
+import {
+  generateSceneArtForExecutionContext,
+  type SceneArtExecutionContext,
+  type SceneArtGeneratorOverride,
+} from "@/lib/scene-art/generateSceneArtForIdentity";
 import type { RenderMode } from "@/lib/sceneArtRepo";
-
-type RenderSceneArtResult = {
-  imageUrl: string;
-};
-
-export type SceneArtRenderer = (input: {
-  sceneArtId: string;
-  sceneKey: string;
-  renderMode: RenderMode;
-  renderPrompt: string;
-}) => Promise<RenderSceneArtResult>;
-
-async function defaultRenderer({
-  sceneArtId,
-  sceneKey,
-  renderPrompt,
-  renderMode,
-}: {
-  sceneArtId: string;
-  sceneKey: string;
-  renderPrompt: string;
-  renderMode: RenderMode;
-}): Promise<RenderSceneArtResult> {
-  const renderRequest =
-    renderMode === "partial"
-      ? {
-          sceneArtId,
-          sceneKey,
-          renderPrompt,
-          renderMode,
-          continuityHint: "preserve-framing-subject-shot",
-          promptStrategy: "delta-minimal",
-          shotBias: "locked",
-        }
-      : {
-          sceneArtId,
-          sceneKey,
-          renderPrompt,
-          renderMode,
-          continuityHint: "fresh render",
-          promptStrategy: "full",
-          shotBias: "dynamic",
-        };
-
-  logger.info("sceneArt.render.mode", renderRequest);
-  // In production this branch would call the actual renderer with `renderRequest`.
-  return {
-    imageUrl: `/scene-ready-${renderMode}.svg`,
-  };
-}
 
 const logger = console;
 const TIMEOUT_MS = 120_000;
 
 export async function processQueuedSceneArt(args?: {
   limit?: number;
-  renderer?: SceneArtRenderer;
+  generator?: SceneArtGeneratorOverride;
 }) {
   const limit = args?.limit ?? 5;
-  const renderer = args?.renderer ?? defaultRenderer;
+  const generator = args?.generator;
 
   const queuedRows = await prisma.sceneArt.findMany({
     where: { status: "queued" },
@@ -71,11 +26,14 @@ export async function processQueuedSceneArt(args?: {
     select: {
       id: true,
       sceneKey: true,
+      promptHash: true,
+      basePrompt: true,
       renderPrompt: true,
+      stylePreset: true,
+      renderMode: true,
+      engineVersion: true,
       createdAt: true,
       updatedAt: true,
-      engineVersion: true,
-      renderMode: true,
     },
   });
 
@@ -103,20 +61,26 @@ export async function processQueuedSceneArt(args?: {
     const start = Date.now();
     logger.info("sceneArt.render.start", { sceneKey: row.sceneKey, renderMode: row.renderMode });
 
-    try {
-      const result = await renderer({
-        sceneArtId: row.id,
-        sceneKey: row.sceneKey,
-        renderMode: row.renderMode,
-        renderPrompt: row.renderPrompt,
-      });
+    if (!row.promptHash) {
+      logger.error("sceneArt.render.invalid_row", { sceneKey: row.sceneKey, reason: "missing_prompt_hash" });
+      failed += 1;
+      continue;
+    }
 
-      await prisma.sceneArt.update({
-        where: { id: row.id },
-        data: {
-          status: "ready",
-          imageUrl: result.imageUrl,
-        },
+    const context: SceneArtExecutionContext = {
+      sceneKey: row.sceneKey,
+      promptHash: row.promptHash,
+      basePrompt: row.basePrompt,
+      renderPrompt: row.renderPrompt,
+      stylePreset: row.stylePreset,
+      renderMode: row.renderMode,
+      engineVersion: row.engineVersion,
+    };
+
+    try {
+      await generateSceneArtForExecutionContext(context, {
+        force: true,
+        generator,
       });
 
       ready += 1;
@@ -127,13 +91,6 @@ export async function processQueuedSceneArt(args?: {
         renderMode: row.renderMode,
       });
     } catch (error) {
-      await prisma.sceneArt.update({
-        where: { id: row.id },
-        data: {
-          status: "failed",
-        },
-      });
-
       failed += 1;
       logger.error("sceneArt.render.failure", {
         sceneKey: row.sceneKey,

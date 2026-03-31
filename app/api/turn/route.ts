@@ -118,6 +118,7 @@ import {
 } from "@/lib/watchfulness-action-flags";
 import { resolvePositionActionFlags, type PositionActionFlags } from "@/lib/position-action-flags";
 import { resolveNoiseActionFlags, type NoiseActionFlags } from "@/lib/noise-action-flags";
+import { applyWorldStateModifiers } from "@/lib/engine/applyWorldStateModifiers";
 import { resolveComplicationWeight } from "@/server/scene/complication-weight";
 import { resolveComplicationTier } from "@/server/scene/complication-tier";
 import { resolveComplicationSelectionPolicy } from "@/server/scene/complication-selection-policy";
@@ -125,6 +126,34 @@ import { enforceComplicationPolicy } from "@/server/scene/enforce-complication-p
 import { resolveOutcomeSeverity } from "@/server/scene/outcome-severity";
 import { buildResolverLadder } from "@/server/scene/build-resolver-ladder";
 import { assertSceneArtInvariant } from "@/lib/scene-art/assertSceneArtInvariant";
+import {
+  OutcomeTier,
+  ResolvedTurn,
+  resolveOutcomeTier,
+  type StateDelta,
+} from "@/lib/engine/resolveTurnContract";
+import { classifyResolvedTurnDeltas } from "@/lib/engine/classifyResolvedTurnDeltas";
+import { evaluatePressureThresholds } from "@/lib/engine/evaluatePressureThresholds";
+import { inferPressureDeltas } from "@/lib/engine/inferPressureDeltas";
+import { resolveActionEffects } from "@/lib/engine/resolveActionEffects";
+import { validateResolvedTurnContract } from "@/lib/engine/validateResolvedTurnContract";
+
+function summarizePressureDeltas(deltas: StateDelta[]) {
+  const summary = {
+    suspicion: 0,
+    noise: 0,
+    time: 0,
+    danger: 0,
+  };
+  for (const delta of deltas) {
+    if (delta.kind !== "pressure.add") continue;
+    const domain = delta.domain as keyof typeof summary;
+    if (domain in summary) {
+      summary[domain] += delta.amount;
+    }
+  }
+  return summary;
+}
 
 function computeTimeAdvanceDelta(current: number, previous: number): number {
   return Math.max(0, current - previous);
@@ -2264,7 +2293,14 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       ...(outcomeSeverityEntry ? [outcomeSeverityEntry] : []),
       ...(complicationWeightEntry ? [complicationWeightEntry] : []),
       ...(complicationDeltaEntry ? [complicationDeltaEntry] : []),
+      ...(authoredEffects?.ledgerAdds ?? []),
     ];
+    const normalizedLedgerAdds = ledgerAddsWithVisual.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+      if (!Object.prototype.hasOwnProperty.call(entry, "outcome")) return entry;
+      const { outcome, ...rest } = entry as Record<string, unknown>;
+      return rest;
+    });
     if (stateRecord.npcStance !== resolveNpcSuspicionStance(Number(currentStats.npcSuspicion ?? 0))) {
       throw new Error("NPC_STANCE_MISMATCH");
     }
@@ -2541,6 +2577,121 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     const finalSceneArt = buildFinalSceneArtContract(finalSceneArtRow);
     console.log("TURN_SCENE_ART_RETURN", finalSceneArt);
 
+    const modifiers = applyWorldStateModifiers({
+      stateRecord,
+      mode: playerIntentMode ?? "LOOK",
+    });
+    const baseDifficulty = Number(stateRecord.difficulty ?? 0);
+    const adjustedDifficulty = baseDifficulty + modifiers.difficultyModifier;
+    const effectiveRollTotal =
+      typeof rollTotal === "number" && Number.isFinite(rollTotal)
+        ? rollTotal + modifiers.rollAdjustment
+        : null;
+    const hasRoll = effectiveRollTotal !== null;
+    const resolvedOutcomeTier: OutcomeTier = hasRoll
+      ? resolveOutcomeTier({
+          rollTotal: effectiveRollTotal,
+          difficulty: adjustedDifficulty,
+        })
+      : "mixed";
+    const resolvedRoll =
+      hasRoll
+        ? {
+            formula: "turn-resolution",
+            total: effectiveRollTotal,
+            difficulty: adjustedDifficulty,
+            margin: effectiveRollTotal - adjustedDifficulty,
+          }
+        : null;
+    const authoredEffects =
+      playerIntentMode === "LOOK" || playerIntentMode === "DO"
+        ? resolveActionEffects({
+            mode: playerIntentMode ?? "LOOK",
+            playerText,
+            state: stateRecord,
+            outcomeTier: resolvedOutcomeTier,
+          })
+        : null;
+    const baseStateDeltas = [
+      ...turnStateDeltas,
+      ...(authoredEffects?.stateDeltas ?? []),
+    ];
+    const classification = classifyResolvedTurnDeltas(baseStateDeltas);
+    console.log("turn.mode.summary", {
+      mode: playerIntentMode ?? null,
+      actionTags: authoredEffects?.tags ?? [],
+      progressDetected: classification.hasProgress,
+      costDetected: classification.hasCost,
+      authoredDeltaKinds: (authoredEffects?.stateDeltas ?? []).map((delta) => delta.kind ?? (delta as any).op ?? "unknown"),
+      authoredLedgerCount: authoredEffects?.ledgerAdds?.length ?? 0,
+      authoredPressureDelta: summarizePressureDeltas(authoredEffects?.stateDeltas ?? []),
+    });
+    const deltaBuffer = [...baseStateDeltas];
+    const costNeeded = ["success_with_cost", "mixed", "failure_with_progress"].includes(resolvedOutcomeTier);
+    if (costNeeded && !classification.hasCost) {
+      const pressureDeltas = inferPressureDeltas({
+        mode: playerIntentMode ?? "LOOK",
+        outcomeTier: resolvedOutcomeTier,
+        tags,
+      }).map((delta) => {
+        if (delta.kind === "pressure.add") {
+          return {
+            ...delta,
+            amount: delta.amount * modifiers.pressureMultiplier,
+          };
+        }
+        return delta;
+      });
+      deltaBuffer.push(...pressureDeltas);
+    }
+    const pressureThresholdDeltas = evaluatePressureThresholds({
+      stateStats: asRecord(stateRecord.stats) ?? {},
+      deltas: deltaBuffer,
+    });
+    deltaBuffer.push(...pressureThresholdDeltas);
+
+    const margin = hasRoll ? (effectiveRollTotal as number) - adjustedDifficulty : null;
+    console.log("turn.outcome.classification", {
+      rawRoll: rollTotal ?? null,
+      effectiveRollTotal,
+      difficulty: adjustedDifficulty,
+      margin,
+      progressDetected: classification.hasProgress,
+      costDetected: classification.hasCost,
+      selectedTier: resolvedOutcomeTier,
+      modifiers,
+      actionTags: authoredEffects?.tags ?? [],
+    });
+
+    const resolvedTurn: ResolvedTurn = {
+      outcome: {
+        tier: resolvedOutcomeTier,
+        roll: resolvedRoll,
+      },
+      stateDeltas: deltaBuffer,
+      ledgerAdds: normalizedLedgerAdds,
+      sceneUpdate: sceneTransitionPayload
+        ? {
+            locationId: (sceneTransitionPayload as any)?.locationId ?? null,
+            sceneId: sceneTransitionPayload.sceneKey ?? null,
+            tags: sceneTransitionPayload.tags ?? undefined,
+          }
+        : null,
+      presentation: {
+        sceneText: scenePresentation.sceneText?.trim()
+          ? scenePresentation.sceneText
+          : "(no scene text generated)",
+        consequenceText: scenePresentation.consequenceText ?? [],
+      },
+    };
+    console.log("turn.contract.resolved", resolvedTurn);
+    const validationIssues = validateResolvedTurnContract(resolvedTurn);
+    if (validationIssues.length > 0) {
+      console.log("turn.contract.validation", {
+        issues: validationIssues,
+      });
+    }
+
     const responseBody = {
       ok: true,
       action: action ?? null,
@@ -2550,10 +2701,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       turn: {
         ...(finalized as any).turn,
         stateDeltas: turnStateDeltas,
-        ledgerAdds: ledgerAddsWithVisual,
+        ledgerAdds: normalizedLedgerAdds,
       },
       stateDeltas: turnStateDeltas,
-      ledgerAdds: ledgerAddsWithVisual,
+      ledgerAdds: normalizedLedgerAdds,
       sceneArt: finalSceneArt,
       sceneTransition: sceneTransitionPayload,
       scenePresentation,

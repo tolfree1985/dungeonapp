@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureSceneArtFile, sceneArtFileExists } from "@/lib/scene-art/fileSystem";
+import { ensureSceneArtFile } from "@/lib/scene-art/fileSystem";
+import { type SceneArtProviderResponse } from "@/lib/scene-art/providerResponse";
+import { getStaticSceneArtBase64 } from "@/lib/scene-art/staticSceneArtProvider";
 
 const PROVIDER_URL = process.env.EXTERNAL_IMAGE_PROVIDER_URL;
 const PROVIDER_TOKEN = process.env.EXTERNAL_IMAGE_PROVIDER_AUTH_TOKEN;
@@ -14,7 +16,13 @@ function isAllowedImageUrl(url: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const { prompt, sceneKey, promptHash } = await request.json();
+  const { prompt, sceneKey, promptHash, provider } = await request.json();
+
+  console.log("IMAGE_PROVIDER_REQUEST", {
+    provider,
+    sceneKey,
+    promptHash,
+  });
 
   if (!sceneKey || !promptHash) {
     return NextResponse.json(
@@ -23,24 +31,66 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!PROVIDER_URL) {
-    return NextResponse.json({
-      imageUrl: sceneKey === "dock_office" ? "/scene-art/dock_office.jpg" : "/scene-art/generated-placeholder.jpg",
-      provider: "placeholder",
-    });
+  const forcedStatic = process.env.SCENE_ART_TEST_SCENE_KEY === sceneKey;
+
+  if (forcedStatic) {
+    const staticArt = await getStaticSceneArtBase64(sceneKey);
+    if (staticArt) {
+      console.log("SCENE_ART_STATIC_PROVIDER_RESULT", {
+        sceneKey,
+        found: !!staticArt,
+        mimeType: staticArt.mimeType ?? null,
+        hasBase64: !!staticArt.base64,
+        base64Length: staticArt.base64?.length ?? 0,
+      });
+      return NextResponse.json<SceneArtProviderResponse>({
+        ok: true,
+        provider: "static-fallback",
+        base64: staticArt.base64,
+        imageBase64: staticArt.base64,
+        mimeType: staticArt.mimeType,
+        imageUrl: `/scene-art/${sceneKey}-static.png`,
+      });
+    }
+    return NextResponse.json<SceneArtProviderResponse>(
+      {
+        ok: false,
+        provider: "placeholder",
+        error: "No static fixture found for test scene",
+        retryable: false,
+      },
+      { status: 422 }
+    );
+  }
+
+  const remoteProviderUrl = PROVIDER_URL ?? "https://api.openai.com/v1/images/generations";
+  const authToken = PROVIDER_TOKEN ?? process.env.OPENAI_API_KEY;
+  if (!authToken) {
+    return NextResponse.json<SceneArtProviderResponse>(
+      {
+        ok: false,
+        provider: "remote",
+        error: "No remote image provider configured",
+        retryable: false,
+      },
+      { status: 500 }
+    );
   }
 
   try {
-    const response = await fetch(PROVIDER_URL, {
+    const response = await fetch(remoteProviderUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(PROVIDER_TOKEN ? { Authorization: `Bearer ${PROVIDER_TOKEN}` } : {}),
+        Authorization: `Bearer ${authToken}`,
       },
       body: JSON.stringify({
-        model: "gpt-image-1",
         prompt,
         size: "1024x1024",
+        response_format: "b64_json",
+        sceneKey,
+        promptHash,
+        model: "gpt-image-1",
       }),
       cache: "no-store",
     });
@@ -52,42 +102,51 @@ export async function POST(request: NextRequest) {
     }
 
     const json = await response.json();
-    let imageUrl: string | null = null;
-    const safeHash = promptHash;
-    const expectedImageUrl = `/scene-art/${sceneKey}-${safeHash}.png`;
-    if (json?.data?.[0]?.b64_json) {
-      const base64 = json.data[0].b64_json;
-      const buffer = Buffer.from(base64, "base64");
+    const b64 = json?.data?.[0]?.b64_json;
+    const expectedImageUrl = `/scene-art/${sceneKey}-${promptHash}.png`;
+    if (b64) {
+      const buffer = Buffer.from(b64, "base64");
       await ensureSceneArtFile(expectedImageUrl, buffer);
-      imageUrl = expectedImageUrl;
-    }
-    if (!imageUrl) {
-      imageUrl =
-        json?.data?.[0]?.url ??
-        json?.url ??
-        json?.image_url ??
-        json?.output?.[0] ??
-        json?.data?.[0]?.image_url ??
-        null;
+      return NextResponse.json<SceneArtProviderResponse>({
+        ok: true,
+        provider: "remote",
+        imageUrl: expectedImageUrl,
+        imageBase64: b64,
+        mimeType: "image/png",
+      });
     }
 
-    if (!imageUrl || !isAllowedImageUrl(imageUrl)) {
+    const directUrl =
+      json?.data?.[0]?.url ||
+      json?.url ||
+      json?.image_url ||
+      json?.output?.[0] ||
+      json?.data?.[0]?.image_url ||
+      null;
+
+    if (!directUrl || !isAllowedImageUrl(directUrl)) {
       throw new Error("Invalid imageUrl returned by provider");
     }
 
-    const imageExists = imageUrl ? await sceneArtFileExists(imageUrl) : false;
-    if (!imageExists) {
-      throw new Error("SCENE_ART_FILE_NOT_WRITTEN");
-    }
-    return NextResponse.json({
-      imageUrl,
+    return NextResponse.json<SceneArtProviderResponse>({
+      ok: true,
       provider: "remote",
+      imageUrl: directUrl,
+      mimeType: "image/png",
     });
   } catch (error) {
     console.error("image-provider fallback", error);
-    return NextResponse.json({
-      imageUrl: sceneKey === "dock_office" ? "/scene-art/dock_office.jpg" : "/scene-art/generated-placeholder.jpg",
-      provider: "fallback",
-    });
+    return NextResponse.json<SceneArtProviderResponse>(
+      {
+        ok: false,
+        provider: "fallback",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unexpected image provider failure",
+        retryable: true,
+      },
+      { status: 500 }
+    );
   }
 }

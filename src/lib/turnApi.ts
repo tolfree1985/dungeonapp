@@ -14,6 +14,25 @@ export type TurnApiResponse = {
   turnIndex: number;
   sceneTransition?: SceneTransition | null;
   scenePresentation?: ScenePresentation | null;
-  sceneArt?: CanonicalSceneArtState | null;
+  sceneArt: CanonicalSceneArtState;
   sceneContinuity?: SceneContinuityInfo | null;
 };
+
+export async function parseTurnApiResponse(response: Response) {
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch (error) {
+    data = null;
+  }
+  console.log("turnApi.raw_json", data);
+  console.log(
+    "turnApi.raw_json.keys",
+    Object.keys((data as Record<string, unknown>) ?? {})
+  );
+  console.log("turnApi.raw_json.sceneArt", (data as any)?.sceneArt);
+  console.log("turnApi.raw_json.resultSceneArt", (data as any)?.resultSceneArt);
+  console.log("turnApi.raw_json.data", (data as any)?.data);
+  console.log("turnApi.raw_json.turn", (data as any)?.turn);
+  return data as TurnApiResponse | { error?: string } | null;
+}

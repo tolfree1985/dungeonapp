@@ -68,6 +68,12 @@ export default function StatePanel({ viewModel }: StatePanelProps) {
     items: viewModel[section.key] as StateItemViewModel[],
     empty: section.empty,
   }));
+  const pressureTotals = viewModel.pressureTotals ?? {
+    suspicion: 0,
+    noise: 0,
+    time: 0,
+    danger: 0,
+  };
   const pressureStyles = getPressureClasses(viewModel.pressureStage);
   type MetricEntry = { key: StateMetricKey; label: string; metric: PresentedStateMetric | null };
   const metricEntries: MetricEntry[] = STATE_METRIC_ORDER.map((key) => ({
@@ -85,6 +91,19 @@ export default function StatePanel({ viewModel }: StatePanelProps) {
       <div className={sectionHeading}>State</div>
       <div className={`rounded-xl border ${pressureStyles.border} ${pressureStyles.glow ?? ""} px-3 py-2`}>
         <div className={`text-sm font-semibold ${pressureStyles.text}`}>Risk — {riskLabel}</div>
+      </div>
+      <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-white/70">
+        <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">Pressure</div>
+        <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+          <span>Suspicion</span>
+          <span className="font-semibold text-white">{pressureTotals.suspicion}</span>
+          <span>Noise</span>
+          <span className="font-semibold text-white">{pressureTotals.noise}</span>
+          <span>Time</span>
+          <span className="font-semibold text-white">{pressureTotals.time}</span>
+          <span>Danger</span>
+          <span className="font-semibold text-white">{pressureTotals.danger}</span>
+        </div>
       </div>
       {showDetails ? (
         <details className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/70">

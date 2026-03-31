@@ -61,3 +61,14 @@ export function runWorkerProcess(options: RunWorkerProcessOptions = {}): Running
     done,
   };
 }
+
+async function main(): Promise<void> {
+  console.log("[scene-art-worker] process starting");
+  const worker = runWorkerProcess();
+  await worker.done;
+}
+
+main().catch((error) => {
+  console.error("[scene-art-worker] fatal", error);
+  process.exit(1);
+});

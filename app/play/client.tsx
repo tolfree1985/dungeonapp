@@ -29,10 +29,10 @@ import type { SceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { resolveSceneContinuityState } from "@/lib/sceneContinuity";
 import TurnInput from "@/components/play/TurnInput";
 import type { SceneArtStatus, SceneArtStatusResponse } from "@/lib/sceneArtStatus";
+import { parseTurnApiResponse } from "@/lib/turnApi";
 import type { TurnApiResponse, TurnInputPayload } from "@/lib/turnApi";
 import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";
 import { useRouter } from "next/navigation";
-import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
 import type { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
@@ -165,6 +165,9 @@ export default function PlayClient({
   sceneStylePreset,
   sceneRenderMode = "full",
 }: PlayClientProps) {
+  console.log("play.client.initial_scene_art_prop", {
+    sceneImage,
+  });
   const [liveSceneArt, setLiveSceneArt] = useState<ResolvedSceneImage | null>(sceneImage ?? null);
   const router = useRouter();
   const [liveSceneTransition, setLiveSceneTransition] = useState<SceneTransition | null>(sceneTransition ?? null);
@@ -242,6 +245,12 @@ export default function PlayClient({
     const sceneKey = liveSceneArt?.sceneKey;
     const promptHash = liveSceneArt?.promptHash ?? null;
     const currentStatus = liveSceneArt?.status ?? "missing";
+    if (!sceneImage) {
+      if (liveSceneArt !== null) {
+        setLiveSceneArt(null);
+      }
+      return;
+    }
     if (sceneKey !== lastSceneKeyRef.current) {
       lastSceneKeyRef.current = sceneKey;
       lastLoggedStatusRef.current = null;
@@ -251,17 +260,6 @@ export default function PlayClient({
       return;
     }
 
-    let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const pollingStartedAt = Date.now();
-    const getPollingInterval = (elapsed: number) => {
-      if (elapsed < 5000) return 1000;
-      if (elapsed < 15000) return 2000;
-      if (elapsed < 30000) return 4000;
-      return null;
-    };
-    const fallbackImageUrl = liveSceneArt?.imageUrl ?? null;
-    const fallbackSource = liveSceneArt?.source === "scene" ? "default" : liveSceneArt?.source ?? "default";
     const logSceneArtStatus = (nextStatus: SceneArtStatus) => {
       if (lastLoggedStatusRef.current === nextStatus) return;
       const payload: { sceneKey: string; status: SceneArtStatus; transition?: string } = {
@@ -282,31 +280,31 @@ export default function PlayClient({
       return;
     }
 
-    logSceneArtStatus("queued");
+    let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    const POLL_INTERVAL_MS = 1500;
+    const MAX_ATTEMPTS = 20;
+    const fallbackImageUrl = liveSceneArt?.imageUrl ?? null;
+    const fallbackSource = liveSceneArt?.source === "scene" ? "default" : liveSceneArt?.source ?? "default";
 
     const stopPolling = () => {
       cancelled = true;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
+      if (timerId) {
+        clearTimeout(timerId);
+        timerId = null;
       }
     };
 
     const scheduleNextPoll = () => {
       if (cancelled) return;
-      const elapsed = Date.now() - pollingStartedAt;
-      const interval = getPollingInterval(elapsed);
-      if (interval === null) {
-        stopPolling();
-        return;
+      if (timerId) {
+        clearTimeout(timerId);
       }
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      timeoutId = window.setTimeout(() => {
-        timeoutId = null;
+      timerId = window.setTimeout(() => {
+        timerId = null;
         pollSceneArt();
-      }, interval);
+      }, POLL_INTERVAL_MS);
     };
 
     const handleFailure = (nextStatus: SceneArtStatus) => {
@@ -334,17 +332,16 @@ export default function PlayClient({
     };
 
     const pollSceneArt = async () => {
-      const elapsed = Date.now() - pollingStartedAt;
-      if (elapsed > 30000) {
-        stopPolling();
+      if (cancelled) return;
+      attempts += 1;
+      if (attempts > MAX_ATTEMPTS) {
+        handleFailure("missing");
         return;
       }
       try {
-        const params = new URLSearchParams({
-          sceneKey,
-          promptHash,
-        });
-        const response = await fetch(`/api/scene-art?${params.toString()}`);
+        const response = await fetch(
+          `/api/scene-art/by-identity?sceneKey=${sceneKey}&promptHash=${promptHash}`
+        );
         if (cancelled) return;
         if (!response.ok) {
           handleFailure("missing");
@@ -352,14 +349,7 @@ export default function PlayClient({
         }
         const payload = (await response.json()) as SceneArtStatusResponse;
         if (cancelled) return;
-        const identity = resolveCanonicalSceneIdentity(payload.sceneArt);
-        const sceneArt = payload.sceneArt
-          ? {
-              ...payload.sceneArt,
-              sceneKey: identity.sceneKey ?? payload.sceneArt.sceneKey,
-              promptHash: identity.promptHash ?? payload.sceneArt.promptHash ?? null,
-            }
-          : null;
+        const sceneArt = payload.sceneArt ?? null;
         console.log("scene.art.client.poll_result", {
           sceneKey: sceneArt?.sceneKey ?? null,
           promptHash: sceneArt?.promptHash ?? null,
@@ -377,7 +367,6 @@ export default function PlayClient({
 
         const resolvedImageUrl = sceneArt.imageUrl ?? null;
         const sceneArtStatus = sceneArt.status ?? "missing";
-        const isSceneArtRendering = sceneArtStatus === "queued" || sceneArtStatus === "generating";
         const isSceneArtReady =
           sceneArtStatus === "ready" &&
           !!resolvedImageUrl &&
@@ -429,7 +418,7 @@ export default function PlayClient({
     logSceneArtStatus("queued");
     pollSceneArt();
     return () => stopPolling();
-  }, [liveSceneArt?.sceneKey, liveSceneArt?.status]);
+  }, [liveSceneArt?.sceneKey, liveSceneArt?.status, sceneImage]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(HISTORY_KEY);
@@ -504,31 +493,45 @@ export default function PlayClient({
         body: JSON.stringify({ adventureId, mode: input.mode, playerText: input.playerText }),
       });
 
-      const payload = (await response.json().catch(() => null)) as TurnApiResponse | { error?: string } | null;
+      const payload = await parseTurnApiResponse(response);
 
       if (!response.ok) {
         throw new Error(
-          payload && typeof payload === "object" && typeof payload.error === "string"
-            ? payload.error
+          payload && typeof payload === "object" && typeof (payload as { error?: string }).error === "string"
+            ? (payload as { error?: string }).error
             : "Internal error"
         );
       }
 
       const result = (payload ?? {}) as TurnApiResponse;
+      console.log("client.handleSubmitTurn.result", result);
+      console.log("client.handleSubmitTurn.sceneArt", result.sceneArt);
+      console.log(
+        "client.handleSubmitTurn.sceneArt.keys",
+        Object.keys(result.sceneArt ?? {})
+      );
       handleSceneTransitionUpdate(result.sceneTransition ?? null);
 
       if (result.sceneArt) {
         if (!result.sceneArt.sceneKey || !result.sceneArt.promptHash) {
-          console.error("scene.art.client.identity_missing_after_turn", result.sceneArt);
+          console.error("scene.art.client.identity_missing_after_turn", {
+            sceneArt: result.sceneArt,
+            keys: Object.keys(result.sceneArt ?? {}),
+            result,
+          });
         } else {
-          setLiveSceneArt({
+          const canonicalSceneArt = {
             imageUrl: result.sceneArt.imageUrl,
             source: "scene",
-            pending: !result.sceneArt.hasReadyImage,
+            pending: result.sceneArt.status === "queued" || result.sceneArt.status === "generating",
             sceneKey: result.sceneArt.sceneKey,
             status: result.sceneArt.status,
             promptHash: result.sceneArt.promptHash,
-            hasReadyImage: result.sceneArt.hasReadyImage,
+          } as ResolvedSceneImage;
+          setLiveSceneArt(canonicalSceneArt);
+          console.log("client.liveSceneArt.after_turn.set", {
+            incoming: result.sceneArt,
+            nextLiveSceneArt: canonicalSceneArt,
           });
         }
       }
@@ -666,6 +669,63 @@ export default function PlayClient({
     resolvedBackdropUrl,
     hasReadyImage,
   });
+
+  const sceneArtRenderInput =
+    liveSceneArt ??
+    sceneImage ?? {
+      imageUrl: "/default-scene.svg",
+      source: "default",
+      pending: false,
+      sceneKey: null,
+      status: "missing",
+    };
+  console.log("client.sceneArt.render_input", {
+    liveSceneArt,
+    hydratedSceneArt: sceneImage,
+    renderedSceneArt: sceneArtRenderInput,
+  });
+
+  const pollingSceneKey = liveSceneArt?.sceneKey ?? null;
+  const pollingPromptHash = liveSceneArt?.promptHash ?? null;
+  const pollingLiveStatus = liveSceneArt?.status ?? null;
+
+  useEffect(() => {
+    if (!pollingSceneKey || !pollingPromptHash) return;
+    if (pollingLiveStatus !== "queued" && pollingLiveStatus !== "generating") return;
+
+    const interval = setInterval(async () => {
+      console.log("CLIENT_SCENE_ART_POLL_IDENTITY", {
+        sceneKey: pollingSceneKey,
+        promptHash: pollingPromptHash,
+        status: pollingLiveStatus,
+      });
+      const params = new URLSearchParams({
+        sceneKey: pollingSceneKey,
+        promptHash: pollingPromptHash,
+      });
+
+      const response = await fetch(`/api/scene-art/by-identity?${params.toString()}`);
+      if (!response.ok) return;
+
+      const data = (await response.json()) as CanonicalSceneArtState;
+
+      if (data.status === "ready") {
+        setLiveSceneArt((prev) => ({
+          ...(prev ?? {}),
+          imageUrl: data.imageUrl,
+          source: "scene",
+          pending: false,
+          sceneKey: data.sceneKey,
+          status: data.status,
+          promptHash: data.promptHash,
+          hasReadyImage: Boolean(data.imageUrl),
+        }));
+        clearInterval(interval);
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [pollingSceneKey, pollingPromptHash, pollingLiveStatus]);
 
   const hero = useMemo(() => {
     if (!adventureId) return null;
@@ -903,24 +963,16 @@ export default function PlayClient({
               </div>
               <div className="mt-4">
               <SceneImagePanel
-                {...
-                    liveSceneArt ?? {
-                      imageUrl: "/default-scene.svg",
-                      source: "default",
-                      pending: false,
-                      sceneKey: null,
-                      status: "missing",
-                    }
-                  }
-                  caption={displayedSceneImageCaption ?? undefined}
-                  transition={liveSceneTransition}
-                  continuity={continuityState}
-                  transitionCue={sceneTransitionCue}
-                  retrySceneKey={sceneKey}
-                  retrySceneText={sceneText ?? ""}
-                  retryStylePreset={sceneStylePreset ?? null}
-                  retryRenderMode={sceneRenderMode}
-                />
+                sceneArt={sceneArtRenderInput}
+                caption={displayedSceneImageCaption ?? undefined}
+                transition={liveSceneTransition}
+                continuity={continuityState}
+                transitionCue={sceneTransitionCue}
+                retrySceneKey={sceneKey}
+                retrySceneText={sceneText ?? ""}
+                retryStylePreset={sceneStylePreset ?? null}
+                retryRenderMode={sceneRenderMode}
+              />
               </div>
           {adventureId ? (
             <TurnInput
@@ -987,31 +1039,4 @@ export default function PlayClient({
   );
 
 }
-  useEffect(() => {
-    if (!sceneArt || !sceneArt.sceneKey || !sceneArt.promptHash) return;
-    if (sceneArt.liveStatus !== "queued" && sceneArt.liveStatus !== "generating") return;
-
-    const interval = setInterval(async () => {
-      const response = await fetch(
-        `/api/scene-art/by-identity?sceneKey=${encodeURIComponent(sceneArt.sceneKey)}&promptHash=${encodeURIComponent(
-          sceneArt.promptHash,
-        )}`,
-      );
-      if (!response.ok) return;
-      const data = (await response.json()) as CanonicalSceneArtState;
-      if (data.status === "ready") {
-        setLiveSceneArt({
-          imageUrl: data.imageUrl,
-          source: "scene",
-          pending: false,
-          sceneKey: data.sceneKey,
-          status: data.status,
-          promptHash: data.promptHash,
-          hasReadyImage: true,
-        });
-        clearInterval(interval);
-      }
-    }, 1500);
-
-    return () => clearInterval(interval);
-  }, [sceneArt?.sceneKey, sceneArt?.promptHash, sceneArt?.liveStatus]);
+  // move polling effect before return

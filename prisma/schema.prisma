@@ -194,6 +194,7 @@ enum SceneArtStatus {
   generating
   ready
   failed
+  retryable
 }
 
 enum SceneArtPriority {
