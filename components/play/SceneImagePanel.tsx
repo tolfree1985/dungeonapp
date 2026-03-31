@@ -42,6 +42,7 @@ export function SceneImagePanel({
     sceneArt?.status === "failed" &&
     sceneArt?.lastProviderRetryable === false;
   const hasReadyImage = !!sceneArt?.imageUrl && sceneArt?.status === "ready";
+  const canRenderSceneImage = hasReadyImage && !!resolvedImageUrl;
   const isInFlight =
     sceneArt?.status === "queued" ||
     sceneArt?.status === "generating" ||
