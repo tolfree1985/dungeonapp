@@ -695,6 +695,7 @@ function buildQuestView(state: Record<string, unknown>) {
 
 export function resolveDeterministicTurn(args: DeterministicTurnArgs): DeterministicTurnResult {
   const normalizedState = normalizeAdventureState(args.previousState);
+  const playerIntentMode = args.mode ?? "LOOK";
   const action = classifyAction(args.playerText);
   const outcome = selectOutcome(args.turnIndex);
   const summary = summarizeAction(args.playerText, action);
@@ -950,12 +951,7 @@ export function resolveDeterministicTurn(args: DeterministicTurnArgs): Determini
       break;
     case "OBSERVE":
     default:
-      if (intentMode !== "LOOK") {
-        stateDeltas = [];
-        ledgerAdds = [];
-        break;
-      }
-      if (intentMode !== "LOOK") {
+      if (playerIntentMode !== "LOOK") {
         stateDeltas = [];
         ledgerAdds = [];
         break;
