@@ -6,6 +6,12 @@ type PressureConsequencesInput = {
   deltas: StateDelta[];
 };
 
+export type PressureConsequencesResult = {
+  stateDeltas: StateDelta[];
+  ledgerAdds: LedgerEntry[];
+  projectedPressure: Record<string, number>;
+};
+
 const CONSEQUENCES = [
   {
     domain: "noise",
@@ -89,7 +95,7 @@ function readFlag(record: Record<string, unknown> | null, key: string): boolean 
   return false;
 }
 
-export function resolvePressureConsequences({ stateStats, stateFlags, deltas }: PressureConsequencesInput) {
+export function resolvePressureConsequences({ stateStats, stateFlags, deltas }: PressureConsequencesInput): PressureConsequencesResult {
   const stats = stateStats ?? {};
   const baseTotals: Record<string, number> = {
     noise: Number(stats.noise ?? 0),
@@ -149,5 +155,6 @@ export function resolvePressureConsequences({ stateStats, stateFlags, deltas }: 
   return {
     stateDeltas: consequenceDeltas,
     ledgerAdds: consequenceLedgers,
+    projectedPressure: projectedTotals,
   };
 }

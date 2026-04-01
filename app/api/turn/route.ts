@@ -2708,6 +2708,18 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     });
     deltaBuffer.push(...pressureConsequences.stateDeltas);
     ledgerAddsWithVisual.push(...pressureConsequences.ledgerAdds);
+    const projectedPressure = pressureConsequences.projectedPressure;
+    const updatedStats = {
+      ...pressureStateStats,
+      noise: projectedPressure.noise,
+      npcSuspicion: projectedPressure.suspicion,
+      suspicion: projectedPressure.suspicion,
+      timeAdvance: projectedPressure.time,
+      time: projectedPressure.time,
+      positionPenalty: projectedPressure.danger,
+      danger: projectedPressure.danger,
+    };
+    stateRecord.stats = { ...updatedStats };
 
   const normalizedLedgerAdds = ledgerAddsWithVisual.map((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
