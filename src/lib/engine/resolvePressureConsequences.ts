@@ -18,10 +18,18 @@ const CONSEQUENCES = [
   {
     domain: "noise",
     threshold: 5,
-    flag: "status.confrontation",
+    flag: "guard_searching",
+    action: "SEARCH",
+    effect: "Guards begin actively searching the area",
+    detail: "The racket is now forcing guards to search.",
+  },
+  {
+    domain: "noise",
+    threshold: 7,
+    flag: "status_confrontation",
     action: "CONFRONTATION",
-    effect: "Noise sparks confrontation",
-    detail: "The racket has escalated into an open confrontation.",
+    effect: "The situation escalates into confrontation",
+    detail: "Noise has become impossible to ignore.",
   },
   {
     domain: "suspicion",
@@ -34,6 +42,14 @@ const CONSEQUENCES = [
   {
     domain: "suspicion",
     threshold: 5,
+    flag: "npc_resistant",
+    action: "RESIST",
+    effect: "Suspicion hardens into resistance",
+    detail: "Your words are increasingly resisted.",
+  },
+  {
+    domain: "suspicion",
+    threshold: 7,
     flag: "npc_hostile",
     action: "HOSTILITY",
     effect: "Suspicion turns hostile",
@@ -42,7 +58,7 @@ const CONSEQUENCES = [
   {
     domain: "time",
     threshold: 4,
-    flag: "opportunity_closed",
+    flag: "opportunity_narrowed",
     action: "OPPORTUNITY",
     effect: "Opportunity window narrows",
     detail: "The delay is closing your available opportunity.",
@@ -50,7 +66,15 @@ const CONSEQUENCES = [
   {
     domain: "time",
     threshold: 6,
-    flag: "situation_escalated",
+    flag: "opportunity_closed",
+    action: "CLOSE",
+    effect: "Opportunity window closes",
+    detail: "The last chance slips away.",
+  },
+  {
+    domain: "time",
+    threshold: 8,
+    flag: "scene_escalated",
     action: "ESCALATE",
     effect: "Time pressure escalates the scene",
     detail: "Lingering time pressure pushes the situation toward crisis.",
