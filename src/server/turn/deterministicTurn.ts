@@ -950,6 +950,16 @@ export function resolveDeterministicTurn(args: DeterministicTurnArgs): Determini
       break;
     case "OBSERVE":
     default:
+      if (intentMode !== "LOOK") {
+        stateDeltas = [];
+        ledgerAdds = [];
+        break;
+      }
+      if (intentMode !== "LOOK") {
+        stateDeltas = [];
+        ledgerAdds = [];
+        break;
+      }
       scene =
         outcome === "SUCCESS"
           ? `${scene} ${observeClue.detail}`
