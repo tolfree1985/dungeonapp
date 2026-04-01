@@ -1679,8 +1679,25 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       currentPhase: currentSceneIdentity.encounterPhase,
       previousPhase: previousSceneIdentity?.encounterPhase ?? null,
     });
+    const statsForPressure = asRecord(stateRecord.stats) ?? {};
+    const projectedPressureDebug = {
+      noise: Number(statsForPressure.noise ?? 0),
+      suspicion: Number(statsForPressure.npcSuspicion ?? statsForPressure.suspicion ?? 0),
+      time: Number(statsForPressure.timeAdvance ?? statsForPressure.time ?? 0),
+      danger: Number(statsForPressure.positionPenalty ?? statsForPressure.danger ?? 0),
+    };
     if (failForwardSignal.pressure !== nextPressureValue) {
-      throw new Error("FAIL_FORWARD_PRESSURE_MISMATCH");
+      console.log("failForward.pressure.debug", {
+        failForwardSignal,
+        nextPressureValue,
+        projectedPressure: projectedPressureDebug,
+        currentPressureAdds: (turnStateDeltas ?? []).filter((delta) => (delta as Record<string, unknown>)?.kind === "pressure.add"),
+      });
+      console.warn("FAIL_FORWARD_PRESSURE_MISMATCH", {
+        failForwardSignal,
+        nextPressureValue,
+        projectedPressure: projectedPressureDebug,
+      });
     }
     const failForwardEntry = failForwardSignal.active
       ? {

@@ -695,6 +695,13 @@ function buildQuestView(state: Record<string, unknown>) {
 
 export function resolveDeterministicTurn(args: DeterministicTurnArgs): DeterministicTurnResult {
   const normalizedState = normalizeAdventureState(args.previousState);
+  const normalizedStats = asRecord(normalizedState.stats) ?? {};
+  normalizedState.pressure = {
+    noise: Number(normalizedState.pressure?.noise ?? normalizedStats.noise ?? 0),
+    suspicion: Number(normalizedState.pressure?.suspicion ?? normalizedStats.suspicion ?? normalizedStats.npcSuspicion ?? 0),
+    time: Number(normalizedState.pressure?.time ?? normalizedStats.time ?? normalizedStats.timeAdvance ?? 0),
+    danger: Number(normalizedState.pressure?.danger ?? normalizedStats.danger ?? normalizedStats.positionPenalty ?? 0),
+  };
   const playerIntentMode = args.mode ?? "LOOK";
   const action = classifyAction(args.playerText);
   const outcome = selectOutcome(args.turnIndex);

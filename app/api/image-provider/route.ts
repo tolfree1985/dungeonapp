@@ -87,7 +87,6 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         prompt,
         size: "1024x1024",
-        response_format: "b64_json",
         sceneKey,
         promptHash,
         model: "gpt-image-1",
