@@ -40,7 +40,32 @@ export function classifyResolvedTurnDeltas(deltas: StateDelta[]): DeltaClassific
     }
 
     if (normalizedKind.includes("flag.set") || key.includes("flag.set")) {
-      const progressKeywords = ["observed", "clue", "unlock", "found", "learned", "discovered", "quest", "insight", "progress"];
+      const progressKeywords = [
+        "observed",
+        "clue",
+        "unlock",
+        "found",
+        "learned",
+        "discovered",
+        "quest",
+        "insight",
+        "progress",
+        "obstacle.",
+        "access.",
+        "path.",
+        "position.",
+        "status.open",
+        "status.forced",
+        "status.unsealed",
+        "status.breached",
+        "social.",
+        "compliance.",
+        "talk.",
+        "trust.",
+        "status.compliant",
+        "status.hesitates",
+        "status.yielding",
+      ];
       const costKeywords = ["risk", "danger", "compromised", "alert", "pressure", "critical", "threat", "escalated", "exposed"];
       if (progressKeywords.some((prefix) => key.startsWith(prefix))) {
         hasProgress = true;

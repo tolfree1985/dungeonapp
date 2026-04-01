@@ -134,6 +134,7 @@ import {
 } from "@/lib/engine/resolveTurnContract";
 import { classifyResolvedTurnDeltas } from "@/lib/engine/classifyResolvedTurnDeltas";
 import { evaluatePressureThresholds } from "@/lib/engine/evaluatePressureThresholds";
+import { resolvePressureConsequences } from "@/lib/engine/resolvePressureConsequences";
 import { inferPressureDeltas } from "@/lib/engine/inferPressureDeltas";
 import { resolveActionEffects } from "@/lib/engine/resolveActionEffects";
 import { validateResolvedTurnContract } from "@/lib/engine/validateResolvedTurnContract";
@@ -2377,12 +2378,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       ...(complicationDeltaEntry ? [complicationDeltaEntry] : []),
       ...(authoredEffects?.ledgerAdds ?? []),
     ];
-    const normalizedLedgerAdds = ledgerAddsWithVisual.map((entry) => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
-      if (!Object.prototype.hasOwnProperty.call(entry, "outcome")) return entry;
-      const { outcome, ...rest } = entry as Record<string, unknown>;
-      return rest;
-    });
     if (stateRecord.npcStance !== resolveNpcSuspicionStance(Number(currentStats.npcSuspicion ?? 0))) {
       throw new Error("NPC_STANCE_MISMATCH");
     }
@@ -2696,6 +2691,20 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       deltas: deltaBuffer,
     });
     deltaBuffer.push(...pressureThresholdDeltas);
+    const pressureConsequences = resolvePressureConsequences({
+      stateStats: asRecord(stateRecord.stats) ?? {},
+      stateFlags: asRecord(stateRecord.flags) ?? {},
+      deltas: deltaBuffer,
+    });
+    deltaBuffer.push(...pressureConsequences.stateDeltas);
+    ledgerAddsWithVisual.push(...pressureConsequences.ledgerAdds);
+
+    const normalizedLedgerAdds = ledgerAddsWithVisual.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+      if (!Object.prototype.hasOwnProperty.call(entry, "outcome")) return entry;
+      const { outcome, ...rest } = entry as Record<string, unknown>;
+      return rest;
+    });
 
     const margin = hasRoll ? (effectiveRollTotal as number) - adjustedDifficulty : null;
     console.log("turn.outcome.classification", {
