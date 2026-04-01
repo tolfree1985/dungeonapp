@@ -120,6 +120,7 @@ export function resolvePressureConsequences({ stateStats, stateFlags, deltas }: 
 
   const consequenceDeltas: StateDelta[] = [];
   const consequenceLedgers: LedgerEntry[] = [];
+  const emittedFlags: string[] = [];
 
   for (const consequence of CONSEQUENCES) {
     const prev = baseTotals[consequence.domain] ?? 0;
@@ -135,8 +136,15 @@ export function resolvePressureConsequences({ stateStats, stateFlags, deltas }: 
         detail: consequence.detail,
         deltaKind: delta.kind,
       });
+      emittedFlags.push(consequence.flag);
     }
   }
+
+  console.log("pressure.consequence.projected", {
+    previousPressure: baseTotals,
+    projectedPressure: projectedTotals,
+    emittedFlags,
+  });
 
   return {
     stateDeltas: consequenceDeltas,

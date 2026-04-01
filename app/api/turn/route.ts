@@ -2686,13 +2686,23 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       });
       deltaBuffer.push(...pressureDeltas);
     }
+    const pressureStateStats = asRecord(stateRecord.stats) ?? {};
     const pressureThresholdDeltas = evaluatePressureThresholds({
-      stateStats: asRecord(stateRecord.stats) ?? {},
+      stateStats: pressureStateStats,
       deltas: deltaBuffer,
     });
     deltaBuffer.push(...pressureThresholdDeltas);
+    console.log("pressure.consequence.inputs", {
+      previousPressure: {
+        noise: Number(pressureStateStats.noise ?? 0),
+        suspicion: Number(pressureStateStats.npcSuspicion ?? pressureStateStats.suspicion ?? 0),
+        time: Number(pressureStateStats.timeAdvance ?? pressureStateStats.time ?? 0),
+        danger: Number(pressureStateStats.positionPenalty ?? pressureStateStats.danger ?? 0),
+      },
+      currentPressureAdds: deltaBuffer.filter((delta) => delta.kind === "pressure.add"),
+    });
     const pressureConsequences = resolvePressureConsequences({
-      stateStats: asRecord(stateRecord.stats) ?? {},
+      stateStats: pressureStateStats,
       stateFlags: asRecord(stateRecord.flags) ?? {},
       deltas: deltaBuffer,
     });
