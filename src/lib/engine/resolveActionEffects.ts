@@ -216,6 +216,24 @@ const buildDoFallback = (tier: OutcomeTier): ResolveActionEffectsResult => {
   };
 };
 
+const buildSayFallback = (tier: OutcomeTier): ResolveActionEffectsResult => {
+  const socialPartial: StateDelta = { kind: "flag.set", key: "social.partial", value: true };
+  const escalation: StateDelta = { kind: "flag.set", key: "status.escalated", value: true };
+  const suspicion: StateDelta = { kind: "pressure.add", domain: "suspicion", amount: 1 };
+  return {
+    stateDeltas: [socialPartial, escalation, suspicion],
+    ledgerAdds: [
+      {
+        kind: "state_change",
+        cause: "action",
+        effect: "Social pressure builds even without a clean win",
+        deltaKind: socialPartial.kind,
+      },
+    ],
+    tags: ["action:say"],
+  };
+};
+
 const buildSayEffects = (tier: OutcomeTier, normalized: string): ResolveActionEffectsResult => {
   const bluffProgress: StateDelta = { kind: "flag.set", key: "relation.access", value: true };
   const complianceFlag: StateDelta = { kind: "flag.set", key: "status.compliant", value: true };
@@ -297,11 +315,14 @@ export function resolveActionEffects(input: ResolveActionEffectsInput): ResolveA
   if (input.mode === "DO" && matchesDo) {
     return buildDoEffects(input.outcomeTier);
   }
-  if (input.mode === "SAY") {
+  if (input.mode === "SAY" && matchesSay) {
     return buildSayEffects(input.outcomeTier, normalized);
   }
   if (input.mode === "DO") {
     return buildDoFallback(input.outcomeTier);
+  }
+  if (input.mode === "SAY") {
+    return buildSayFallback(input.outcomeTier);
   }
   return { stateDeltas: [], ledgerAdds: [] };
 }

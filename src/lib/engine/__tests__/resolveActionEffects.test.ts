@@ -92,6 +92,7 @@ describe("resolveActionEffects (SAY)", () => {
     const result = resolveActionEffects({ ...sayInput, playerText: "talk quietly", outcomeTier: "mixed" });
     expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "social.partial")).toBe(true);
     expect(result.stateDeltas.some((delta) => (delta as any).domain === "suspicion")).toBe(true);
+    expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "status.escalated")).toBe(true);
   });
 
   it("escalates when failure is a threat", () => {
