@@ -59,6 +59,12 @@ describe("resolveActionEffects (DO)", () => {
     expect(result.stateDeltas.every((delta) => delta.kind === "pressure.add")).toBe(true);
     expect(result.stateDeltas.some((delta) => (delta as any).domain === "danger")).toBe(true);
   });
+
+  it("falls back when no DO keyword matches", () => {
+    const result = resolveActionEffects({ ...doInput, playerText: "dance close", outcomeTier: "mixed" });
+    expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "obstacle.disturbed")).toBe(true);
+    expect(result.stateDeltas.some((delta) => (delta as any).domain === "noise")).toBe(true);
+  });
 });
 
 describe("resolveActionEffects (SAY)", () => {
@@ -78,6 +84,14 @@ describe("resolveActionEffects (SAY)", () => {
     const result = resolveActionEffects({ ...sayInput, outcomeTier: "mixed" });
     expect(result.stateDeltas.some((delta) => delta.kind === "pressure.add" && (delta as any).domain === "suspicion")).toBe(true);
     expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "status.escalated")).toBe(true);
+    expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "social.partial")).toBe(true);
+    expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "status.compliant")).toBe(false);
+  });
+
+  it("falls back when no SAY keyword matches", () => {
+    const result = resolveActionEffects({ ...sayInput, playerText: "talk quietly", outcomeTier: "mixed" });
+    expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "social.partial")).toBe(true);
+    expect(result.stateDeltas.some((delta) => (delta as any).domain === "suspicion")).toBe(true);
   });
 
   it("escalates when failure is a threat", () => {

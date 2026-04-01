@@ -198,10 +198,28 @@ const buildDoEffects = (tier: OutcomeTier): ResolveActionEffectsResult => {
   }
 };
 
+const buildDoFallback = (tier: OutcomeTier): ResolveActionEffectsResult => {
+  const disturbance: StateDelta = { kind: "flag.set", key: "obstacle.disturbed", value: true };
+  const noise: StateDelta = { kind: "pressure.add", domain: "noise", amount: 1 };
+  const danger: StateDelta = { kind: "pressure.add", domain: "danger", amount: 1 };
+  return {
+    stateDeltas: [disturbance, noise, danger],
+    ledgerAdds: [
+      {
+        kind: "state_change",
+        cause: "action",
+        effect: "Kinetic attempt disturbs the scene",
+        deltaKind: disturbance.kind,
+      },
+    ],
+    tags: ["action:do"],
+  };
+};
+
 const buildSayEffects = (tier: OutcomeTier, normalized: string): ResolveActionEffectsResult => {
   const bluffProgress: StateDelta = { kind: "flag.set", key: "relation.access", value: true };
   const complianceFlag: StateDelta = { kind: "flag.set", key: "status.compliant", value: true };
-  const clueFlag: StateDelta = { kind: "flag.set", key: "knowledge.gained", value: true };
+  const socialPartial: StateDelta = { kind: "flag.set", key: "social.partial", value: true };
   const suspicionCost: StateDelta = { kind: "pressure.add", domain: "suspicion", amount: 2 };
   const whisperCost: StateDelta = { kind: "pressure.add", domain: "suspicion", amount: 1 };
   const relationGain: StateDelta = { kind: "relation.shift", actorId: "npc", metric: "favor", amount: 2 };
@@ -240,18 +258,18 @@ const buildSayEffects = (tier: OutcomeTier, normalized: string): ResolveActionEf
       };
     case "mixed":
       return {
-        stateDeltas: [clueFlag, suspicionCost, escalationFlag],
+        stateDeltas: [socialPartial, suspicionCost, escalationFlag],
         ledgerAdds: [
-          buildLedgerEntry(clueFlag, tier, "Partial truth revealed"),
+          buildLedgerEntry(socialPartial, tier, "Partial leverage secured"),
           buildLedgerEntry(escalationFlag, tier, "Tension spikes"),
         ],
         tags: ["action:say"],
       };
     case "failure_with_progress":
       return {
-        stateDeltas: [clueFlag, suspicionCost, escalationFlag],
+        stateDeltas: [complianceFlag, suspicionCost, escalationFlag],
         ledgerAdds: [
-          buildLedgerEntry(clueFlag, tier, "Weak clue gleaned"),
+          buildLedgerEntry(complianceFlag, tier, "Partial compliance registered"),
           buildLedgerEntry(escalationFlag, tier, "Tension increases"),
         ],
         tags: ["action:say"],
@@ -281,6 +299,9 @@ export function resolveActionEffects(input: ResolveActionEffectsInput): ResolveA
   }
   if (input.mode === "SAY") {
     return buildSayEffects(input.outcomeTier, normalized);
+  }
+  if (input.mode === "DO") {
+    return buildDoFallback(input.outcomeTier);
   }
   return { stateDeltas: [], ledgerAdds: [] };
 }

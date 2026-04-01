@@ -1158,26 +1158,7 @@ export function resolveDeterministicTurn(args: DeterministicTurnArgs): Determini
     pressureEffects,
   );
 
-  if (playerIntentMode !== "LOOK") {
-    stateDeltas = stateDeltas.filter((delta) => {
-      const op = (delta as any).op ?? null;
-      const key = (delta as any).key ?? null;
-      const label = ((delta as any).label ?? "").toLowerCase();
-      if (op === "inv.add" && label.includes("stone")) return false;
-      if (key && typeof key === "string" && (key as string).startsWith?.("observed.")) return false;
-      if (op === "time.inc") return false;
-      return true;
-    });
-    ledgerAdds = ledgerAdds.filter((entry) => {
-      const cause = (entry as any).cause;
-      const actionName = (entry as any).action;
-      if (cause === "observation") return false;
-      if (actionName === "OBSERVE") return false;
-      return true;
-    });
-  }
-
-  return {
+  let resolvedTurn = {
     action,
     outcome,
     scene,
@@ -1186,4 +1167,28 @@ export function resolveDeterministicTurn(args: DeterministicTurnArgs): Determini
     ledgerAdds,
     nextState,
   };
+
+  if (playerIntentMode !== "LOOK") {
+    resolvedTurn.stateDeltas = resolvedTurn.stateDeltas.filter((delta) => {
+      const op = (delta as any).op ?? null;
+      const kind = (delta as any).kind ?? null;
+      const key = (delta as any).key ?? null;
+      const keyStr = typeof key === "string" ? key : null;
+      if (op === "inv.add") return false;
+      if (op === "time.inc") return false;
+      if (op === "flag.set" && keyStr?.startsWith("observed.")) return false;
+      if (op === "flag.set" && keyStr === "knowledge.gained") return false;
+      if (kind === "flag.set" && keyStr === "knowledge.gained") return false;
+      return true;
+    });
+    resolvedTurn.ledgerAdds = resolvedTurn.ledgerAdds.filter((entry) => {
+      const cause = (entry as any).cause;
+      const actionName = (entry as any).action;
+      if (cause === "observation") return false;
+      if (actionName === "OBSERVE") return false;
+      return true;
+    });
+  }
+
+  return resolvedTurn;
 }
