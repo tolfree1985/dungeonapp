@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/lib/dbClient";
 import type { Prisma } from "@/generated/prisma";
 import { resolveDeterministicTurn } from "@/server/turn/deterministicTurn";
+import type { IntentMode } from "@/lib/watchfulness-action-flags";
 
 export async function loadSaveState(saveId: string, db: DbClient = prisma) {
   return db.save.findUniqueOrThrow({
@@ -36,6 +37,7 @@ export type TurnPersistenceArgs = {
   adventureId: string;
   playerText: string;
   idempotencyKey: string;
+  mode: IntentMode;
   model: {
     scene: string;
     resolution: string;
@@ -84,6 +86,7 @@ export async function turnPersistence(
     playerText: args.playerText,
     previousState: currentAdventure.state,
     turnIndex: nextTurnIndex,
+    mode: args.mode,
   });
 
   await db.adventure.update({

@@ -2337,7 +2337,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           })
         : null;
 
-    const ledgerAddsWithVisual = [
+  const ledgerAddsWithVisual = [
       ...turnLedgerAdds,
       ...visualLedgerEntries,
       ...(transitionLedgerEntry ? [transitionLedgerEntry] : []),
@@ -2699,12 +2699,12 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     deltaBuffer.push(...pressureConsequences.stateDeltas);
     ledgerAddsWithVisual.push(...pressureConsequences.ledgerAdds);
 
-    const normalizedLedgerAdds = ledgerAddsWithVisual.map((entry) => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
-      if (!Object.prototype.hasOwnProperty.call(entry, "outcome")) return entry;
-      const { outcome, ...rest } = entry as Record<string, unknown>;
-      return rest;
-    });
+  const normalizedLedgerAdds = ledgerAddsWithVisual.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+    if (!Object.prototype.hasOwnProperty.call(entry, "outcome")) return entry;
+    const { outcome, ...rest } = entry as Record<string, unknown>;
+    return rest;
+  });
 
     const margin = hasRoll ? (effectiveRollTotal as number) - adjustedDifficulty : null;
     console.log("turn.outcome.classification", {
@@ -2756,29 +2756,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         consequenceText: scenePresentation.consequenceText ?? [],
       },
     };
-    if (playerIntentMode !== "LOOK") {
-      resolvedTurn.stateDeltas = resolvedTurn.stateDeltas.filter((delta) => {
-        const op = (delta as any).op ?? null;
-        const kind = (delta as any).kind ?? null;
-        const key = (delta as any).key ?? null;
-        const keyStr = typeof key === "string" ? key : "";
-        if (op === "inv.add") return false;
-        if (op === "time.inc") return false;
-        if (op === "clock.inc") return false;
-        if (op === "flag.set" && keyStr.startsWith("observed.")) return false;
-        if ((op === "flag.set" || kind === "flag.set") && keyStr === "knowledge.gained") return false;
-        return true;
-      });
-      resolvedTurn.ledgerAdds = resolvedTurn.ledgerAdds.filter((entry) => {
-        const cause = (entry as any).cause;
-        const actionName = (entry as any).action;
-        if (cause === "observation") return false;
-        if (actionName === "OBSERVE") return false;
-        return true;
-      });
-    }
 
-    console.log("turn.contract.resolved", resolvedTurn);
+    const finalResolvedTurn = stripNonLookObservationArtifacts(resolvedTurn, playerIntentMode ?? "LOOK");
+
+    console.log("turn.contract.resolved", finalResolvedTurn);
     const validationIssues = validateResolvedTurnContract(resolvedTurn);
     if (validationIssues.length > 0) {
       console.log("turn.contract.validation", {
@@ -2888,3 +2869,43 @@ function makeDefaultDeps(): PostHandlerDeps {
 export const POST = withRouteLogging("POST /api/turn", async (req: NextRequest, _context: { params: Promise<{}> }) => {
   return postTurn(req, makeDefaultDeps());
 });
+function stripNonLookObservationArtifacts(
+  resolvedTurn: ResolvedTurn,
+  playerIntentMode: "LOOK" | "DO" | "SAY",
+) {
+  if (playerIntentMode === "LOOK") return resolvedTurn;
+
+  const cleanedStateDeltas = (resolvedTurn.stateDeltas ?? []).filter((delta: any) => {
+    const op = delta?.op ?? delta?.kind ?? "";
+    const key = String(delta?.key ?? "");
+    const label = String(delta?.label ?? "");
+    const detail = String(delta?.detail ?? "");
+
+    if (op === "inv.add" || op === "time.inc" || op === "clock.inc") return false;
+    if (op === "flag.set") {
+      if (key.startsWith("observed.")) return false;
+      if (key === "knowledge.gained") return false;
+    }
+    if (/floor stone|drag mark|scrape mark|inspection|observation/i.test(label)) return false;
+    if (/careful observation|careful inspection|study the scene|usable evidence/i.test(detail)) return false;
+    return true;
+  });
+
+  const cleanedLedgerAdds = (resolvedTurn.ledgerAdds ?? []).filter((entry: any) => {
+    const cause = String(entry?.cause ?? "");
+    const action = String(entry?.action ?? "");
+    const detail = String(entry?.detail ?? "");
+    const effect = String(entry?.effect ?? "");
+
+    if (cause === "observation" || action === "OBSERVE") return false;
+    if (/careful observation|careful inspection|study the scene|usable evidence/i.test(detail)) return false;
+    if (/careful observation|careful inspection|usable evidence/i.test(effect)) return false;
+    return true;
+  });
+
+  return {
+    ...resolvedTurn,
+    stateDeltas: cleanedStateDeltas,
+    ledgerAdds: cleanedLedgerAdds,
+  };
+}
