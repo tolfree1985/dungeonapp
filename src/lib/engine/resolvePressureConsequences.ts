@@ -73,22 +73,33 @@ export function resolvePressureConsequences({ stateStats, stateFlags, deltas }: 
     time: Number(stats.timeAdvance ?? stats.time ?? 0),
     danger: Number(stats.positionPenalty ?? stats.danger ?? 0),
   };
-  const totals = { ...baseTotals };
+  const deltaTotals: Record<string, number> = {
+    noise: 0,
+    suspicion: 0,
+    time: 0,
+    danger: 0,
+  };
   for (const delta of deltas) {
     if (delta.kind === "pressure.add") {
       const domain = delta.domain;
-      if (totals[domain] !== undefined) {
-        totals[domain] = totals[domain] + delta.amount;
+      if (domain in deltaTotals) {
+        deltaTotals[domain] = deltaTotals[domain] + delta.amount;
       }
     }
   }
+  const projectedTotals: Record<string, number> = {
+    noise: baseTotals.noise + deltaTotals.noise,
+    suspicion: baseTotals.suspicion + deltaTotals.suspicion,
+    time: baseTotals.time + deltaTotals.time,
+    danger: baseTotals.danger + deltaTotals.danger,
+  };
 
   const consequenceDeltas: StateDelta[] = [];
   const consequenceLedgers: LedgerEntry[] = [];
 
   for (const consequence of CONSEQUENCES) {
     const prev = baseTotals[consequence.domain] ?? 0;
-    const current = totals[consequence.domain] ?? 0;
+    const current = projectedTotals[consequence.domain] ?? 0;
     if (prev < consequence.threshold && current >= consequence.threshold && !readFlag(stateFlags, consequence.flag)) {
       const delta: StateDelta = { kind: "flag.set", key: consequence.flag, value: true };
       consequenceDeltas.push(delta);
