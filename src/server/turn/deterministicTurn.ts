@@ -24,6 +24,24 @@ type DeterministicTurnResult = {
   nextState: Record<string, unknown>;
 };
 
+function ensurePressureTotals(value: unknown): Record<string, number> {
+  if (value && typeof value === "object") {
+    const candidate = value as Record<string, unknown>;
+    return {
+      noise: Number(candidate.noise ?? 0),
+      suspicion: Number(candidate.suspicion ?? candidate.npcSuspicion ?? 0),
+      time: Number(candidate.time ?? candidate.timeAdvance ?? 0),
+      danger: Number(candidate.danger ?? candidate.positionPenalty ?? 0),
+    };
+  }
+  return { noise: 0, suspicion: 0, time: 0, danger: 0 };
+}
+
+function sumPressureValue(value: unknown): number {
+  const totals = ensurePressureTotals(value);
+  return totals.noise + totals.suspicion + totals.time + totals.danger;
+}
+
 type ReadableStats = Record<string, unknown> & {
   time: number;
   location: string;

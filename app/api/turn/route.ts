@@ -2726,17 +2726,48 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     deltaBuffer.push(...pressureConsequences.stateDeltas);
     ledgerAddsWithVisual.push(...pressureConsequences.ledgerAdds);
     const projectedPressure = pressureConsequences.projectedPressure;
+    const nextPressure = {
+      noise: projectedPressure.noise ?? 0,
+      suspicion: projectedPressure.suspicion ?? 0,
+      time: projectedPressure.time ?? 0,
+      danger: projectedPressure.danger ?? 0,
+    };
     const updatedStats = {
       ...pressureStateStats,
-      noise: projectedPressure.noise,
-      npcSuspicion: projectedPressure.suspicion,
-      suspicion: projectedPressure.suspicion,
-      timeAdvance: projectedPressure.time,
-      time: projectedPressure.time,
-      positionPenalty: projectedPressure.danger,
-      danger: projectedPressure.danger,
+      noise: nextPressure.noise,
+      npcSuspicion: nextPressure.suspicion,
+      suspicion: nextPressure.suspicion,
+      timeAdvance: nextPressure.time,
+      time: nextPressure.time,
+      positionPenalty: nextPressure.danger,
+      danger: nextPressure.danger,
     };
     stateRecord.stats = { ...updatedStats };
+    stateRecord.pressure = nextPressure;
+    const nextAdventureState = {
+      ...stateRecord,
+      stats: {
+        ...(stateRecord.stats ?? {}),
+        noise: nextPressure.noise,
+        suspicion: nextPressure.suspicion,
+        time: nextPressure.time,
+        danger: nextPressure.danger,
+      },
+      pressure: nextPressure,
+    };
+    console.log("pressure.persist.final", {
+      pressure: nextAdventureState.pressure,
+      stats: {
+        noise: nextAdventureState.stats?.noise,
+        suspicion: nextAdventureState.stats?.suspicion,
+        time: nextAdventureState.stats?.time,
+        danger: nextAdventureState.stats?.danger,
+      },
+    });
+    await db.adventure.update({
+      where: { id: adventureId },
+      data: { state: nextAdventureState },
+    });
 
   const normalizedLedgerAdds = ledgerAddsWithVisual.map((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
