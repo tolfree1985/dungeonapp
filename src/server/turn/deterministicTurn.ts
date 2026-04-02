@@ -713,13 +713,22 @@ function buildQuestView(state: Record<string, unknown>) {
 
 export function resolveDeterministicTurn(args: DeterministicTurnArgs): DeterministicTurnResult {
   const normalizedState = normalizeAdventureState(args.previousState);
-  const normalizedStats = asRecord(normalizedState.stats) ?? {};
-  normalizedState.pressure = {
-    noise: Number(normalizedState.pressure?.noise ?? normalizedStats.noise ?? 0),
-    suspicion: Number(normalizedState.pressure?.suspicion ?? normalizedStats.suspicion ?? normalizedStats.npcSuspicion ?? 0),
-    time: Number(normalizedState.pressure?.time ?? normalizedStats.time ?? normalizedStats.timeAdvance ?? 0),
-    danger: Number(normalizedState.pressure?.danger ?? normalizedStats.danger ?? normalizedStats.positionPenalty ?? 0),
+  const previousPressure = {
+    noise: args.previousState?.pressure?.noise ?? args.previousState?.stats?.noise ?? 0,
+    suspicion: args.previousState?.pressure?.suspicion ?? args.previousState?.stats?.suspicion ?? 0,
+    time: args.previousState?.pressure?.time ?? args.previousState?.stats?.time ?? 0,
+    danger: args.previousState?.pressure?.danger ?? args.previousState?.stats?.danger ?? 0,
   };
+  normalizedState.pressure = previousPressure;
+  normalizedState.stats = {
+    ...(normalizedState.stats ?? {}),
+    ...previousPressure,
+  };
+  console.log("pressure.hydrate.normalized", {
+    fromPressure: args.previousState?.pressure,
+    fromStats: args.previousState?.stats,
+    result: previousPressure,
+  });
   const playerIntentMode = args.mode ?? "LOOK";
   const action = classifyAction(args.playerText);
   const outcome = selectOutcome(args.turnIndex);
