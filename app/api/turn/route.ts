@@ -94,6 +94,7 @@ import {
 } from "@/server/scene/scene-transition-pressure";
 import { resolveFailForwardComplication } from "@/server/scene/fail-forward-complication";
 import { applyTurnStateDeltas } from "@/server/scene/apply-turn-state-deltas";
+import type { SceneIdentity } from "@/server/scene/scene-identity";
 import { resolveNpcSuspicionEffect } from "@/server/scene/npc-suspicion-effects";
 import { resolvePositionPenaltyEffect } from "@/server/scene/position-penalty-effects";
 import { resolveFailForwardStateDelta } from "@/server/scene/fail-forward-state-delta";
@@ -1653,9 +1654,12 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       current: currentSceneIdentity,
       deltaKind: finalizedSceneDeltaKind,
     });
-    const previousPressureValue = Number(stateRecord.pressure ?? 0);
+    const previousPressureValue = Number(stateRecord.pressure?.danger ?? 0);
     const nextPressureValue = Math.max(0, previousPressureValue + pressureResult.pressureDelta);
-    stateRecord.pressure = nextPressureValue;
+    stateRecord.pressure = {
+      ...(stateRecord.pressure ?? {}),
+      danger: nextPressureValue,
+    };
     await db.adventure.update({
       where: { id: adventureId },
       data: { state: stateRecord },
@@ -2709,19 +2713,26 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       deltas: deltaBuffer,
     });
     deltaBuffer.push(...pressureThresholdDeltas);
+    const canonicalPressure = {
+      noise: Number(stateRecord.pressure?.noise ?? 0),
+      suspicion: Number(stateRecord.pressure?.suspicion ?? 0),
+      time: Number(stateRecord.pressure?.time ?? 0),
+      danger: Number(stateRecord.pressure?.danger ?? 0),
+    };
+    const currentPressureAdds = deltaBuffer.filter((delta) => delta.kind === "pressure.add");
+    console.log("pressure.consequence.callsite", {
+      canonicalPressure,
+      normalizedStatePressure: normalizedState.pressure,
+      currentPressureAdds,
+    });
     console.log("pressure.consequence.inputs", {
-      previousPressure: {
-        noise: Number(pressureStateStats.noise ?? 0),
-        suspicion: Number(pressureStateStats.npcSuspicion ?? pressureStateStats.suspicion ?? 0),
-        time: Number(pressureStateStats.timeAdvance ?? pressureStateStats.time ?? 0),
-        danger: Number(pressureStateStats.positionPenalty ?? pressureStateStats.danger ?? 0),
-      },
-      currentPressureAdds: deltaBuffer.filter((delta) => delta.kind === "pressure.add"),
+      previousPressure: canonicalPressure,
+      currentPressureAdds,
     });
     const pressureConsequences = resolvePressureConsequences({
-      stateStats: pressureStateStats,
+      previousPressure: canonicalPressure,
+      currentPressureAdds,
       stateFlags: asRecord(stateRecord.flags) ?? {},
-      deltas: deltaBuffer,
     });
     deltaBuffer.push(...pressureConsequences.stateDeltas);
     ledgerAddsWithVisual.push(...pressureConsequences.ledgerAdds);

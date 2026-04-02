@@ -1,9 +1,9 @@
 import type { StateDelta, LedgerEntry } from "./resolveTurnContract";
 
 type PressureConsequencesInput = {
-  stateStats: Record<string, unknown>;
+  previousPressure: Record<string, number>;
+  currentPressureAdds: StateDelta[];
   stateFlags: Record<string, unknown>;
-  deltas: StateDelta[];
 };
 
 export type PressureConsequencesResult = {
@@ -95,13 +95,16 @@ function readFlag(record: Record<string, unknown> | null, key: string): boolean 
   return false;
 }
 
-export function resolvePressureConsequences({ stateStats, stateFlags, deltas }: PressureConsequencesInput): PressureConsequencesResult {
-  const stats = stateStats ?? {};
+export function resolvePressureConsequences({
+  previousPressure,
+  currentPressureAdds,
+  stateFlags,
+}: PressureConsequencesInput): PressureConsequencesResult {
   const baseTotals: Record<string, number> = {
-    noise: Number(stats.noise ?? 0),
-    suspicion: Number(stats.npcSuspicion ?? stats.suspicion ?? 0),
-    time: Number(stats.timeAdvance ?? stats.time ?? 0),
-    danger: Number(stats.positionPenalty ?? stats.danger ?? 0),
+    noise: previousPressure.noise ?? 0,
+    suspicion: previousPressure.suspicion ?? 0,
+    time: previousPressure.time ?? 0,
+    danger: previousPressure.danger ?? 0,
   };
   const deltaTotals: Record<string, number> = {
     noise: 0,
@@ -109,7 +112,7 @@ export function resolvePressureConsequences({ stateStats, stateFlags, deltas }: 
     time: 0,
     danger: 0,
   };
-  for (const delta of deltas) {
+  for (const delta of currentPressureAdds) {
     if (delta.kind === "pressure.add") {
       const domain = delta.domain;
       if (domain in deltaTotals) {
