@@ -1273,9 +1273,9 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       preserveFocus: false,
       focusHeld: false,
     };
-    let effectiveSceneDeltaKind: SceneDeltaKind = finalizedSceneDeltaKind;
+    let preCanonicalSceneDeltaKind: SceneDeltaKind = finalizedSceneDeltaKind;
     let finalSceneTransition =
-      effectiveSceneDeltaKind === "full"
+      preCanonicalSceneDeltaKind === "full"
         ? resetSceneTransition
         : sceneTransitionWithEscalation ?? sceneTransition;
     console.log("scene.keys", {
@@ -1338,16 +1338,16 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         deltaKind: finalizedSceneDeltaKind,
       });
       renderMode = renderDecisionOutcome.renderMode;
-      effectiveSceneDeltaKind =
+      preCanonicalSceneDeltaKind =
         sameScene && renderDecisionOutcome.renderPlan === "reuse-current"
           ? "none"
           : finalizedSceneDeltaKind;
       finalSceneTransition =
-        effectiveSceneDeltaKind === "full"
+        preCanonicalSceneDeltaKind === "full"
           ? resetSceneTransition
           : sceneTransitionWithEscalation ?? sceneTransition;
       const shotTransitionAdjustment = applyShotTransitionRules({
-        deltaKind: effectiveSceneDeltaKind,
+        deltaKind: preCanonicalSceneDeltaKind,
         sameScene,
         shotDuration,
         transitionMemory,
@@ -1358,13 +1358,13 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       continuityState = shotTransitionAdjustment.continuityState;
       const baseLogPayload = {
         sceneKey: effectiveSceneKey,
-        deltaKind: effectiveSceneDeltaKind,
+        deltaKind: preCanonicalSceneDeltaKind,
         renderPlan: renderDecisionOutcome.renderPlan,
         renderMode,
         reason: continuityReason,
         continuityBucket,
       };
-      const deltaLabel = effectiveSceneDeltaKind ?? "missing";
+      const deltaLabel = preCanonicalSceneDeltaKind ?? "missing";
       const captureRenderMetrics = () => {
         const reused = sceneRenderSkippedTotal;
         const rendered = sceneRenderQueuedTotal;
@@ -1463,7 +1463,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         identityKey: currentSceneIdentityKey,
         previousSceneKey: previousSceneContinuity.sceneKey,
         previousSceneArtKeyMismatch: Boolean(previousSceneContinuity.sceneArtKeyMismatch),
-        deltaKind: effectiveSceneDeltaKind,
+        deltaKind: preCanonicalSceneDeltaKind,
         renderPlan: renderDecisionOutcome.renderPlan,
         continuityReason,
         continuityBucket,
@@ -1517,11 +1517,11 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     if (persistedSceneKeyFromTurn && persistedSceneKeyFromTurn !== finalContinuityInfo.sceneKey) {
       throw new Error("CONTINUITY_SCENE_KEY_MISMATCH");
     }
-    if (finalContinuityInfo.deltaKind !== effectiveSceneDeltaKind) {
+    if (finalContinuityInfo.deltaKind !== preCanonicalSceneDeltaKind) {
       throw new Error("CONTINUITY_DELTA_MISMATCH");
     }
     const timelineSceneKey = finalContinuityInfo.sceneKey;
-    const timelineDeltaKind = finalContinuityInfo.deltaKind ?? effectiveSceneDeltaKind;
+    const timelineDeltaKind = finalContinuityInfo.deltaKind ?? preCanonicalSceneDeltaKind;
     const timelineRenderPlan = finalContinuityInfo.renderPlan;
     const timelineReuseRate = finalContinuityInfo.reuseRate;
     console.info("scene.timeline", {
@@ -1590,7 +1590,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       sceneKeysMatch,
       fullMemoryPreserved,
       sameScene,
-      deltaKind: finalContinuityInfo?.deltaKind ?? effectiveSceneDeltaKind,
+      deltaKind: finalContinuityInfo?.deltaKind ?? preCanonicalSceneDeltaKind,
       renderPlan: finalContinuityInfo?.renderPlan ?? null,
       transitionMemory,
       transition: finalSceneTransition,
@@ -2980,10 +2980,13 @@ export type SceneArtTriggerIntegrationOptions = {
 
 export async function runSceneArtTriggerIntegration(
   options: SceneArtTriggerIntegrationOptions,
-): Promise<void> {
-  if (!options.sceneArtPayload) return;
+): Promise<SceneArtTriggerDecision | null> {
+  if (!options.sceneArtPayload) {
+    return null;
+  }
+
   try {
-    await evaluateSceneArtVisualTrigger({
+    return await evaluateSceneArtVisualTrigger({
       previousState: options.previousState,
       currentState: options.currentState,
       previousIdentity: options.previousSceneIdentity,
@@ -2999,6 +3002,7 @@ export async function runSceneArtTriggerIntegration(
       sceneKey: options.sceneArtPayload.sceneKey,
       message: error instanceof Error ? error.message : String(error),
     });
+    return null;
   }
 }
 
