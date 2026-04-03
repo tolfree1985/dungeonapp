@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { errorResponse } from "@/lib/api/errorResponse";
 import { getOptionalUser, isIdentityError, type AuthenticatedUser } from "@/lib/api/identity";
@@ -27,10 +27,14 @@ import { reserveUsageDayLock } from "@/server/usage/reserveUsageDayLock";
 import { turnPersistence } from "./turnDb";
 import { logStructuredFailure } from "@/lib/turn/observability";
 import { diffSceneVisualState, resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
+import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
 import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
+import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
+import type { SceneActorState } from "@/lib/resolveSceneActorState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
+import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import { findSceneArt, queueSceneArt, type RenderMode } from "@/lib/sceneArtRepo";
 import { SceneArtPayload } from "@/lib/sceneArt";
@@ -61,6 +65,7 @@ import {
 } from "@/lib/resolveTurnSceneArtPresentation";
 import type { SceneArtPriority } from "@/generated/prisma";
 import type { SceneDeltaKind } from "@/lib/resolveSceneDeltaKind";
+import type { FailForwardComplication } from "@/lib/fail-forward-complication";
 import {
   SceneContinuityBucket,
   SceneContinuityInfo,
@@ -83,6 +88,7 @@ import { deriveSceneIdentityFromTurnState } from "@/server/scene/derive-scene-id
 import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
 import { buildSceneKey as buildSceneIdentityKey, decideSceneDeltaKind, type SceneIdentity } from "@/server/scene/scene-identity";
 import { evaluateSceneArtVisualTrigger } from "@/lib/scene-art/visualTriggerIntegration";
+import type { SceneArtTriggerDecision } from "@/lib/scene-art/visualTriggerPolicy";
 import { applyShotTransitionRules } from "@/server/scene/shot-transition";
 import {
   buildSceneTransitionLedgerEntry,
@@ -94,7 +100,6 @@ import {
 } from "@/server/scene/scene-transition-pressure";
 import { resolveFailForwardComplication } from "@/server/scene/fail-forward-complication";
 import { applyTurnStateDeltas } from "@/server/scene/apply-turn-state-deltas";
-import type { SceneIdentity } from "@/server/scene/scene-identity";
 import { resolveNpcSuspicionEffect } from "@/server/scene/npc-suspicion-effects";
 import { resolvePositionPenaltyEffect } from "@/server/scene/position-penalty-effects";
 import { resolveFailForwardStateDelta } from "@/server/scene/fail-forward-state-delta";
@@ -115,6 +120,7 @@ import { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
 import {
   normalizeIntentMode,
   resolveWatchfulnessActionFlags,
+  type IntentMode,
   type WatchfulnessActionFlags,
 } from "@/lib/watchfulness-action-flags";
 import { resolvePositionActionFlags, type PositionActionFlags } from "@/lib/position-action-flags";
@@ -131,6 +137,7 @@ import {
   OutcomeTier,
   ResolvedTurn,
   resolveOutcomeTier,
+  type LedgerEntry,
   type StateDelta,
 } from "@/lib/engine/resolveTurnContract";
 import { classifyResolvedTurnDeltas } from "@/lib/engine/classifyResolvedTurnDeltas";
@@ -139,6 +146,48 @@ import { resolvePressureConsequences } from "@/lib/engine/resolvePressureConsequ
 import { inferPressureDeltas } from "@/lib/engine/inferPressureDeltas";
 import { resolveActionEffects } from "@/lib/engine/resolveActionEffects";
 import { validateResolvedTurnContract } from "@/lib/engine/validateResolvedTurnContract";
+
+const FINALIZED_EFFECT_SUMMARY_VALUES = new Set<FinalizedEffectSummary>([
+  "noise.escalation",
+  "npc.suspicion",
+  "position.penalty",
+  "time.scene-prolonged",
+  "time.deadline-pressure",
+  "scene.stalled",
+  "objective.window-narrowed",
+  "opportunity.reduced",
+  "resolution.cost",
+  "higher-complication-risk",
+  "complication-likely",
+  "complication.outcome",
+  "complication-applied",
+  "watchfulness.elevated",
+  "watchfulness.high",
+  "watchfulness.hostile",
+  "position.mobility.disadvantage",
+  "position.cover.lost",
+  "constraint.pressure",
+  "action-risk.elevated",
+  "action-risk.high",
+  "complication-weight.elevated",
+  "complication-tier.light",
+  "complication-tier.heavy",
+  "complication-policy.light",
+  "complication-policy.heavy",
+  "consequence-budget.extraCost-1",
+  "consequence-budget.extraCost-2",
+]);
+
+function asFinalizedEffectSummary(value: string | undefined | null): FinalizedEffectSummary | null {
+  if (!value) return null;
+  return FINALIZED_EFFECT_SUMMARY_VALUES.has(value as FinalizedEffectSummary)
+    ? (value as FinalizedEffectSummary)
+    : null;
+}
+
+function asOpportunityReduced(value: string | null): "opportunity.reduced" | null {
+  return value === "opportunity.reduced" ? value : null;
+}
 
 function summarizePressureDeltas(deltas: StateDelta[]) {
   const summary = {
@@ -155,6 +204,209 @@ function summarizePressureDeltas(deltas: StateDelta[]) {
     }
   }
   return summary;
+}
+
+function computePressureFromNormalized(input: {
+  state: Record<string, unknown>;
+  deltas: StateDelta[];
+  ledger: LedgerEntry[];
+}) {
+  const { state, deltas, ledger } = input;
+  void ledger;
+
+  const stateStats = asRecord(state.stats) ?? {};
+  const pressureThresholdDeltas = evaluatePressureThresholds({
+    stateStats,
+    deltas,
+  });
+  const canonicalPressure = {
+    noise: Number((state.pressure as Record<string, unknown>)?.noise ?? 0),
+    suspicion: Number((state.pressure as Record<string, unknown>)?.suspicion ?? 0),
+    time: Number((state.pressure as Record<string, unknown>)?.time ?? 0),
+    danger: Number((state.pressure as Record<string, unknown>)?.danger ?? 0),
+  };
+  const currentPressureAdds = deltas.filter((delta) => delta.kind === "pressure.add");
+
+  return {
+    pressureStateStats: stateStats,
+    pressureThresholdDeltas,
+    canonicalPressure,
+    currentPressureAdds,
+  };
+}
+
+async function computeContinuityHydration(input: {
+  previousTurn: { id: string; turnIndex: number; debug: unknown } | null;
+  previousStateRecord: Record<string, unknown> | null;
+  previousSceneContinuityInfo: SceneContinuityInfo | null;
+  previousSceneIdentity: SceneIdentity | null;
+  previousTurnDebug: Record<string, unknown> | null;
+}) {
+  const { previousTurn, previousStateRecord, previousSceneContinuityInfo, previousSceneIdentity, previousTurnDebug } = input;
+  const previousSceneContinuity = await hydrateContinuity({
+    previousTurn,
+    previousStateRecord,
+    previousSceneContinuityInfo,
+    previousTurnDebug,
+  });
+  const previousSceneIdentityKey = previousSceneIdentity ? buildSceneIdentityKey(previousSceneIdentity) : null;
+  const hydratedPreviousSceneIdentityKey = previousSceneIdentityKey;
+  return {
+    previousSceneContinuity,
+    hydratedPreviousSceneIdentityKey,
+  };
+}
+
+type SubjectFramingInput = {
+  normalizedState: Record<string, unknown>;
+  latestTurnContext: {
+    scene?: string | null;
+    playerInput?: string | null;
+    intentJson?: unknown;
+  } | null;
+  previousShotKey: string | null;
+};
+
+type ShotIdentity = {
+  frameKind: SceneFramingState["frameKind"];
+  shotScale: SceneFramingState["shotScale"];
+  cameraAngle: SceneFramingState["cameraAngle"];
+  subjectFocus: SceneFramingState["subjectFocus"];
+  primarySubjectId: SceneSubjectState["primarySubjectId"];
+};
+
+type SubjectFramingResult = {
+  nextVisualState: SceneVisualState;
+  nextFramingState: SceneFramingState;
+  nextSubjectState: SceneSubjectState;
+  nextActorState: SceneActorState;
+  nextFocusState: SceneFocusState;
+  currentShotIdentity: ShotIdentity;
+  currentShotKey: string;
+  shotPersisted: boolean;
+};
+
+function computeSubjectFraming(input: SubjectFramingInput): SubjectFramingResult {
+  const { normalizedState, latestTurnContext, previousShotKey } = input;
+  const nextVisualState = resolveSceneVisualState(normalizedState);
+  const nextFramingState = resolveSceneFramingState({
+    turn: latestTurnContext,
+    visual: nextVisualState,
+    locationChanged: false,
+  });
+  const nextSubjectState = resolveSceneSubjectState({
+    state: normalizedState,
+    framing: nextFramingState,
+  });
+  const nextActorState = resolveSceneActorState({
+    state: normalizedState,
+    subject: nextSubjectState,
+  });
+  const nextFocusState = resolveSceneFocusState({
+    state: normalizedState,
+    framing: nextFramingState,
+    subject: nextSubjectState,
+    actor: nextActorState,
+  });
+  const currentShotIdentity = {
+    frameKind: nextFramingState.frameKind,
+    shotScale: nextFramingState.shotScale,
+    cameraAngle: nextFramingState.cameraAngle,
+    subjectFocus: nextFramingState.subjectFocus,
+    primarySubjectId: nextSubjectState.primarySubjectId,
+  };
+  const currentShotKey = buildSceneShotKey(currentShotIdentity);
+  const shotPersisted =
+    previousShotKey !== null && currentShotKey === previousShotKey;
+  return {
+    nextVisualState,
+    nextFramingState,
+    nextSubjectState,
+    nextActorState,
+    nextFocusState,
+    currentShotIdentity,
+    currentShotKey,
+    shotPersisted,
+  };
+}
+
+type VisualDisruptionSignal = {
+  shouldForceEnvironmentTrigger: boolean;
+  reason: "VISIBLE_DISRUPTION" | null;
+};
+
+function deriveVisualDisruptionSignal(args: {
+  mode: "DO" | "SAY" | "LOOK";
+  stateDeltas: Array<
+    | { kind?: string; domain?: string; key?: string; effect?: string }
+    | Record<string, unknown>
+  >;
+  ledgerAdds: Array<
+    | { kind?: string; domain?: string; effect?: string }
+    | string
+    | Record<string, unknown>
+  >;
+}): VisualDisruptionSignal {
+  if (args.mode !== "DO") {
+    return {
+      shouldForceEnvironmentTrigger: false,
+      reason: null,
+    };
+  }
+
+  const disruptiveFlags = new Set([
+    "obstacle.disturbed",
+    "situation_critical",
+    "guard_alerted",
+    "position_compromised",
+  ]);
+
+  const hasPressureEscalation = args.stateDeltas.some((delta) => {
+    if (!delta || typeof delta !== "object") return false;
+    const { kind, domain } = delta as { kind?: string; domain?: string }; 
+    return kind === "pressure.add" && (domain === "noise" || domain === "danger");
+  });
+
+  const hasDisruptionFlag = args.stateDeltas.some((delta) => {
+    if (!delta || typeof delta !== "object") return false;
+    const kind = (delta as { kind?: string }).kind;
+    const key = String((delta as { key?: string | number }).key ?? "");
+    return kind === "flag.set" && disruptiveFlags.has(key);
+  });
+
+  const hasDisruptionLedger = args.ledgerAdds.some((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    const kind = (entry as { kind?: string }).kind;
+    const effect = String((entry as { effect?: string }).effect ?? "").toLowerCase();
+    return kind === "state_change" || kind === "scene_transition" ||
+      effect.includes("disturb") || effect.includes("ablaze") || effect.includes("fire");
+  });
+
+  if (hasPressureEscalation || hasDisruptionFlag || hasDisruptionLedger) {
+    return {
+      shouldForceEnvironmentTrigger: true,
+      reason: "VISIBLE_DISRUPTION",
+    };
+  }
+
+  return {
+    shouldForceEnvironmentTrigger: false,
+    reason: null,
+  };
+}
+
+const FAIL_FORWARD_COMPLICATION_VALUES: FailForwardComplication[] = [
+  "noise-increased",
+  "npc-suspicious",
+  "position-worsened",
+  "time-lost",
+];
+
+function toFailForwardComplication(value: string | null): FailForwardComplication | null {
+  if (!value) return null;
+  return FAIL_FORWARD_COMPLICATION_VALUES.includes(value as FailForwardComplication)
+    ? (value as FailForwardComplication)
+    : null;
 }
 
 function computeTimeAdvanceDelta(current: number, previous: number): number {
@@ -446,11 +698,12 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     const action = typeof body.action === "string" ? body.action : null;
     const tags = Array.isArray(body.tags) ? body.tags.filter((tag) => typeof tag === "string") : [];
     const rollTotal = typeof body.rollTotal === "number" && Number.isFinite(body.rollTotal) ? body.rollTotal : null;
+    const typedBody = body as PostBody & { mode?: IntentMode };
 
     const adventureId: string = body.adventureId;
     const playerText: string = body.playerText;
     const normalizedInput = playerText.trim().toLowerCase();
-    const requestedMode = normalizeIntentMode(typeof body.mode === "string" ? body.mode : null);
+    const requestedMode = normalizeIntentMode(typedBody.mode);
     if (!requestedMode) {
       logInvalidRequest("missing/invalid mode");
       return errorResponse(400, "Missing/invalid mode");
@@ -892,7 +1145,13 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       select: { state: true },
     });
     const stateRecord = asRecord(updatedAdventureState?.state ?? null);
-    applyTurnStateDeltas(stateRecord, turnStateDeltas);
+    const normalizedStateRecord = stateRecord as Record<string, unknown> & {
+      noise?: number;
+      suspicion?: number;
+      time?: number;
+      danger?: number;
+    };
+    applyTurnStateDeltas(normalizedStateRecord, turnStateDeltas);
     const currentStatsAfterDeltas = asRecord(stateRecord.stats) ?? {};
     const currentTimeAdvanceAfterDeltas = Number(currentStatsAfterDeltas.timeAdvance ?? 0);
     timeAdvanceDelta = computeTimeAdvanceDelta(currentTimeAdvanceAfterDeltas, previousTimeAdvance);
@@ -984,15 +1243,15 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           visual: previousVisualState,
         }
       : null;
-    const previousSceneContinuity = await hydrateContinuity({
+    const previousShotDuration = previousTurnSceneContinuityInfo?.shotDuration ?? 0;
+    const { previousSceneContinuity, hydratedPreviousSceneIdentityKey } = await computeContinuityHydration({
       previousTurn,
       previousStateRecord,
-      previousTurnSceneContinuityInfo,
+      previousSceneContinuityInfo: previousTurnSceneContinuityInfo,
+      previousSceneIdentity,
+      previousTurnDebug,
     });
-    const previousShotDuration = previousTurnSceneContinuityInfo?.shotDuration ?? 0;
     const previousShotKey = previousSceneContinuity.shotKey ?? null;
-    const hydratedPreviousSceneIdentityKey =
-      previousSceneIdentity ? buildSceneIdentityKey(previousSceneIdentity) : previousSceneContinuity.identityKey ?? null;
     console.log("scene.previousTurn.lookup", {
       adventureId,
       turnIndex: latestTurn?.turnIndex ?? null,
@@ -1015,35 +1274,40 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       hasPreviousSceneArt,
       hydratedPreviousSceneKey: previousSceneContinuity.sceneKey ?? null,
     });
-    const nextVisualState = resolveSceneVisualState(stateRecord);
-    const nextFramingState = resolveSceneFramingState({
+    const normalizedStateForFraming = (stateRecord ?? {}) as Record<string, unknown>;
+    const latestTurnContext = latestTurn
+      ? {
+          scene: latestTurn.scene ?? null,
+          playerInput: latestTurn.playerInput ?? null,
+          intentJson: latestTurn.intentJson ?? null,
+        }
+      : null;
+    const {
+      nextVisualState,
+      nextFramingState,
+      nextSubjectState,
+      nextActorState,
+      nextFocusState,
+      currentShotIdentity,
+      currentShotKey,
+      shotPersisted: candidateShotPersisted,
+    } = computeSubjectFraming({
+      normalizedState: normalizedStateForFraming,
+      latestTurnContext,
+      previousShotKey,
+    });
+    let shotPersisted = candidateShotPersisted;
+    const candidateSceneArtPayload = buildCanonicalSceneArtPayload({
       turn: latestTurn,
-      visual: nextVisualState,
-      locationChanged: false,
-    });
-    const nextSubjectState = resolveSceneSubjectState({
       state: stateRecord,
-      framing: nextFramingState,
     });
-    const nextActorState = resolveSceneActorState({
-      state: stateRecord,
-      subject: nextSubjectState,
-    });
-    const nextFocusState = resolveSceneFocusState({
-      state: stateRecord,
-      framing: nextFramingState,
-      subject: nextSubjectState,
-      actor: nextActorState,
-    });
-    const currentShotIdentity = {
-      frameKind: nextFramingState.frameKind,
-      shotScale: nextFramingState.shotScale,
-      cameraAngle: nextFramingState.cameraAngle,
-      subjectFocus: nextFramingState.subjectFocus,
-      primarySubjectId: nextSubjectState.primarySubjectId,
-    };
-    const currentShotKey = buildSceneShotKey(currentShotIdentity);
-    const shotPersisted = previousShotKey !== null && currentShotKey === previousShotKey;
+    const canonicalSceneKeyCandidate = candidateSceneArtPayload?.sceneKey ?? null;
+    const canonicalSceneKey = canonicalSceneKeyCandidate ?? previousSceneContinuity.sceneKey ?? null;
+    const canReuseShot =
+      candidateShotPersisted &&
+      canonicalSceneKey !== null &&
+      previousSceneContinuity.sceneKey === canonicalSceneKey;
+    shotPersisted = canReuseShot;
     const shouldReuseCachedPayload =
       shotPersisted &&
       previousSceneContinuity.canonicalPayload &&
@@ -1051,10 +1315,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       previousSceneContinuity.canonicalPayload.promptHash.length > 0;
     const canonicalSceneArtPayload = shouldReuseCachedPayload
       ? previousSceneContinuity.canonicalPayload!
-      : buildCanonicalSceneArtPayload({
-          turn: latestTurn,
-          state: stateRecord,
-        });
+      : candidateSceneArtPayload;
     if (canonicalSceneArtPayload && !canonicalSceneArtPayload.promptHash) {
       throw new Error("scene-art invariant violated: canonical payload missing promptHash");
     }
@@ -1720,6 +1981,8 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       deltaKind: finalizedSceneDeltaKind,
       pressure: nextPressureValue,
     });
+    const normalizedFailForwardComplication = toFailForwardComplication(failForwardComplication);
+    failForwardComplication = normalizedFailForwardComplication;
     const complicationEntry = failForwardComplication
       ? {
           kind: "complication",
@@ -2190,28 +2453,29 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       }
     }
 
+    const normalizedOpportunityResolutionModifier = asOpportunityReduced(opportunityResolutionModifier);
     const finalizedEffectSummaries: FinalizedEffectSummary[] = [
-      ...(noiseEscalationEntry ? ["noise.escalation"] : []),
-      ...(npcSuspicionEntry ? ["npc.suspicion"] : []),
-      ...(positionPenaltyEntry ? ["position.penalty"] : []),
-      ...(constraintPressureEffect ? [constraintPressureEffect] : []),
-      ...(actionRiskEffect ? [actionRiskEffect] : []),
-      ...(complicationWeightEntry ? ([complicationWeightEntry.effect] as FinalizedEffectSummary[]) : []),
-      ...(complicationTierEntry ? ([complicationTierEntry.effect] as FinalizedEffectSummary[]) : []),
-      ...(complicationPolicyEntry ? ([complicationPolicyEntry.effect] as FinalizedEffectSummary[]) : []),
-      ...(sceneTimeEffect ? [sceneTimeEffect] : []),
-      ...(sceneClockPressureEffect ? [sceneClockPressureEffect] : []),
-      ...(opportunityResolutionModifier ? [opportunityResolutionModifier] : []),
-      ...(opportunityCost ? [opportunityCost] : []),
-      ...(resolutionCostDelta > 0 ? ["resolution.cost"] : []),
-      ...(resolutionCostEffect.higherComplicationRisk ? ["higher-complication-risk"] : []),
-      ...(complicationRiskEffect.complicationLikely ? ["complication-likely"] : []),
-      ...(complicationOutcomeEffect.minimumComplicationCount > 0 ? ["complication.outcome"] : []),
-      ...(enforcedFinalizedComplications.includes("complication-applied") ? ["complication-applied"] : []),
-      ...(watchfulnessEffectSummary ? [watchfulnessEffectSummary] : []),
+      ...[noiseEscalationEntry ? "noise.escalation" : null],
+      ...[npcSuspicionEntry ? "npc.suspicion" : null],
+      ...[positionPenaltyEntry ? "position.penalty" : null],
+      ...[constraintPressureEffect ? constraintPressureEffect : null],
+      ...[actionRiskEffect ? actionRiskEffect : null],
+      ...[asFinalizedEffectSummary(complicationWeightEntry?.effect)],
+      ...[asFinalizedEffectSummary(complicationTierEntry?.effect)],
+      ...[asFinalizedEffectSummary(complicationPolicyEntry?.effect)],
+      ...[sceneTimeEffect ? sceneTimeEffect : null],
+      ...[sceneClockPressureEffect ? sceneClockPressureEffect : null],
+      ...[normalizedOpportunityResolutionModifier ? normalizedOpportunityResolutionModifier : null],
+      ...[opportunityCost ? opportunityCost : null],
+      ...[resolutionCostDelta > 0 ? "resolution.cost" : null],
+      ...[resolutionCostEffect.higherComplicationRisk ? "higher-complication-risk" : null],
+      ...[complicationRiskEffect.complicationLikely ? "complication-likely" : null],
+      ...[complicationOutcomeEffect.minimumComplicationCount > 0 ? "complication.outcome" : null],
+      ...[enforcedFinalizedComplications.includes("complication-applied") ? "complication-applied" : null],
+      ...[watchfulnessEffectSummary ? watchfulnessEffectSummary : null],
       ...(positionActionEntry ? ([positionActionEntry.effect] as FinalizedEffectSummary[]) : []),
       ...(noiseActionEntry ? ([noiseActionEntry.effect] as FinalizedEffectSummary[]) : []),
-    ];
+    ].filter((value): value is FinalizedEffectSummary => value !== null);
     const previousOpportunityTier =
       (previousStateRecord?.opportunityTier as OpportunityWindowState["opportunityTier"]) ?? "normal";
     const opportunityWindowState = resolveOpportunityWindow({
@@ -2258,12 +2522,12 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             },
           }
         : null;
-    const opportunityResolutionEntry = opportunityResolutionModifier
+    const opportunityResolutionEntry = normalizedOpportunityResolutionModifier
       ? {
           kind: "opportunity.resolution",
           domain: "resolution",
           cause: "opportunity.tier",
-          effect: opportunityResolutionModifier,
+          effect: normalizedOpportunityResolutionModifier,
           data: {
             opportunityTier: opportunityWindowState.opportunityTier,
             turnIndex: latestTurn?.turnIndex ?? null,
@@ -2497,17 +2761,19 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       ...finalizedConsequenceResult.consequenceComplicationEntries,
       ...finalizedConsequenceResult.consequenceExtraCostEntries,
     ];
-    presentation = {
-      resolution: resolutionPresentation,
+    const presentationExtension = {
       narration: finalizedConsequenceNarration,
       ledgerEntries: projectLedgerEntries(consequencePresentationEntries),
     };
     const finalTurnPayload = (finalized as any)?.turn ?? {};
-    finalTurnPayload.presentation = presentation;
+    finalTurnPayload.presentation = {
+      ...presentation,
+      ...presentationExtension,
+    };
     finalTurnPayload.failForwardComplication = failForwardComplication ?? null;
     finalTurnPayload.effectSummaries = finalizedEffectSummaries;
     finalTurnPayload.opportunityWindow = opportunityWindowState;
-    finalTurnPayload.opportunityResolutionModifier = opportunityResolutionModifier;
+    finalTurnPayload.opportunityResolutionModifier = normalizedOpportunityResolutionModifier;
     finalTurnPayload.opportunityCost = opportunityCost;
     finalTurnPayload.opportunityCostEffect = opportunityCostEffect;
     finalTurnPayload.resolutionCost = typeof stateRecord.resolutionCost === "number" ? stateRecord.resolutionCost : null;
@@ -2545,7 +2811,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     (finalized as any).failForwardComplication = failForwardComplication ?? null;
     (finalized as any).effectSummaries = finalizedEffectSummaries;
     (finalized as any).opportunityWindow = opportunityWindowState;
-    (finalized as any).opportunityResolutionModifier = opportunityResolutionModifier;
+    (finalized as any).opportunityResolutionModifier = normalizedOpportunityResolutionModifier;
     (finalized as any).opportunityCost = opportunityCost;
     (finalized as any).opportunityCostEffect = opportunityCostEffect;
     (finalized as any).resolutionCost = stateRecord.resolutionCost;
@@ -2593,6 +2859,11 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       hasHydratedPreviousSceneKey ||
       hasPreviousCanonicalPayload ||
       debugHasPreviousSceneArt;
+    if (!renderDecisionOutcome) {
+      throw new Error(
+        "renderDecisionOutcome missing before render-dependent scene-art logic",
+      );
+    }
     console.log("scene.reuse.inputs", {
       previousCanonicalKey,
       currentCanonicalKey,
@@ -2637,11 +2908,14 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       });
 
       if (legacySceneArt) {
-        sceneArtResult = legacySceneArt;
+        sceneArtResult = buildFinalSceneArtContract(legacySceneArt);
       }
     }
 
-    let baseSceneArtRow = sceneArtResult ?? existingSceneArt ?? null;
+    let persistedFinalSceneArt: SceneArtRow | null = null;
+    let persistedSceneArtContractCache: CanonicalSceneArtState | null = null;
+
+    let baseSceneArtRow = existingSceneArt ?? null;
     if (baseSceneArtRow && !baseSceneArtRow.promptHash) {
       console.error("scene.art.row.missing_prompt_hash", {
         stage: "base",
@@ -2672,7 +2946,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
 
     await maybeCacheSceneArt(finalSceneArtRow);
     persistedFinalSceneArt = finalSceneArtRow;
-    console.log("TURN_SCENE_ART_RETURN", finalSceneArt);
+    persistedSceneArtContractCache = finalSceneArtRow
+      ? buildFinalSceneArtContract(finalSceneArtRow)
+      : null;
+    console.log("TURN_SCENE_ART_RETURN", persistedSceneArtContractCache);
 
     const baseStateDeltas = [
       ...turnStateDeltas,
@@ -2689,6 +2966,13 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       authoredPressureDelta: summarizePressureDeltas(authoredEffects?.stateDeltas ?? []),
     });
     const deltaBuffer = [...baseStateDeltas];
+    const normalizedStateDeltas = deltaBuffer as StateDelta[];
+    const normalizedLedgerAdds: LedgerEntry[] = ledgerAddsWithVisual.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry as LedgerEntry;
+      if (!Object.prototype.hasOwnProperty.call(entry, "outcome")) return entry as LedgerEntry;
+      const { outcome, ...rest } = entry as Record<string, unknown>;
+      return rest as LedgerEntry;
+    });
     const costNeeded = ["success_with_cost", "mixed", "failure_with_progress"].includes(resolvedOutcomeTier);
     if (costNeeded && !classification.hasCost) {
       const pressureDeltas = inferPressureDeltas({
@@ -2706,22 +2990,21 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       });
       deltaBuffer.push(...pressureDeltas);
     }
-    const pressureStateStats = asRecord(stateRecord.stats) ?? {};
-    const pressureThresholdDeltas = evaluatePressureThresholds({
-      stateStats: pressureStateStats,
-      deltas: deltaBuffer,
-    });
-    deltaBuffer.push(...pressureThresholdDeltas);
-    const canonicalPressure = {
-      noise: Number(stateRecord.pressure?.noise ?? 0),
-      suspicion: Number(stateRecord.pressure?.suspicion ?? 0),
-      time: Number(stateRecord.pressure?.time ?? 0),
-      danger: Number(stateRecord.pressure?.danger ?? 0),
+    const normalized = {
+      state: normalizedStateRecord,
+      deltas: normalizedStateDeltas,
+      ledger: normalizedLedgerAdds,
     };
-    const currentPressureAdds = deltaBuffer.filter((delta) => delta.kind === "pressure.add");
+    const {
+      pressureStateStats,
+      pressureThresholdDeltas,
+      canonicalPressure,
+      currentPressureAdds,
+    } = computePressureFromNormalized(normalized);
+    deltaBuffer.push(...pressureThresholdDeltas);
     console.log("pressure.consequence.callsite", {
       canonicalPressure,
-      normalizedStatePressure: normalizedState.pressure,
+      normalizedStatePressure: normalizedStateRecord.pressure,
       currentPressureAdds,
     });
     console.log("pressure.consequence.inputs", {
@@ -2731,7 +3014,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     const pressureConsequences = resolvePressureConsequences({
       previousPressure: canonicalPressure,
       currentPressureAdds,
-      stateFlags: asRecord(stateRecord.flags) ?? {},
+      stateFlags: asRecord(normalizedStateRecord.flags) ?? {},
     });
     deltaBuffer.push(...pressureConsequences.stateDeltas);
     ledgerAddsWithVisual.push(...pressureConsequences.ledgerAdds);
@@ -2779,75 +3062,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       data: { state: nextAdventureState },
     });
 
-  const normalizedLedgerAdds = ledgerAddsWithVisual.map((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
-    if (!Object.prototype.hasOwnProperty.call(entry, "outcome")) return entry;
-    const { outcome, ...rest } = entry as Record<string, unknown>;
-    return rest;
-  });
-
-    const finalResolvedTurn = stripNonLookObservationArtifacts(
-      {
-        ...resolvedTurn,
-        deltaBuffer,
-        ledgerAdds: normalizedLedgerAdds,
-        sceneTransition: sceneTransitionPayload,
-        scenePresentation,
-      },
-      playerIntentMode ?? "LOOK",
-    );
-
-    console.log("turn.contract.resolved", finalResolvedTurn);
-
-    const visualDisruption = deriveVisualDisruptionSignal({
-      mode: playerIntentMode ?? "LOOK",
-      stateDeltas: finalResolvedTurn.stateDeltas ?? [],
-      ledgerAdds: finalResolvedTurn.ledgerAdds ?? [],
-    });
-
-    let effectiveSceneDeltaKind: SceneDeltaKind = derivedSceneDeltaKind;
-    let effectiveTriggerDecision: SceneArtTriggerDecision | null = null;
-
-    if (visualDisruption.shouldForceEnvironmentOverride) {
-      effectiveSceneDeltaKind = "environment";
-
-      effectiveTriggerDecision = {
-        shouldGenerate: true,
-        deltaKind: "environment",
-        reason: "VISIBLE_DISRUPTION",
-      };
-
-      console.log("scene.art.trigger.override", {
-        reason: visualDisruption.reason,
-        effectiveSceneDeltaKind,
-      });
-    }
-
-    const integratedTriggerDecision = runSceneArtTriggerIntegration({
-      resolvedTurn: finalResolvedTurn,
-      sceneArtPayload,
-      stateRecord,
-    });
-
-    const finalTriggerDecision: SceneArtTriggerDecision =
-      effectiveTriggerDecision != null
-        ? {
-            ...(integratedTriggerDecision ?? {}),
-            ...effectiveTriggerDecision,
-          }
-        : integratedTriggerDecision ?? {
-            shouldGenerate: false,
-            deltaKind: effectiveSceneDeltaKind,
-            reason: "NONE",
-          };
-
-    let persistedFinalSceneArt: SceneArtRow | null = null;
-
-    console.log("scene.art.trigger", {
-      finalTriggerDecision,
-      effectiveSceneDeltaKind,
-    });
-
     const margin = hasRoll ? (effectiveRollTotal as number) - adjustedDifficulty : null;
     console.log("turn.outcome.classification", {
       rawRoll: rollTotal ?? null,
@@ -2877,12 +3091,21 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     });
 
 
+    const resolvedSceneText =
+      scenePresentation && "sceneText" in scenePresentation
+        ? (scenePresentation as { sceneText?: string | null }).sceneText ?? null
+        : null;
+    const resolvedConsequenceText =
+      scenePresentation && "consequenceText" in scenePresentation
+        ? (scenePresentation as { consequenceText?: string | null }).consequenceText ?? null
+        : null;
+
     const resolvedTurn: ResolvedTurn = {
       outcome: {
         tier: resolvedOutcomeTier,
         roll: resolvedRoll,
       },
-      stateDeltas: deltaBuffer,
+      stateDeltas: normalizedStateDeltas,
       ledgerAdds: normalizedLedgerAdds,
       sceneUpdate: sceneTransitionPayload
         ? {
@@ -2892,10 +3115,8 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           }
         : null,
       presentation: {
-        sceneText: scenePresentation.sceneText?.trim()
-          ? scenePresentation.sceneText
-          : "(no scene text generated)",
-        consequenceText: scenePresentation.consequenceText ?? [],
+        sceneText: resolvedSceneText?.trim() ? resolvedSceneText : "(no scene text generated)",
+        consequenceText: resolvedConsequenceText ?? [],
       },
     };
 
@@ -2906,9 +3127,78 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       });
     }
 
-    const finalSceneArt = persistedFinalSceneArt
-      ? buildFinalSceneArtContract(persistedFinalSceneArt)
-      : null;
+    const finalResolvedTurn = stripNonLookObservationArtifacts(
+      {
+        ...resolvedTurn,
+        stateDeltas: normalizedStateDeltas,
+        ledgerAdds: normalizedLedgerAdds,
+        sceneUpdate: sceneTransitionPayload
+          ? {
+              locationId: (sceneTransitionPayload as any)?.locationId ?? null,
+              sceneId: sceneTransitionPayload.sceneKey ?? null,
+              tags: sceneTransitionPayload.tags ?? undefined,
+            }
+          : null,
+        scenePresentation,
+      },
+      playerIntentMode ?? "LOOK",
+    );
+
+    console.log("turn.contract.resolved", finalResolvedTurn);
+
+    const visualDisruption = deriveVisualDisruptionSignal({
+      mode: playerIntentMode ?? "LOOK",
+      stateDeltas: finalResolvedTurn.stateDeltas ?? [],
+      ledgerAdds: finalResolvedTurn.ledgerAdds ?? [],
+    });
+
+    let effectiveSceneDeltaKind: SceneDeltaKind = derivedSceneDeltaKind;
+    let effectiveTriggerDecision: SceneArtTriggerDecision | null = null;
+
+    if (visualDisruption.shouldForceEnvironmentTrigger) {
+      effectiveSceneDeltaKind = "environment";
+
+      effectiveTriggerDecision = {
+        shouldGenerate: true,
+        deltaKind: "environment",
+        reason: visualDisruption.reason ?? "VISIBLE_DISRUPTION",
+        tier: "medium",
+        milestoneKind: null,
+      };
+
+      console.log("scene.art.trigger.override", {
+        effectiveSceneDeltaKind,
+      });
+    }
+
+    const integratedTriggerDecision = await runSceneArtTriggerIntegration({
+      sceneArtPayload,
+      previousState: previousStateRecord,
+      currentState: stateRecord,
+      previousSceneIdentity,
+      currentSceneIdentity,
+      latestTurnScene: latestTurn?.scene ?? null,
+      renderMode,
+    });
+
+    const finalTriggerDecision: SceneArtTriggerDecision =
+      effectiveTriggerDecision != null
+        ? {
+            ...(integratedTriggerDecision ?? {}),
+            ...effectiveTriggerDecision,
+          }
+        : integratedTriggerDecision ?? {
+            shouldGenerate: false,
+            deltaKind: effectiveSceneDeltaKind,
+            reason: "NONE",
+          };
+
+    console.log("scene.art.trigger", {
+      finalTriggerDecision,
+      effectiveSceneDeltaKind,
+    });
+
+    const finalSceneArt = persistedSceneArtContractCache;
 
     const responseBody = {
       ok: true,
@@ -2924,7 +3214,13 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       stateDeltas: turnStateDeltas,
       ledgerAdds: normalizedLedgerAdds,
       sceneArt: finalSceneArt,
-      sceneTransition: sceneTransitionPayload,
+      sceneUpdate: sceneTransitionPayload
+        ? {
+            locationId: (sceneTransitionPayload as any)?.locationId ?? null,
+            sceneId: sceneTransitionPayload.sceneKey ?? null,
+            tags: sceneTransitionPayload.tags ?? undefined,
+          }
+        : null,
       scenePresentation,
       sceneContinuity: finalContinuityInfo,
     };
@@ -2985,18 +3281,19 @@ export async function runSceneArtTriggerIntegration(
     return null;
   }
 
-  try {
-    return await evaluateSceneArtVisualTrigger({
-      previousState: options.previousState,
-      currentState: options.currentState,
-      previousIdentity: options.previousSceneIdentity,
-      currentIdentity: options.currentSceneIdentity,
-      sceneKey: options.sceneArtPayload.sceneKey,
-      sceneText: options.latestTurnScene,
-      stylePreset: options.sceneArtPayload.stylePreset,
-      renderMode: options.renderMode,
-      engineVersion: ENGINE_VERSION,
-    });
+    try {
+      return await evaluateSceneArtVisualTrigger({
+        previousState: options.previousState,
+        currentState: options.currentState,
+        previousIdentity: options.previousSceneIdentity,
+        currentIdentity: options.currentSceneIdentity,
+        sceneKey: options.sceneArtPayload.sceneKey,
+        promptHash: options.sceneArtPayload.promptHash,
+        sceneText: options.latestTurnScene,
+        stylePreset: options.sceneArtPayload.stylePreset,
+        renderMode: options.renderMode,
+        engineVersion: ENGINE_VERSION,
+      });
   } catch (error) {
     logSceneArtEvent("scene.art.trigger.error", {
       sceneKey: options.sceneArtPayload.sceneKey,

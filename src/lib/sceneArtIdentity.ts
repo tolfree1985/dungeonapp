@@ -7,6 +7,7 @@ export type SceneArtIdentityInput = {
   stylePreset?: string | null;
   renderMode?: "full" | "partial" | null;
   engineVersion?: string | null;
+  promptHashOverride?: string | null;
 };
 
 export type SceneArtIdentity = {
@@ -43,7 +44,7 @@ export function getSceneArtIdentity(input: SceneArtIdentityInput): SceneArtIdent
   });
   const basePrompt = prompt.basePrompt;
   const renderPrompt = prompt.renderPrompt;
-  const promptHash = prompt.promptHash;
+  const promptHash = input.promptHashOverride ?? prompt.promptHash;
   const fileName = `${promptInput.sceneKey}-${promptHash}.png`;
   const imageUrl = `/scene-art/${fileName}`;
 

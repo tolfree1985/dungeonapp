@@ -85,6 +85,30 @@ const CONSEQUENCES = [
     effect: "Time pressure escalates the scene",
     detail: "Lingering time pressure pushes the situation toward crisis.",
   },
+  {
+    domain: "danger",
+    threshold: 3,
+    flag: "position_compromised",
+    action: "EXPOSE",
+    effect: "Escalating danger compromises your position",
+    detail: "The rising danger leaves your position exposed.",
+  },
+  {
+    domain: "danger",
+    threshold: 5,
+    flag: "escape_route_cut",
+    action: "CUT_OFF",
+    effect: "Danger cuts off the obvious escape route",
+    detail: "The situation has become dangerous enough to close the clean exit.",
+  },
+  {
+    domain: "danger",
+    threshold: 7,
+    flag: "status_confrontation",
+    action: "CONFRONTATION",
+    effect: "Danger escalates into direct confrontation",
+    detail: "The danger can no longer be contained.",
+  },
 ];
 
 function readFlag(record: Record<string, unknown> | null, key: string): boolean {

@@ -123,10 +123,10 @@ export default function SceneArtWorkerPage() {
   }, [refresh]);
 
   const runRow = useCallback(
-    async (promptHash: string) => {
+    async (sceneKey: string, promptHash: string) => {
       setRunning(promptHash);
       highlightTarget.current = promptHash;
-      await fetch(`/api/scene-art/worker/run/${promptHash}`, { method: "POST" });
+      await fetch(`/api/scene-art/worker/run/${sceneKey}/${promptHash}`, { method: "POST" });
       setRunning(null);
       await refresh();
     },
@@ -643,7 +643,7 @@ export default function SceneArtWorkerPage() {
                       ) : canRunThis ? (
                         <button
                           className="rounded border px-2 py-1 text-xs"
-                          onClick={() => runRow(row.promptHash)}
+                          onClick={() => runRow(row.sceneKey, row.promptHash)}
                           disabled={running === row.promptHash}
                         >
                           {running === row.promptHash ? "Running" : "Run this"}

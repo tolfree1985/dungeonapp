@@ -81,72 +81,106 @@ const STATIC_SCENES: Record<string, string> = {
   castle_hall: "/scene-art/castle.jpg",
 };
 
-export async function generateImage(
-  prompt: string,
-  sceneKey?: string,
-  promptHash?: string
-): Promise<SceneArtProviderResponse> {
+export async function generateImage({
+  provider,
+  prompt,
+  sceneKey,
+  promptHash,
+}: {
+  provider?: string | null;
+  prompt: string;
+  sceneKey?: string;
+  promptHash?: string;
+}): Promise<SceneArtProviderResponse> {
   console.log("GENERATING IMAGE:", prompt);
-  const providerUrl = process.env.IMAGE_PROVIDER_URL;
-  const authToken = process.env.IMAGE_PROVIDER_AUTH_TOKEN;
-  if (providerUrl) {
-    try {
-      const response = await fetch(providerUrl, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
-        },
-      body: JSON.stringify({
-        model: "gpt-image-1",
-        prompt,
-        size: "1024x1024",
-        sceneKey,
-        promptHash,
-      }),
-      });
+  const providerUrl =
+    process.env.IMAGE_PROVIDER_URL ??
+    (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3001").replace(/\/$/, "") +
+      "/api/image-provider";
+  const headers = { "content-type": "application/json" };
+  const body = JSON.stringify({
+    provider,
+    sceneKey,
+    promptHash,
+    prompt,
+    size: "1024x1024",
+    model: "gpt-image-1",
+  });
+  const controller = new AbortController();
+  const timeoutMs = 90000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const providerLabel = provider ?? "remote";
 
-      if (!response.ok) {
-        throw new Error(`Image provider failed: ${response.status}`);
-      }
-
-      const data = (await response.json()) as { imageUrl?: string };
-
-      if (typeof data.imageUrl === "string" && data.imageUrl.length > 0) {
-        return {
-          ok: true,
-          provider: "remote",
-          imageUrl: data.imageUrl,
-        };
-      }
-
-      throw new Error("Image provider returned no imageUrl");
-    } catch (error) {
-      console.warn("sceneArt.provider.error", {
-        sceneKey,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return {
-        ok: false,
-        provider: "remote",
-        error: error instanceof Error ? error.message : "Image provider error",
-        retryable: true,
-      };
+  try {
+    const startedAt = Date.now();
+    const hasApiKey = Boolean(process.env.EXTERNAL_IMAGE_PROVIDER_AUTH_TOKEN || process.env.OPENAI_API_KEY);
+    console.log("scene.art.provider.fetch.request", {
+      provider: providerLabel,
+      url: providerUrl,
+      hasApiKey,
+      method: "POST",
+    });
+    console.log("scene.art.provider.fetch.start", {
+      provider: providerLabel,
+      sceneKey,
+      promptHash,
+    });
+    const response = await fetch(providerUrl, {
+      method: "POST",
+      headers,
+      body,
+      signal: controller.signal,
+    });
+    const durationMs = Date.now() - startedAt;
+    console.log("scene.art.provider.fetch.response", {
+      provider: providerLabel,
+      sceneKey,
+      promptHash,
+      ok: response.ok,
+      status: response.status,
+      durationMs,
+    });
+    const bodyText = await response.text();
+    console.log("scene.art.provider.fetch.body", {
+      provider: providerLabel,
+      sceneKey,
+      promptHash,
+      bodyText,
+    });
+    if (!response.ok) {
+      throw new Error(`IMAGE_PROVIDER_HTTP_${response.status}: ${bodyText}`);
     }
-  }
-
-  if (sceneKey && STATIC_SCENES[sceneKey]) {
+    let providerResponse: SceneArtProviderResponse;
+    try {
+      providerResponse = JSON.parse(bodyText) as SceneArtProviderResponse;
+    } catch (parseError) {
+      throw new Error("IMAGE_PROVIDER_INVALID_JSON");
+    }
     return {
-      ok: true,
-      provider: "static-fallback",
-      imageUrl: STATIC_SCENES[sceneKey],
+      ...providerResponse,
+      provider: providerResponse.provider ?? providerLabel,
     };
+  } catch (error) {
+    const errName = error instanceof Error ? error.name : null;
+    const errMessage = error instanceof Error ? error.message : String(error);
+    const errCause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : null;
+    const errStack = error instanceof Error ? error.stack : null;
+    console.error("scene.art.provider.fetch.error", {
+      provider: providerLabel,
+      sceneKey,
+      promptHash,
+      name: errName,
+      message: errMessage,
+      cause: errCause,
+      stack: errStack,
+    });
+    return {
+      ok: false,
+      provider: providerLabel,
+      error: errMessage,
+      retryable: errMessage === "IMAGE_PROVIDER_TIMEOUT" || errMessage.startsWith("IMAGE_PROVIDER_HTTP_"),
+    };
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return {
-    ok: false,
-    provider: "placeholder",
-    error: "No real provider output configured",
-    retryable: false,
-  };
 }

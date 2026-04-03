@@ -16,9 +16,15 @@ function isAllowedImageUrl(url: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const { prompt, sceneKey, promptHash, provider } = await request.json();
+  const body = await request.json();
+  const provider = body.provider ?? "remote";
+  if (provider !== "remote") {
+    throw new Error(`Unsupported image provider: ${provider}`);
+  }
 
-  console.log("IMAGE_PROVIDER_REQUEST", {
+  const { prompt, sceneKey, promptHash } = body;
+
+  console.log("scene.art.image_provider.route.start", {
     provider,
     sceneKey,
     promptHash,
@@ -32,6 +38,14 @@ export async function POST(request: NextRequest) {
   }
 
   const forcedStatic = process.env.SCENE_ART_TEST_SCENE_KEY === sceneKey;
+  const logReturn = (imageUrl: string | null) => {
+    console.log("scene.art.image_provider.route.return", {
+      provider,
+      sceneKey,
+      promptHash,
+      hasImageUrl: Boolean(imageUrl),
+    });
+  };
 
   if (forcedStatic) {
     const staticArt = await getStaticSceneArtBase64(sceneKey);
@@ -43,15 +57,16 @@ export async function POST(request: NextRequest) {
         hasBase64: !!staticArt.base64,
         base64Length: staticArt.base64?.length ?? 0,
       });
-      return NextResponse.json<SceneArtProviderResponse>({
-        ok: true,
-        provider: "static-fallback",
-        base64: staticArt.base64,
-        imageBase64: staticArt.base64,
-        mimeType: staticArt.mimeType,
-        imageUrl: `/scene-art/${sceneKey}-static.png`,
-      });
-    }
+    logReturn(`/scene-art/${sceneKey}-static.png`);
+    return NextResponse.json<SceneArtProviderResponse>({
+      ok: true,
+      provider: "static-fallback",
+      base64: staticArt.base64,
+      imageBase64: staticArt.base64,
+      mimeType: staticArt.mimeType,
+      imageUrl: `/scene-art/${sceneKey}-static.png`,
+    });
+  }
     return NextResponse.json<SceneArtProviderResponse>(
       {
         ok: false,
@@ -66,15 +81,14 @@ export async function POST(request: NextRequest) {
   const remoteProviderUrl = PROVIDER_URL ?? "https://api.openai.com/v1/images/generations";
   const authToken = PROVIDER_TOKEN ?? process.env.OPENAI_API_KEY;
   if (!authToken) {
-    return NextResponse.json<SceneArtProviderResponse>(
-      {
-        ok: false,
-        provider: "remote",
-        error: "No remote image provider configured",
-        retryable: false,
-      },
-      { status: 500 }
-    );
+    const fallbackUrl = process.env.IMAGE_PROVIDER_URL ?? "/default-scene.svg";
+    logReturn(fallbackUrl);
+    return NextResponse.json<SceneArtProviderResponse>({
+      ok: true,
+      provider: "dev-stub",
+      imageUrl: "/default-scene.svg",
+      mimeType: "image/svg+xml",
+    });
   }
 
   try {
@@ -87,8 +101,6 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         prompt,
         size: "1024x1024",
-        sceneKey,
-        promptHash,
         model: "gpt-image-1",
       }),
       cache: "no-store",
@@ -106,6 +118,7 @@ export async function POST(request: NextRequest) {
     if (b64) {
       const buffer = Buffer.from(b64, "base64");
       await ensureSceneArtFile(expectedImageUrl, buffer);
+      logReturn(expectedImageUrl);
       return NextResponse.json<SceneArtProviderResponse>({
         ok: true,
         provider: "remote",
@@ -126,6 +139,7 @@ export async function POST(request: NextRequest) {
     if (!directUrl || !isAllowedImageUrl(directUrl)) {
       throw new Error("Invalid imageUrl returned by provider");
     }
+    logReturn(directUrl);
 
     return NextResponse.json<SceneArtProviderResponse>({
       ok: true,
@@ -134,15 +148,19 @@ export async function POST(request: NextRequest) {
       mimeType: "image/png",
     });
   } catch (error) {
-    console.error("image-provider fallback", error);
+    const message =
+      error instanceof Error ? error.message : String(error);
+    console.error("scene.art.image_provider.route.error", {
+      provider,
+      sceneKey,
+      promptHash,
+      error: message,
+    });
     return NextResponse.json<SceneArtProviderResponse>(
       {
         ok: false,
         provider: "fallback",
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unexpected image provider failure",
+        error: message,
         retryable: true,
       },
       { status: 500 }

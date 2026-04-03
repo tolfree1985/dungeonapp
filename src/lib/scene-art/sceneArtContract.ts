@@ -1,4 +1,5 @@
 import type { SceneArtStatus } from "@/generated/prisma";
+import type { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
 import type { SceneArtPayload } from "@/lib/sceneArt";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 import { queueSceneArt } from "@/lib/sceneArtRepo";
@@ -12,13 +13,15 @@ export type SceneArtRowLike = {
   imageUrl: string | null;
 } | null;
 
-export function buildFinalSceneArtContract(row: SceneArtRowLike) {
+export function buildFinalSceneArtContract(row: SceneArtRowLike): CanonicalSceneArtState | null {
   if (!row || !row.sceneKey || !row.promptHash) return null;
+  const sceneArtImageUrl = row.status === "ready" ? row.imageUrl ?? null : null;
   return {
     sceneKey: row.sceneKey,
     promptHash: row.promptHash,
     status: row.status,
-    imageUrl: row.imageUrl,
+    imageUrl: sceneArtImageUrl,
+    hasReadyImage: Boolean(sceneArtImageUrl),
   };
 }
 

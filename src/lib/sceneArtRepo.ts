@@ -4,6 +4,7 @@ import type { SceneArtPayload } from "@/lib/sceneArt";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 import type { SceneArt } from "@/generated/prisma";
 import { SceneArtPriority, SceneArtStatus } from "@/generated/prisma";
+import type { SceneArtTriggerDecision } from "@/lib/scene-art/visualTriggerPolicy";
 
 export type RenderMode = "full" | "partial";
 
@@ -35,6 +36,7 @@ export async function queueSceneArt(
   engineVersion?: string | null,
   renderPriority: SceneArtPriority = "normal",
   renderMode: RenderMode = "full",
+  triggerDecision?: SceneArtTriggerDecision | null,
 ) {
   if (!payload.promptHash) {
     throw new Error("scene-art invariant violated: payload missing promptHash");
@@ -56,6 +58,15 @@ export async function queueSceneArt(
         },
       },
     });
+
+    if (triggerDecision && !triggerDecision.shouldGenerate) {
+      console.log("scene.art.queue.blocked", {
+        sceneKey: identity.sceneKey,
+        promptHash: identity.promptHash,
+        reason: "triggerDecision.shouldGenerate=false",
+      });
+      return existing ?? null;
+    }
 
     if (!existing) {
       const created = await tx.sceneArt.create({

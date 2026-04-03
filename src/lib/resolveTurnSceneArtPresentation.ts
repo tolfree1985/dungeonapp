@@ -38,6 +38,7 @@ type SceneComposition = {
 export type SceneArtRow = {
   id?: string;
   sceneKey: string;
+  promptHash: string;
   status: SceneArtStatus;
   imageUrl: string | null;
   renderMode?: RenderMode;

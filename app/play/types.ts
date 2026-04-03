@@ -77,6 +77,12 @@ export type PlayScenarioMeta = {
 
 export type PlayStatePanel = {
   pressureStage?: string | null;
+  pressure?: {
+    suspicion?: number | null;
+    noise?: number | null;
+    time?: number | null;
+    danger?: number | null;
+  } | null;
   stats: Array<{ key: string; value: PlayStateValue }>;
   inventory: Array<{ name: string; detail?: string }>;
   quests: Array<{ title: string; status?: string; detail?: string }>;

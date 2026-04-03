@@ -1,4 +1,5 @@
-import type { SceneArt, SceneArtStatus } from '@prisma/client';
+import type { SceneArt } from '@prisma/client';
+import type { SceneArtStatusLiteral } from '@/lib/scene-art/sceneArtStatus';
 
 const MAX_ATTEMPTS = 3;
 
@@ -20,7 +21,7 @@ export type SceneArtExecutionResult =
     };
 
 export type SceneArtFinalizeDecision = {
-  nextStatus: SceneArtStatus;
+  nextStatus: SceneArtStatusLiteral;
   clearLease: boolean;
   incrementAttemptCount: boolean;
   nextRetryAt: Date | null;
@@ -41,7 +42,7 @@ type FinalizeInput = {
 export function finalizeSceneArtExecution({ row, result, now }: FinalizeInput): SceneArtFinalizeDecision {
   if (result.kind === 'success') {
     const decision: SceneArtFinalizeDecision = {
-      nextStatus: SceneArtStatus.ready,
+      nextStatus: 'ready',
       clearLease: true,
       incrementAttemptCount: false,
       nextRetryAt: null,
@@ -59,7 +60,7 @@ export function finalizeSceneArtExecution({ row, result, now }: FinalizeInput): 
 
   if (!retryAllowed) {
     const decision: SceneArtFinalizeDecision = {
-      nextStatus: SceneArtStatus.failed,
+      nextStatus: 'failed',
       clearLease: true,
       incrementAttemptCount: false,
       nextRetryAt: null,
@@ -72,7 +73,7 @@ export function finalizeSceneArtExecution({ row, result, now }: FinalizeInput): 
   }
 
   const decision: SceneArtFinalizeDecision = {
-    nextStatus: SceneArtStatus.queued,
+    nextStatus: 'queued',
     clearLease: true,
     incrementAttemptCount: false,
     nextRetryAt,
@@ -91,15 +92,15 @@ function computeSceneArtBackoff(attemptCount: number, now: Date, overrideDelayMs
 }
 
 function assertValidSceneArtTransition(
-  from: SceneArtStatus,
-  to: SceneArtStatus,
+  from: SceneArtStatusLiteral,
+  to: SceneArtStatusLiteral,
   retryAllowed: boolean,
 ): void {
-  if (from === SceneArtStatus.ready && to !== SceneArtStatus.ready) {
+  if (from === 'ready' && to !== 'ready') {
     throw new Error(`scene-art: ready rows must be terminal (attempted ${from} -> ${to})`);
   }
 
-  if (from === SceneArtStatus.failed && to === SceneArtStatus.queued && !retryAllowed) {
+  if (from === 'failed' && to === 'queued' && !retryAllowed) {
     throw new Error(
       `scene-art: terminal failed rows cannot requeue without retry allowance (retryAllowed=${retryAllowed})`,
     );

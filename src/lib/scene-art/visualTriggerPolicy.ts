@@ -1,3 +1,5 @@
+import type { SceneDeltaKind } from "@/lib/resolveSceneDeltaKind";
+
 export type SceneArtTriggerReason =
   | "location_entered"
   | "pressure_band_changed"
@@ -11,6 +13,7 @@ export type SceneArtTriggerDecision = {
   tier: SceneArtTriggerTier | null;
   reason: SceneArtTriggerReason | null;
   milestoneKind?: string | null;
+  deltaKind?: SceneDeltaKind | null;
 };
 
 export type SceneArtVisualState = {

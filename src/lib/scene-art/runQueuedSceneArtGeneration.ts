@@ -75,6 +75,11 @@ export async function runQueuedSceneArtGeneration(
     throw new Error("SCENE_ART_INVALID_IDENTITY: missing promptHash");
   }
 
+  console.log("scene.art.worker.run.start", {
+    sceneKey,
+    promptHash,
+  });
+
   let row = preclaimedRow;
   if (!row) {
     row = await prisma.sceneArt.findFirst({
@@ -110,7 +115,7 @@ export async function runQueuedSceneArtGeneration(
       where: {
         sceneKey: row.sceneKey,
         promptHash: row.promptHash,
-        status: SceneArtStatus.queued,
+        status: { in: [SceneArtStatus.queued, SceneArtStatus.retryable] },
         OR: [
           { generationLeaseUntil: null },
           { generationLeaseUntil: { lt: new Date() } },
@@ -126,7 +131,26 @@ export async function runQueuedSceneArtGeneration(
       },
     });
 
+    console.log("scene.art.worker.claim.attempt", {
+      sceneKey,
+      promptHash,
+      claimedCount: claimed.count,
+    });
+
+    if (claimed.count === 0) {
+      console.log("scene.art.worker.claim.failed", {
+        sceneKey,
+        promptHash,
+      });
+      return null;
+    }
+
     if (claimed.count !== 1) {
+      console.log("scene.art.worker.claim.unexpected", {
+        sceneKey,
+        promptHash,
+        claimedCount: claimed.count,
+      });
       return null;
     }
 
@@ -191,15 +215,8 @@ export async function runQueuedSceneArtGeneration(
       sceneKey: claimedRow.sceneKey,
       promptHash: claimedRow.promptHash,
       error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
     });
-    const updated = await findSceneArt({
-      sceneKey: row.sceneKey,
-      promptHash: row.promptHash,
-    });
-    if (!updated) {
-      throw new Error(`runQueuedSceneArtGeneration: row missing after failure ${row.sceneKey}/${row.promptHash}`);
-    }
-    const attemptResult = attemptResultFromRow(updated, updated.status === SceneArtStatus.queued ? "queued" : "failed");
-    return attemptResult;
-    }
+    throw error;
   }
+}

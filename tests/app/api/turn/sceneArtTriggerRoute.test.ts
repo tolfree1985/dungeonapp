@@ -2,11 +2,12 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { runSceneArtTriggerIntegration } from "@/app/api/turn/route";
 import { evaluateSceneArtVisualTrigger } from "@/lib/scene-art/visualTriggerIntegration";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
+import { queueSceneArt } from "@/lib/sceneArtRepo";
 import type { SceneArtPayload } from "@/lib/sceneArt";
 import type { SceneIdentity } from "@/server/scene/scene-identity";
 import type { RenderMode } from "@/lib/sceneArtRepo";
 import { SceneArtStatus } from "@/generated/prisma";
-import { buildFinalSceneArtContract } from "@/lib/scene-art/sceneArtContract";
+import { buildFinalSceneArtContract, resolveFinalSceneArtRow, type SceneArtRowLike } from "@/lib/scene-art/sceneArtContract";
 
 vi.mock("@/lib/scene-art/visualTriggerIntegration", () => ({
   evaluateSceneArtVisualTrigger: vi.fn().mockResolvedValue({
@@ -18,9 +19,13 @@ vi.mock("@/lib/scene-art/visualTriggerIntegration", () => ({
 vi.mock("@/lib/scene-art/logging", () => ({
   logSceneArtEvent: vi.fn(),
 }));
+vi.mock("@/lib/sceneArtRepo", () => ({
+  queueSceneArt: vi.fn(),
+}));
 
 const triggerMock = vi.mocked(evaluateSceneArtVisualTrigger);
 const logMock = vi.mocked(logSceneArtEvent);
+const queueSceneArtMock = vi.mocked(queueSceneArt);
 
 const baseIdentity: SceneIdentity = {
   locationKey: "camp",
@@ -59,16 +64,18 @@ const payload: SceneArtPayload = {
   tags: [],
 };
 
+const baseTriggerOptions = {
+  previousState: { location: "camp" } as Record<string, unknown>,
+  currentState: { location: "camp" } as Record<string, unknown>,
+  previousSceneIdentity: baseIdentity,
+  currentSceneIdentity: baseIdentity,
+  sceneArtPayload: payload,
+  latestTurnScene: "scene text",
+  renderMode: "full" as RenderMode,
+};
+
 describe("runSceneArtTriggerIntegration", () => {
-  const defaultOptions = {
-    previousState: { location: "camp" } as Record<string, unknown>,
-    currentState: { location: "camp" } as Record<string, unknown>,
-    previousSceneIdentity: baseIdentity,
-    currentSceneIdentity: baseIdentity,
-    sceneArtPayload: payload,
-    latestTurnScene: "scene text",
-    renderMode: "full" as RenderMode,
-  };
+  const defaultOptions = { ...baseTriggerOptions };
 
   beforeEach(() => {
     triggerMock.mockClear();
@@ -145,5 +152,55 @@ describe("turn route scene-art sink", () => {
     expect(response.body.finalSceneArt).toBeTruthy();
     expect(response.body.finalSceneArt?.sceneKey).toBe("scene-disruption");
     expect(response.body.finalSceneArt?.sceneKey).toEqual(response.body.debug.persistedSceneArt.sceneKey);
+  });
+
+  it("runs a visible disruption turn through the canonical scene-art sink", async () => {
+    const queuedSceneArt: SceneArtRowLike = {
+      sceneKey: "scene-disruption",
+      promptHash: "queue-hash",
+      status: SceneArtStatus.queued,
+      imageUrl: null,
+    };
+
+    queueSceneArtMock.mockResolvedValue(queuedSceneArt);
+    triggerMock.mockResolvedValue({
+      shouldGenerate: true,
+      deltaKind: "environment",
+      reason: "VISIBLE_DISRUPTION",
+    });
+
+    const triggerDecision = await runSceneArtTriggerIntegration({
+      ...baseTriggerOptions,
+    });
+
+    expect(triggerDecision?.shouldGenerate).toBe(true);
+    expect(triggerDecision?.deltaKind).toBe("environment");
+    expect(triggerDecision?.reason).toBe("VISIBLE_DISRUPTION");
+
+    const refreshDecision = {
+      shouldQueueRender: true,
+      shouldReuseCurrentImage: false,
+      shouldSwapImmediatelyWhenReady: false,
+      renderPlan: "queue-full-render",
+    };
+
+    const finalSceneArtRow = await resolveFinalSceneArtRow({
+      existingSceneArt: null,
+      refreshDecision,
+      sceneArtPayload: payload,
+      renderPriority: "normal",
+      renderMode: "full",
+    });
+
+    expect(queueSceneArtMock).toHaveBeenCalledWith(payload, expect.anything(), "normal", "full");
+    expect(finalSceneArtRow).toBe(queuedSceneArt);
+
+    const finalSceneArt = buildFinalSceneArtContract(finalSceneArtRow);
+    expect(finalSceneArt).toBeTruthy();
+    expect(finalSceneArt?.sceneKey).toBe(queuedSceneArt?.sceneKey);
+    expect(finalSceneArt?.promptHash).toBe(queuedSceneArt?.promptHash);
+    expect(finalSceneArt?.sceneKey).toBe(
+      buildFinalSceneArtContract(queuedSceneArt!).sceneKey,
+    );
   });
 });

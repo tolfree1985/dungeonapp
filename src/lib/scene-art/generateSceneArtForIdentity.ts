@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { SceneArtStatus } from "@/generated/prisma";
 import type { SceneArt } from "@prisma/client";
 import { generateImage } from "@/lib/sceneArtGenerator";
 import type { SceneArtIdentity } from "@/lib/sceneArtIdentity";
@@ -9,8 +8,11 @@ import { getSceneArtWorkerId } from "@/lib/scene-art/workerIdentity";
 import { classifySceneArtProviderError } from "@/lib/scene-art/classifyProviderError";
 import { decideSceneArtRetry } from "@/lib/scene-art/decideProviderRetry";
 import { resolveSceneArtAttemptCost } from "@/lib/scene-art/providerCostConfig";
+import { finalizeSceneArtExecution } from "@/lib/scene-art/sceneArtFinalize";
+import { persistSceneArtResult } from "@/lib/scene-art/persistSceneArtResult";
 
 const DEFAULT_PROVIDER_SOURCE = { provider: "remote" };
+const PROVIDER_TIMEOUT_MS = 90_000;
 
 export type SceneArtExecutionContext = {
   sceneKey: string;
@@ -37,20 +39,46 @@ export async function generateSceneArtForExecutionContext(
   const workerId = context.workerId ?? getSceneArtWorkerId();
 
   const attemptCost = resolveSceneArtAttemptCost();
-  const providerTimeoutMs = Number(process.env.SCENE_ART_PROVIDER_TIMEOUT_MS ?? 40000);
+  const providerTimeoutMs = Number(process.env.SCENE_ART_PROVIDER_TIMEOUT_MS ?? PROVIDER_TIMEOUT_MS);
   const attemptCount = current.attemptCount ?? 0;
   console.log("scene.art.provider.start", {
     sceneKey: context.sceneKey,
     promptHash: context.promptHash,
     attemptCount,
   });
+  const providerName =
+    process.env.IMAGE_PROVIDER_URL
+      ? "remote"
+      : process.env.EXTERNAL_IMAGE_PROVIDER_URL
+      ? "remote"
+      : process.env.OPENAI_API_KEY
+      ? "openai"
+      : null;
+  console.log("scene.art.provider.selected", {
+    provider: providerName,
+  });
+  if (!providerName) {
+    console.error("scene.art.provider.missing", {
+      sceneKey: context.sceneKey,
+      promptHash: context.promptHash,
+    });
+    await persistSceneArtResult({
+      sceneKey: context.sceneKey,
+      promptHash: context.promptHash,
+      status: "failed",
+      lastError: "missing_provider",
+    });
+    return current;
+  }
   let providerResult: SceneArtExecutionResult | null = null;
   let durationMs = 0;
   try {
-    const generated = await withTimeout(
-      generateImage(context.renderPrompt, context.sceneKey, context.promptHash),
-      providerTimeoutMs,
-    );
+    const generated = await generateImage({
+      provider: providerName,
+      prompt: context.renderPrompt,
+      sceneKey: context.sceneKey,
+      promptHash: context.promptHash,
+    });
     const normalizedImageUrl =
       (generated as any)?.imageUrl ??
       (generated as any)?.url ??
@@ -109,50 +137,37 @@ export async function generateSceneArtForExecutionContext(
     result: providerResult,
     now,
   });
-  const updateData: Parameters<typeof prisma.sceneArt.update>[0]['data'] = {
-    basePrompt: context.basePrompt,
-    renderPrompt: context.renderPrompt,
-    status: decision.nextStatus,
-    tagsJson: JSON.stringify({ ...(providerResult.providerMeta ?? { provider: DEFAULT_PROVIDER_SOURCE.provider }) }),
-    imageUrl: providerResult.kind === 'success' ? providerResult.imagePath : null,
-    generationStartedAt: null,
-    generationLeaseUntil: decision.nextRetryAt,
-    leaseOwnerId: decision.clearLease ? null : current.leaseOwnerId,
-    leaseAcquiredAt: decision.clearLease ? null : current.leaseAcquiredAt,
-    generationCompletedAt: decision.generationCompletedAt,
-    lastProviderFailureClass:
-      providerResult.kind === 'failure' ? providerResult.failureClass ?? null : null,
-    lastProviderFailureReason:
-      providerResult.kind === 'failure' ? providerResult.errorMessage ?? null : null,
-    lastProviderRetryable:
-      providerResult.kind === 'failure' ? providerResult.retryable : null,
-    lastProviderRetryDelayMs:
-      providerResult.kind === 'failure' ? providerResult.retryDelayMs ?? null : null,
-    lastProviderDurationMs: durationMs,
-    lastProviderAttemptAt: now,
-    lastAttemptCostUsd: attemptCost.attemptCostUsd,
-    totalCostUsd: { increment: attemptCost.attemptCostUsd },
-    billableAttemptCount: { increment: 1 },
-    providerModel: attemptCost.providerModel,
-  };
-  const updateResult = await prisma.sceneArt.updateMany({
-    where: {
-      id: current.id,
-      leaseOwnerId: workerId,
-    },
-    data: updateData,
-  });
-
-  if (updateResult.count !== 1) {
-    throw new Error("scene-art: lease ownership lost before finalize");
+  const nextStatusLiteral =
+    providerResult.kind === 'success'
+      ? 'ready'
+      : decision.nextStatus === 'failed'
+      ? 'failed'
+      : 'retryable';
+  const imageUrl = providerResult.kind === 'success' ? providerResult.imagePath : null;
+  let updated;
+  try {
+    updated = await persistSceneArtResult({
+      sceneKey: context.sceneKey,
+      promptHash: context.promptHash,
+      status: nextStatusLiteral,
+      imageUrl,
+      lastError: providerResult.kind === 'failure' ? providerResult.errorMessage ?? null : null,
+    });
+  } catch (error) {
+    console.error("scene.art.worker.persist.crash", {
+      sceneKey: context.sceneKey,
+      promptHash: context.promptHash,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
+    });
+    throw error;
   }
-  const updated = await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
   console.log("scene.art.provider.finalize", {
     sceneKey: context.sceneKey,
     promptHash: context.promptHash,
-    nextStatus: decision.nextStatus,
+    nextStatus: nextStatusLiteral,
   });
-  const outcome = providerResult.kind === 'success' ? 'ready' : decision.nextStatus === SceneArtStatus.failed ? 'failed' : 'retryable';
+  const outcome = providerResult.kind === 'success' ? 'ready' : nextStatusLiteral;
   console.log("scene.art.provider.finish", {
     sceneKey: context.sceneKey,
     promptHash: context.promptHash,
@@ -175,6 +190,41 @@ export async function generateSceneArtForExecutionContext(
     failureRetryable: providerResult.kind === 'failure' ? providerResult.retryable : null,
     failureRetryDelayMs: providerResult.kind === 'failure' ? providerResult.retryDelayMs : null,
   });
+  if (providerResult.kind === 'success') {
+    if (!imageUrl) {
+      console.warn("scene.art.worker.no_image_url", {
+        sceneKey: context.sceneKey,
+        promptHash: context.promptHash,
+      });
+      return updated;
+    }
+
+    console.log("scene.art.worker.persist.attempt", {
+      sceneKey: context.sceneKey,
+      promptHash: context.promptHash,
+      imageUrl,
+    });
+    await prisma.sceneArt.update({
+      where: {
+        sceneKey_promptHash: {
+          sceneKey: context.sceneKey,
+          promptHash: context.promptHash,
+        },
+      },
+      data: {
+        status: "ready",
+        imageUrl,
+      },
+    });
+    console.log("scene.art.worker.persist.ready", {
+      sceneKey: context.sceneKey,
+      promptHash: context.promptHash,
+      imageUrl,
+    });
+    const persisted = await prisma.sceneArt.findUniqueOrThrow({ where: uniqueWhere });
+    return persisted;
+  }
+
   return updated;
 }
 

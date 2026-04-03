@@ -4,9 +4,10 @@ import type { PlayTurn, PlayStatePanel, PlayTurnPresentation, PressureStage } fr
 import type { StateTier } from "@/lib/ui/present-state-tier";
 import {
   presentAlertTier,
-  presentHeatTier,
+  presentDangerTier,
   presentNoiseTier,
   presentOverallRiskTier,
+  presentSuspicionTier,
   presentTrustTier,
 } from "@/lib/ui/present-state-tier";
 import type { FailForwardComplication } from "@/lib/fail-forward-complication";
@@ -844,10 +845,17 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
   const statusItems: StateItemViewModel[] = [];
   const worldItems: StateItemViewModel[] = [];
   let alertValue: number | null = null;
-  let noiseValue: number | null = null;
-  let heatValue: number | null = null;
+  const canonicalPressure = {
+    suspicion:
+      typeof (state as any).pressure?.suspicion === "number" ? (state as any).pressure.suspicion : null,
+    noise: typeof (state as any).pressure?.noise === "number" ? (state as any).pressure.noise : null,
+    time: typeof (state as any).pressure?.time === "number" ? (state as any).pressure.time : null,
+    danger: typeof (state as any).pressure?.danger === "number" ? (state as any).pressure.danger : null,
+  };
+  let noiseValue: number | null = canonicalPressure.noise;
+  let heatValue: number | null = canonicalPressure.danger;
   let trustValue: number | null = null;
-  let timeValue: number | null = null;
+  let timeValue: number | null = canonicalPressure.time;
   const resolvedPressureStage = normalizePressureStage(state.pressureStage ?? null);
 
   state.stats.forEach((stat) => {
@@ -886,16 +894,6 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
   const quests = buildStateItemsFromQuest(state);
   const inventory = buildInventoryItems(state);
   const relations = buildRelationItems(state);
-  const metrics = {
-    alert: alertValue !== null ? { raw: alertValue, label: presentAlertTier(alertValue) } : null,
-    noise: noiseValue !== null ? { raw: noiseValue, label: presentNoiseTier(noiseValue) } : null,
-    heat: heatValue !== null ? { raw: heatValue, label: presentHeatTier(heatValue) } : null,
-    trust: trustValue !== null ? { raw: trustValue, label: presentTrustTier(trustValue) } : null,
-  };
-  const risk =
-    alertValue !== null && noiseValue !== null && heatValue !== null
-      ? presentOverallRiskTier({ alert: alertValue, noise: noiseValue, heat: heatValue })
-      : null;
 
   const statMap = new Map<string, number>();
   state.stats.forEach((stat) => {
@@ -906,11 +904,27 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     }
   });
   const pressureTotals = {
-    suspicion: statMap.get("suspicion") ?? statMap.get("npc suspicion") ?? 0,
-    noise: statMap.get("noise") ?? 0,
-    time: statMap.get("time") ?? statMap.get("time advance") ?? 0,
-    danger: statMap.get("danger") ?? statMap.get("heat") ?? statMap.get("position penalty") ?? 0,
+    suspicion:
+      state.pressure?.suspicion ?? statMap.get("suspicion") ?? statMap.get("npc suspicion") ?? 0,
+    noise: state.pressure?.noise ?? statMap.get("noise") ?? 0,
+    time:
+      state.pressure?.time ?? statMap.get("time") ?? statMap.get("time advance") ?? 0,
+    danger:
+      state.pressure?.danger ?? statMap.get("danger") ?? statMap.get("position penalty") ?? 0,
   };
+  const suspicionValue = pressureTotals.suspicion;
+  const metrics = {
+    alert: alertValue !== null ? { raw: alertValue, label: presentAlertTier(alertValue) } : null,
+    noise: noiseValue !== null ? { raw: noiseValue, label: presentNoiseTier(noiseValue) } : null,
+    danger: heatValue !== null ? { raw: heatValue, label: presentDangerTier(heatValue) } : null,
+    trust: trustValue !== null ? { raw: trustValue, label: presentTrustTier(trustValue) } : null,
+    suspicion: suspicionValue !== null ? { raw: suspicionValue, label: presentSuspicionTier(suspicionValue) } : null,
+  };
+  const risk = presentOverallRiskTier({
+    alert: pressureTotals.suspicion,
+    noise: pressureTotals.noise,
+    heat: pressureTotals.danger,
+  });
   const inputTurnsValue =
     typeof (state as PlayStatePanel & { latestTurnIndex?: number }).latestTurnIndex === "number"
       ? (state as PlayStatePanel & { latestTurnIndex?: number }).latestTurnIndex

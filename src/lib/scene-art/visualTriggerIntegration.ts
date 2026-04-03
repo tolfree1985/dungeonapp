@@ -88,6 +88,7 @@ export type SceneArtTriggerEvaluationOptions = {
   previousIdentity: SceneIdentity | null;
   currentIdentity: SceneIdentity;
   sceneKey: string;
+  promptHash: string;
   sceneText?: string | null;
   stylePreset?: string | null;
   renderMode?: "full" | "partial";
@@ -107,11 +108,12 @@ export async function evaluateSceneArtVisualTrigger(
     stylePreset: options.stylePreset ?? DEFAULT_STYLE_PRESET,
     renderMode: options.renderMode ?? "full",
     engineVersion: options.engineVersion ?? null,
+    promptHashOverride: options.promptHash,
   };
   const identity = getSceneArtIdentity(identityInput);
   logSceneArtEvent("scene.art.trigger", {
-    sceneKey: identity.sceneKey,
-    promptHash: identity.promptHash,
+    sceneKey: options.sceneKey,
+    promptHash: options.promptHash,
     shouldGenerate: triggerDecision.shouldGenerate,
     reason: triggerDecision.reason,
     tier: triggerDecision.tier,
@@ -123,8 +125,8 @@ export async function evaluateSceneArtVisualTrigger(
 
   await queueSceneArtGeneration(identityInput);
   logSceneArtEvent("scene.art.triggered", {
-    sceneKey: identity.sceneKey,
-    promptHash: identity.promptHash,
+    sceneKey: options.sceneKey,
+    promptHash: options.promptHash,
     triggerReason: triggerDecision.reason,
     triggerTier: triggerDecision.tier,
     triggerMilestoneKind: triggerDecision.milestoneKind ?? null,

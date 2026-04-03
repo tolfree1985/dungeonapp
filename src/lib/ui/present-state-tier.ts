@@ -28,6 +28,20 @@ export function presentTrustTier(trust: number): StateTier {
   return "Extreme";
 }
 
+export function presentDangerTier(danger: number): StateTier {
+  if (danger < 200) return "Low";
+  if (danger < 600) return "Moderate";
+  if (danger < 1000) return "High";
+  return "Extreme";
+}
+
+export function presentSuspicionTier(suspicion: number): StateTier {
+  if (suspicion < 200) return "Low";
+  if (suspicion < 600) return "Moderate";
+  if (suspicion < 1000) return "High";
+  return "Extreme";
+}
+
 export function presentOverallRiskTier(args: { alert: number; noise: number; heat: number }): StateTier {
   const score = args.alert * 0.45 + args.heat * 0.45 + args.noise * 25;
   if (score < 200) return "Low";

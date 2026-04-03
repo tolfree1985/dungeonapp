@@ -168,7 +168,33 @@ export default function PlayClient({
   console.log("play.client.initial_scene_art_prop", {
     sceneImage,
   });
-  const [liveSceneArt, setLiveSceneArt] = useState<ResolvedSceneImage | null>(sceneImage ?? null);
+  const normalizeSceneArt = (value: ResolvedSceneImage | null): ResolvedSceneImage | null => {
+    if (!value) return null;
+    return {
+      ...value,
+      imageUrl: value.status === "ready" ? value.imageUrl ?? null : null,
+    };
+  };
+  const mergeSceneArt = (
+    current: ResolvedSceneImage | null,
+    incoming: ResolvedSceneImage | null,
+  ): ResolvedSceneImage | null => {
+    if (!incoming) return current;
+    if (!incoming.sceneKey || !incoming.promptHash) return current;
+    const sameIdentity =
+      current &&
+      incoming.sceneKey === current.sceneKey &&
+      incoming.promptHash === current.promptHash;
+    if (!sameIdentity) return incoming;
+    if (current.status === "ready" && current.imageUrl) {
+      const degrading = !incoming.imageUrl || incoming.status === "missing";
+      if (degrading) return current;
+    }
+    return incoming;
+  };
+  const [liveSceneArt, setLiveSceneArt] = useState<ResolvedSceneImage | null>(
+    () => normalizeSceneArt(sceneImage ?? null),
+  );
   const router = useRouter();
   const [liveSceneTransition, setLiveSceneTransition] = useState<SceneTransition | null>(sceneTransition ?? null);
   const [liveSceneContinuity, setLiveSceneContinuity] = useState<SceneContinuityInfo | null>(sceneContinuity ?? null);
@@ -185,12 +211,18 @@ export default function PlayClient({
   };
   const MAX_HISTORY = 6;
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [resolvedTurns, setResolvedTurns] = useState<PlayTurn[]>(turns);
+  useEffect(() => {
+    setResolvedTurns(turns);
+  }, [turns]);
   useEffect(() => {
     setLiveSceneTransition(sceneTransition ?? null);
   }, [sceneTransition]);
   useEffect(() => {
-    setLiveSceneArt(sceneImage ?? null);
+    const normalized = normalizeSceneArt(sceneImage ?? null);
+    setLiveSceneArt((prev) => mergeSceneArt(prev, normalized));
   }, [sceneImage]);
+
   useEffect(() => {
     if (liveSceneArt?.sceneArtStatus !== "generating") return;
     const timer = setTimeout(() => {
@@ -246,9 +278,6 @@ export default function PlayClient({
     const promptHash = liveSceneArt?.promptHash ?? null;
     const currentStatus = liveSceneArt?.status ?? "missing";
     if (!sceneImage) {
-      if (liveSceneArt !== null) {
-        setLiveSceneArt(null);
-      }
       return;
     }
     if (sceneKey !== lastSceneKeyRef.current) {
@@ -256,9 +285,9 @@ export default function PlayClient({
       lastLoggedStatusRef.current = null;
     }
 
-    if (!sceneKey || !promptHash) {
-      return;
-    }
+      if (!sceneKey || !promptHash) {
+        return;
+      }
 
     const logSceneArtStatus = (nextStatus: SceneArtStatus) => {
       if (lastLoggedStatusRef.current === nextStatus) return;
@@ -309,25 +338,33 @@ export default function PlayClient({
 
     const handleFailure = (nextStatus: SceneArtStatus) => {
       logSceneArtStatus(nextStatus);
-      setLiveSceneArt({
-        imageUrl: fallbackImageUrl,
-        source: fallbackSource,
-        pending: false,
-        sceneKey,
-        status: nextStatus,
-      });
+      setLiveSceneArt((prev) =>
+        mergeSceneArt(prev, {
+          ...prev,
+          imageUrl: fallbackImageUrl,
+          source: fallbackSource,
+          pending: false,
+          sceneKey,
+          promptHash: prev?.promptHash ?? null,
+          status: nextStatus,
+        })
+      );
       stopPolling();
     };
 
     const logAndSetReady = (nextStatus: SceneArtStatus, imageUrl: string | null) => {
       logSceneArtStatus(nextStatus);
-      setLiveSceneArt({
-        imageUrl,
-        source: imageUrl ? "scene" : fallbackSource,
-        pending: false,
-        sceneKey,
-        status: nextStatus,
-      });
+      setLiveSceneArt((prev) =>
+        mergeSceneArt(prev, {
+          ...prev,
+          imageUrl,
+          source: imageUrl ? "scene" : fallbackSource,
+          pending: false,
+          sceneKey,
+          promptHash: prev?.promptHash ?? null,
+          status: nextStatus,
+        })
+      );
       stopPolling();
     };
 
@@ -386,26 +423,32 @@ export default function PlayClient({
         const normalizedSceneArt = {
           ...sceneArt,
         };
-        setLiveSceneArt((prev) => {
-          if (cancelled) return prev;
-          if (
-            prev?.imageUrl === (sceneArt.imageUrl ?? fallbackImageUrl) &&
-            prev?.pending &&
-            prev?.status === "queued" &&
-            prev?.sceneKey === sceneKey
-          ) {
-            return prev;
-          }
-          return {
-            ...normalizedSceneArt,
-            imageUrl: sceneArt.imageUrl ?? fallbackImageUrl,
-            source: "scene",
-            pending: true,
-            sceneKey,
-            status: "queued",
-            promptHash: normalizedSceneArt.promptHash ?? null,
-          };
+        console.log("scene.art.client.kick.check", {
+          sceneKey: normalizedSceneArt.sceneKey ?? null,
+          promptHash: normalizedSceneArt.promptHash ?? null,
+          status: normalizedSceneArt.status ?? null,
+          hasImage: Boolean(normalizedSceneArt.imageUrl),
         });
+        const nextStatus =
+          normalizedSceneArt.status ?? liveSceneArt?.status ?? "queued";
+        const nextPromptHash =
+          normalizedSceneArt.promptHash ?? liveSceneArt?.promptHash ?? null;
+        const nextSceneKey =
+          normalizedSceneArt.sceneKey ?? liveSceneArt?.sceneKey ?? sceneKey;
+        const nextSceneArt: ResolvedSceneImage = {
+          ...liveSceneArt,
+          ...normalizedSceneArt,
+          sceneKey: nextSceneKey,
+          promptHash: nextPromptHash,
+          status: nextStatus,
+          imageUrl: normalizedSceneArt.imageUrl ?? liveSceneArt?.imageUrl ?? null,
+          source: normalizedSceneArt.imageUrl ? "scene" : liveSceneArt?.source ?? "scene",
+          pending:
+            nextStatus === "queued" ||
+            nextStatus === "retryable" ||
+            nextStatus === "generating",
+        };
+        setLiveSceneArt((prev) => mergeSceneArt(prev, nextSceneArt));
         logSceneArtStatus("queued");
         scheduleNextPoll();
       } catch {
@@ -512,28 +555,41 @@ export default function PlayClient({
       );
       handleSceneTransitionUpdate(result.sceneTransition ?? null);
 
-      if (result.sceneArt) {
-        if (!result.sceneArt.sceneKey || !result.sceneArt.promptHash) {
-          console.error("scene.art.client.identity_missing_after_turn", {
-            sceneArt: result.sceneArt,
-            keys: Object.keys(result.sceneArt ?? {}),
-            result,
-          });
-        } else {
+      if (result.sceneArt?.sceneKey && result.sceneArt?.promptHash) {
+        const sceneArtImageUrl =
+          (result.sceneArt.status ?? "queued") === "ready"
+            ? result.sceneArt.imageUrl ?? null
+            : null;
           const canonicalSceneArt = {
-            imageUrl: result.sceneArt.imageUrl,
-            source: "scene",
-            pending: result.sceneArt.status === "queued" || result.sceneArt.status === "generating",
             sceneKey: result.sceneArt.sceneKey,
-            status: result.sceneArt.status,
             promptHash: result.sceneArt.promptHash,
+            status: result.sceneArt.status ?? "queued",
+            imageUrl: sceneArtImageUrl,
           } as ResolvedSceneImage;
-          setLiveSceneArt(canonicalSceneArt);
-          console.log("client.liveSceneArt.after_turn.set", {
-            incoming: result.sceneArt,
-            nextLiveSceneArt: canonicalSceneArt,
-          });
-        }
+          console.log("scene.art.client.turn_response.apply", canonicalSceneArt);
+          setLiveSceneArt((prev) => mergeSceneArt(prev, canonicalSceneArt));
+          if (
+            canonicalSceneArt.sceneKey &&
+            canonicalSceneArt.promptHash &&
+            (canonicalSceneArt.status === "queued" ||
+              canonicalSceneArt.status === "retryable" ||
+              canonicalSceneArt.status === "generating")
+          ) {
+            console.log("scene.art.client.kick.immediate", {
+              sceneKey: canonicalSceneArt.sceneKey,
+              promptHash: canonicalSceneArt.promptHash,
+            });
+            void kickSceneArtWorker(canonicalSceneArt.sceneKey, canonicalSceneArt.promptHash);
+          }
+        } else if (result.sceneArt) {
+        console.error("scene.art.client.identity_missing_after_turn", {
+          sceneArt: result.sceneArt,
+          keys: Object.keys(result.sceneArt ?? {}),
+          result,
+        });
+      }
+      if (result.turn && result.turn.id) {
+        setResolvedTurns((prev) => [result.turn, ...prev]);
       }
       setLiveSceneContinuity(result.sceneContinuity ?? null);
 
@@ -552,13 +608,13 @@ export default function PlayClient({
     navigator.clipboard.writeText(value);
   };
 
-  const latestTurn = turns[0] ?? null;
-  const previousTurns = turns.slice(1);
+  const latestTurn = resolvedTurns[0] ?? null;
+  const previousTurns = resolvedTurns.slice(1);
   const pressureStage = statePanel.pressureStage ?? "calm";
   const currentEntry = currentId ? history.find((entry) => entry.adventureId === currentId) ?? null : null;
   const pinnedEntries = history.filter((entry) => entry.pinned && entry.adventureId !== currentId);
   const recentEntries = history.filter((entry) => !entry.pinned && entry.adventureId !== currentId);
-  const hasTurns = turns.length > 0;
+  const hasTurns = resolvedTurns.length > 0;
   const showPreview = dbOffline && !hasTurns;
   const latestDisplayTurn = hasTurns ? latestTurn : showPreview ? previewLatestTurn : null;
   const recentDisplayTurns = hasTurns ? previousTurns : showPreview ? previewTurns.slice(1) : [];
@@ -569,6 +625,64 @@ export default function PlayClient({
   const prevLatestTurnIndexRef = useRef<number | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const turnDividerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const kickedSceneArtRef = useRef<string | null>(null);
+
+  async function kickSceneArtWorker(sceneKey: string, promptHash: string) {
+    const key = `${sceneKey}:${promptHash}`;
+
+    if (kickedSceneArtRef.current === key) {
+      console.log("scene.art.client.kick.skip_duplicate", { sceneKey, promptHash });
+      return;
+    }
+
+    kickedSceneArtRef.current = key;
+
+    console.log("scene.art.client.kick", {
+      sceneKey,
+      promptHash,
+      url: `/api/scene-art/worker/run/${sceneKey}/${promptHash}`,
+    });
+
+    try {
+      const response = await fetch(`/api/scene-art/worker/run/${sceneKey}/${promptHash}`, {
+        method: "POST",
+        cache: "no-store",
+      });
+
+      console.log("scene.art.client.kick.response", {
+        sceneKey,
+        promptHash,
+        ok: response.ok,
+        status: response.status,
+      });
+
+      let body: unknown = null;
+      try {
+        body = await response.json();
+      } catch {
+        body = null;
+      }
+
+      console.log(
+        "scene.art.client.kick.body.json",
+        JSON.stringify(
+          {
+            sceneKey,
+            promptHash,
+            body,
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (error) {
+      console.error("scene.art.client.kick.failed", {
+        sceneKey,
+        promptHash,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   const ambienceByPressure: Record<string, string> = {
     calm: "ambience-calm",
     tension: "ambience-tension",
@@ -710,16 +824,15 @@ export default function PlayClient({
       const data = (await response.json()) as CanonicalSceneArtState;
 
       if (data.status === "ready") {
-        setLiveSceneArt((prev) => ({
-          ...(prev ?? {}),
+        const readySceneArt: ResolvedSceneImage = {
           imageUrl: data.imageUrl,
           source: "scene",
           pending: false,
           sceneKey: data.sceneKey,
           status: data.status,
           promptHash: data.promptHash,
-          hasReadyImage: Boolean(data.imageUrl),
-        }));
+        };
+        setLiveSceneArt((prev) => mergeSceneArt(prev, readySceneArt));
         clearInterval(interval);
       }
     }, 1500);

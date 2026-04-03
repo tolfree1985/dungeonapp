@@ -5,11 +5,12 @@ import type { PressureStage } from "@/app/play/types";
 import { pressureTextClass } from "@/lib/ui/pressure-style";
 
 type Props = {
-  resolution: TurnResolutionPresentation;
+  resolution: TurnResolutionPresentation | null;
   pressureStage?: PressureStage;
 };
 
-function formatOutcomeLabel(resolution: TurnResolutionPresentation) {
+function formatOutcomeLabel(resolution: TurnResolutionPresentation | null) {
+  if (!resolution) return "unknown";
   if (resolution.resultLabel) {
     return resolution.resultLabel;
   }
@@ -21,6 +22,7 @@ function outcomeClass(stage: PressureStage) {
 }
 
 export function ResolutionStrip({ resolution, pressureStage }: Props) {
+  if (!resolution) return null;
   const stage = pressureStage ?? "calm";
   return (
     <div className="space-y-1 border-b border-white/5 pb-4">

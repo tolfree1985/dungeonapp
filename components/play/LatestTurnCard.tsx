@@ -151,7 +151,7 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
     ? `Forced complications: ${model.forcedComplicationCount}`
     : null;
   const presentation = model.presentation;
-  const resolution = presentation.resolution;
+  const resolution = presentation.resolution ?? null;
   const ledgerPresentationEntries = presentation.ledgerEntries;
   const consequenceComplicationLabels = (model?.consequenceComplicationEntries ?? [])
     .map((entry) => entry.narrationText ?? entry.ledgerText)
@@ -267,7 +267,7 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
         <NarrationBlock narration={presentation.narration} pressureStage={model.pressureStage} />
         <ConsequenceLedgerList
           entries={ledgerPresentationEntries}
-          resolutionRollLabel={resolution.rollLabel}
+          resolutionRollLabel={resolution?.rollLabel ?? null}
           rollDetail={model.rollDetail ?? null}
         />
         {opportunityLabel ? (

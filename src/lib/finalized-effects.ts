@@ -16,7 +16,7 @@ export type FinalizedEffectSummary =
   | "watchfulness.high"
   | "watchfulness.hostile"
   | "position.mobility.disadvantage"
-  | "position.cover.lost";
+  | "position.cover.lost"
   | "constraint.pressure"
   | "action-risk.elevated"
   | "action-risk.high"
@@ -24,6 +24,6 @@ export type FinalizedEffectSummary =
   | "complication-tier.light"
   | "complication-tier.heavy"
   | "complication-policy.light"
-  | "complication-policy.heavy";
+  | "complication-policy.heavy"
   | "consequence-budget.extraCost-1"
   | "consequence-budget.extraCost-2";

@@ -493,6 +493,20 @@ let persistedAdventureOwnerId: string | null = null;
       } else {
         persistedAdventureOwnerId = playableAdventure.ownerId ?? null;
         rawState = requestedAdventureState;
+        const stateRecord = asRecord(rawState ?? {});
+        statePanel = {
+          pressureStage: null,
+          pressure: {
+            suspicion: Number(asRecord(stateRecord?.pressure)?.suspicion ?? 0),
+            noise: Number(asRecord(stateRecord?.pressure)?.noise ?? 0),
+            time: Number(asRecord(stateRecord?.pressure)?.time ?? 0),
+            danger: Number(asRecord(stateRecord?.pressure)?.danger ?? 0),
+          },
+          stats: Array.isArray(stateRecord?.stats) ? stateRecord.stats : [],
+          inventory: Array.isArray(stateRecord?.inventory) ? stateRecord.inventory : [],
+          quests: Array.isArray(stateRecord?.quests) ? stateRecord.quests : [],
+          relationships: Array.isArray(stateRecord?.relationships) ? stateRecord.relationships : [],
+        };
         const resolutionToString = (value: unknown): string => {
           if (typeof value === "string") return value;
           if (value === null || value === undefined) return "";
@@ -549,6 +563,15 @@ let persistedAdventureOwnerId: string | null = null;
     return match ? match.value : null;
   };
   const state = (rawState ?? {}) as Record<string, unknown>;
+  const persistedSceneIdentity = asRecord(state.sceneIdentity ?? null);
+  const persistedSceneKey =
+    typeof persistedSceneIdentity?.sceneKey === "string" && persistedSceneIdentity.sceneKey.trim().length > 0
+      ? persistedSceneIdentity.sceneKey
+      : null;
+  const persistedPromptHash =
+    typeof persistedSceneIdentity?.promptHash === "string" && persistedSceneIdentity.promptHash.trim().length > 0
+      ? persistedSceneIdentity.promptHash
+      : null;
   const currentScene = state.currentScene as Record<string, unknown> | null;
   const turn0Scene = turns[0]?.scene ?? null;
   const resolvedSceneText = resolveOpeningSceneText({
@@ -600,23 +623,15 @@ let persistedAdventureOwnerId: string | null = null;
         turn: latestTurn,
         state: rawState,
       });
-  const canonicalPayloadIdentity =
-    sceneArt && "basePrompt" in sceneArt && sceneArt.basePrompt
-      ? buildSceneArtLookupIdentity(sceneArt as SceneArtPayload)
-      : null;
-  const sceneArtIdentitySource =
-    canonicalPayloadIdentity ?? {
-      sceneKey: sceneArt?.sceneKey ?? sceneArtKey,
-      promptHash: sceneArt?.promptHash ?? resolvedSceneImage.promptHash ?? null,
-    };
-  const currentSceneIdentity = resolveCanonicalSceneIdentity(sceneArtIdentitySource);
-  const resolvedSceneArtRow =
-    currentSceneIdentity.sceneKey && currentSceneIdentity.promptHash
+  const canonicalSceneKey = persistedSceneKey ?? resolvedSceneImage.sceneKey ?? null;
+  const canonicalPromptHash = persistedPromptHash ?? resolvedSceneImage.promptHash ?? null;
+  const artRow =
+    canonicalSceneKey && canonicalPromptHash
       ? await prisma.sceneArt.findUnique({
           where: {
             sceneKey_promptHash: {
-              sceneKey: currentSceneIdentity.sceneKey,
-              promptHash: currentSceneIdentity.promptHash,
+              sceneKey: canonicalSceneKey,
+              promptHash: canonicalPromptHash,
             },
           },
         })
@@ -624,19 +639,21 @@ let persistedAdventureOwnerId: string | null = null;
   const previousSceneIdentity = resolveCanonicalSceneIdentity(null);
   const sceneRefreshDecision = resolveSceneRefreshDecision({
     transitionType: null,
-    current: currentSceneIdentity,
+    current: resolveCanonicalSceneIdentity({
+      sceneKey: canonicalSceneKey,
+      promptHash: canonicalPromptHash,
+    }),
     previous: previousSceneIdentity,
     currentReady: resolvedSceneImage.status === "ready",
     previousReady: false,
   });
-  const artRow = resolvedSceneArtRow;
   const artStatus = artRow?.status ?? null;
   const artImageUrl = artRow?.imageUrl ?? null;
   const artReady = artRow?.status === "ready" && Boolean(artImageUrl);
   console.log("scene.art.presentation", {
-    currentSceneKey: currentSceneIdentity.sceneKey,
+    currentSceneKey: canonicalSceneKey,
     artStatus,
-    promptHash: currentSceneIdentity.promptHash,
+    promptHash: canonicalPromptHash,
     ready: artReady,
   });
   const visualDeltas = buildVisualDeltasFromLedger(latestTurn?.ledgerAdds ?? []);
@@ -647,12 +664,12 @@ let persistedAdventureOwnerId: string | null = null;
       ? getSceneImageUpdateCaption(visualDeltas)
       : null;
 
-  const initialSceneArt = artRow
+  const initialSceneArt = canonicalSceneKey && canonicalPromptHash
     ? {
-        sceneKey: currentSceneIdentity.sceneKey,
-        promptHash: currentSceneIdentity.promptHash,
-        status: artStatus ?? undefined,
-        imageUrl: artReady ? artImageUrl : null,
+        sceneKey: canonicalSceneKey,
+        promptHash: canonicalPromptHash,
+        status: artStatus ?? "queued",
+        imageUrl: artRow?.status === "ready" ? artRow?.imageUrl ?? null : null,
       }
     : null;
 
