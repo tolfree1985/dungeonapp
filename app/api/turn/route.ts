@@ -671,8 +671,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           renderMode: "full",
           engineVersion: ENGINE_VERSION,
         });
-
-        const finalSceneArt = buildFinalSceneArtContract(finalSceneArtRow);
+        const replaySceneArt = buildFinalSceneArtContract(finalSceneArtRow);
         console.log("turn.mode.summary", {
           mode: playerIntentMode ?? null,
           actionTags: [],
@@ -704,7 +703,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           hasProgress: null,
           hasCost: null,
         });
-        console.log("TURN_SCENE_ART_RETURN (replay)", finalSceneArt);
+        console.log("TURN_SCENE_ART_RETURN (replay)", replaySceneArt);
         const responseBody = {
           ok: true,
           replayed: true,
@@ -715,7 +714,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           rollTotal: rollTotal ?? null,
           stateDeltas: [],
           ledgerAdds: [],
-          sceneArt: finalSceneArt,
+          sceneArt: replaySceneArt,
           sceneContinuity: fallbackSceneContinuity,
         };
         logFinalSceneArtContract(responseBody);
@@ -2672,7 +2671,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     }
 
     await maybeCacheSceneArt(finalSceneArtRow);
-    const finalSceneArt = buildFinalSceneArtContract(finalSceneArtRow);
+    persistedFinalSceneArt = finalSceneArtRow;
     console.log("TURN_SCENE_ART_RETURN", finalSceneArt);
 
     const baseStateDeltas = [
@@ -2787,6 +2786,68 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     return rest;
   });
 
+    const finalResolvedTurn = stripNonLookObservationArtifacts(
+      {
+        ...resolvedTurn,
+        deltaBuffer,
+        ledgerAdds: normalizedLedgerAdds,
+        sceneTransition: sceneTransitionPayload,
+        scenePresentation,
+      },
+      playerIntentMode ?? "LOOK",
+    );
+
+    console.log("turn.contract.resolved", finalResolvedTurn);
+
+    const visualDisruption = deriveVisualDisruptionSignal({
+      mode: playerIntentMode ?? "LOOK",
+      stateDeltas: finalResolvedTurn.stateDeltas ?? [],
+      ledgerAdds: finalResolvedTurn.ledgerAdds ?? [],
+    });
+
+    let effectiveSceneDeltaKind: SceneDeltaKind = derivedSceneDeltaKind;
+    let effectiveTriggerDecision: SceneArtTriggerDecision | null = null;
+
+    if (visualDisruption.shouldForceEnvironmentOverride) {
+      effectiveSceneDeltaKind = "environment";
+
+      effectiveTriggerDecision = {
+        shouldGenerate: true,
+        deltaKind: "environment",
+        reason: "VISIBLE_DISRUPTION",
+      };
+
+      console.log("scene.art.trigger.override", {
+        reason: visualDisruption.reason,
+        effectiveSceneDeltaKind,
+      });
+    }
+
+    const integratedTriggerDecision = runSceneArtTriggerIntegration({
+      resolvedTurn: finalResolvedTurn,
+      sceneArtPayload,
+      stateRecord,
+    });
+
+    const finalTriggerDecision: SceneArtTriggerDecision =
+      effectiveTriggerDecision != null
+        ? {
+            ...(integratedTriggerDecision ?? {}),
+            ...effectiveTriggerDecision,
+          }
+        : integratedTriggerDecision ?? {
+            shouldGenerate: false,
+            deltaKind: effectiveSceneDeltaKind,
+            reason: "NONE",
+          };
+
+    let persistedFinalSceneArt: SceneArtRow | null = null;
+
+    console.log("scene.art.trigger", {
+      finalTriggerDecision,
+      effectiveSceneDeltaKind,
+    });
+
     const margin = hasRoll ? (effectiveRollTotal as number) - adjustedDifficulty : null;
     console.log("turn.outcome.classification", {
       rawRoll: rollTotal ?? null,
@@ -2838,15 +2899,16 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       },
     };
 
-    const finalResolvedTurn = stripNonLookObservationArtifacts(resolvedTurn, playerIntentMode ?? "LOOK");
-
-    console.log("turn.contract.resolved", finalResolvedTurn);
     const validationIssues = validateResolvedTurnContract(resolvedTurn);
     if (validationIssues.length > 0) {
       console.log("turn.contract.validation", {
         issues: validationIssues,
       });
     }
+
+    const finalSceneArt = persistedFinalSceneArt
+      ? buildFinalSceneArtContract(persistedFinalSceneArt)
+      : null;
 
     const responseBody = {
       ok: true,
