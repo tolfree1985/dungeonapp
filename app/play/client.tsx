@@ -34,6 +34,8 @@ import type { TurnApiResponse, TurnInputPayload } from "@/lib/turnApi";
 import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";
 import { useRouter } from "next/navigation";
 import type { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
+import type { SceneArtContract, SceneRenderOpportunity } from "@/lib/scene-art/renderOpportunity";
+import type { PressureSummary } from "@/lib/presentation/pressureLanguage";
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
 
@@ -78,24 +80,66 @@ const previewTurns: Array<PlayTurn & { rollTotal?: number; pressureStage?: strin
   },
 ];
 
+function getRenderOpportunityLabel(opportunity: SceneRenderOpportunity): string {
+  switch (opportunity.reason) {
+    case "VISIBLE_DISRUPTION":
+      return "Render Scene — Environmental Shift";
+    case "MAJOR_REVEAL":
+      return "Render Scene — Major Reveal";
+    case "NEW_SCENE":
+      return "Render Scene — New Tableau";
+    case "MAJOR_ENVIRONMENT_CHANGE":
+      return "Render Scene — Major Change";
+    case "ANCHOR_MOMENT":
+      return "Render Scene — Anchor Moment";
+    default:
+      return opportunity.label ?? "Render Scene";
+  }
+}
+
 function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
+  const [showFullHistory, setShowFullHistory] = useState(false);
+  const visibleRows = rows.slice(-3);
+  const hiddenRows = rows.slice(0, Math.max(0, rows.length - 3));
   return (
     <section className={`${cardShell} ${cardPadding} space-y-4`}>
-      <div className={sectionHeading}>Resolution Log</div>
-      {rows.length === 0 ? (
-        <div className={emptyState}>No resolution entries recorded yet.</div>
+      <div className={sectionHeading}>Chronicle</div>
+      {visibleRows.length === 0 ? (
+        <div className={emptyState}>No history recorded yet.</div>
       ) : (
-        <div className="space-y-4">
-          {rows.map((row) => (
+        <div className="space-y-3">
+          {visibleRows.map((row) => (
             <AdventureHistoryRow key={`${row.turnIndex}-${row.timestampLabel}`} model={row} />
           ))}
+          {hiddenRows.length > 0 ? (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowFullHistory((v) => !v)}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                {showFullHistory ? "Hide full chronicle" : "View full chronicle"}
+              </button>
+            </div>
+          ) : null}
+          {showFullHistory && hiddenRows.length > 0 && (
+            <div className="space-y-3 pt-2">
+              {hiddenRows.map((row) => (
+                <AdventureHistoryRow key={`hidden-${row.turnIndex}-${row.timestampLabel}`} model={row} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>
   );
 }
 
-function TopBar() {
+type TopBarProps = {
+  pressureSummary: PressureSummary;
+};
+
+function TopBar({ pressureSummary }: TopBarProps) {
   return (
     <header className={ui.topBar}>
       <div className="min-w-0 space-y-2">
@@ -112,7 +156,7 @@ function TopBar() {
 
       <div className="flex items-center gap-3">
         <span className="inline-flex items-center rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.35em] text-amber-200">
-          TENSION
+          {pressureSummary.title}
         </span>
         <button className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-[#d8d2c3] hover:bg-white/10">
           Settings
@@ -192,9 +236,24 @@ export default function PlayClient({
     }
     return incoming;
   };
+  const initialSceneArt = normalizeSceneArt(sceneImage ?? null);
   const [liveSceneArt, setLiveSceneArt] = useState<ResolvedSceneImage | null>(
-    () => normalizeSceneArt(sceneImage ?? null),
+    () => initialSceneArt,
   );
+  const initialHasActiveSceneArt =
+    initialSceneArt?.status === "queued" ||
+    initialSceneArt?.status === "generating" ||
+    initialSceneArt?.status === "ready";
+  const initialHasRenderableOpportunity = false;
+  const [sceneRenderOpportunity, setSceneRenderOpportunity] = useState<SceneRenderOpportunity | null>(null);
+  const [latestSceneIdentity, setLatestSceneIdentity] = useState<{
+    sceneKey: string | null;
+    promptHash: string | null;
+  } | null>(null);
+  const [sceneRenderCredits, setSceneRenderCredits] = useState<number | null>(null);
+  const [sceneRenderCreditError, setSceneRenderCreditError] = useState<string | null>(null);
+  const [isRenderingScene, setIsRenderingScene] = useState(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
   const router = useRouter();
   const [liveSceneTransition, setLiveSceneTransition] = useState<SceneTransition | null>(sceneTransition ?? null);
   const [liveSceneContinuity, setLiveSceneContinuity] = useState<SceneContinuityInfo | null>(sceneContinuity ?? null);
@@ -233,6 +292,9 @@ export default function PlayClient({
   useEffect(() => {
     setLiveSceneContinuity(sceneContinuity ?? null);
   }, [sceneContinuity]);
+  useEffect(() => {
+    setHasHydrated(true);
+  }, []);
   const currentId = adventureId;
   const sortHistory = (entries: HistoryEntry[]) =>
     [...entries].sort((a, b) => {
@@ -506,6 +568,10 @@ export default function PlayClient({
     window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
   }, [history]);
 
+  useEffect(() => {
+    console.log("liveSceneArt", liveSceneArt);
+  }, [liveSceneArt]);
+
   const handleSceneTransitionUpdate = (transition: SceneTransition | null) => {
     setLiveSceneTransition(transition);
     if (typeof window === "undefined") return;
@@ -592,6 +658,24 @@ export default function PlayClient({
         setResolvedTurns((prev) => [result.turn, ...prev]);
       }
       setLiveSceneContinuity(result.sceneContinuity ?? null);
+      setSceneRenderOpportunity(result.sceneRenderOpportunity ?? null);
+      if (typeof result.sceneRenderCredits === "number") {
+        setSceneRenderCredits(result.sceneRenderCredits);
+        if (result.sceneRenderCredits > 0) {
+          setSceneRenderCreditError(null);
+        } else {
+          setSceneRenderCreditError("No scene renders remaining.");
+        }
+      } else {
+        setSceneRenderCredits(result.sceneRenderCredits ?? null);
+        setSceneRenderCreditError(null);
+      }
+      if (result.sceneRenderOpportunity) {
+        setLatestSceneIdentity({
+          sceneKey: result.sceneRenderOpportunity.sceneKey ?? null,
+          promptHash: result.sceneRenderOpportunity.promptHash ?? null,
+        });
+      }
 
       return true;
     } catch (error) {
@@ -728,6 +812,10 @@ export default function PlayClient({
     [displayPressureStage, recentDisplayTurns]
   );
   const statePanelViewModel = useMemo(() => buildStatePanelViewModel(statePanel), [statePanel]);
+  const initialPressureSummaryRef = useRef(statePanelViewModel.pressureSummary);
+  const pressureSummary = hasHydrated
+    ? statePanelViewModel.pressureSummary
+    : initialPressureSummaryRef.current;
   useEffect(() => {
     if (!hasTurns) {
       prevLatestTurnIndexRef.current = null;
@@ -775,29 +863,126 @@ export default function PlayClient({
     }
   }, []);
 
+  const displaySceneArt = liveSceneArt ?? sceneImage ?? null;
   console.log("scene.art.client.render_state", {
     liveStatus,
-    sceneKey: liveSceneArt?.sceneKey ?? null,
-    promptHash: liveSceneArt?.promptHash ?? null,
-    imageUrl: liveSceneArt?.imageUrl ?? null,
+    sceneKey: displaySceneArt?.sceneKey ?? null,
+    promptHash: displaySceneArt?.promptHash ?? null,
+    imageUrl: displaySceneArt?.imageUrl ?? null,
     resolvedBackdropUrl,
     hasReadyImage,
   });
 
-  const sceneArtRenderInput =
-    liveSceneArt ??
-    sceneImage ?? {
-      imageUrl: "/default-scene.svg",
-      source: "default",
-      pending: false,
-      sceneKey: null,
-      status: "missing",
-    };
+  const sceneArtRenderInput = displaySceneArt;
   console.log("client.sceneArt.render_input", {
     liveSceneArt,
     hydratedSceneArt: sceneImage,
     renderedSceneArt: sceneArtRenderInput,
   });
+
+  const creditsRemaining = sceneRenderCredits;
+  const creditsExhausted = creditsRemaining === 0;
+  const sceneCreditMessage =
+    sceneRenderCreditError ?? (creditsExhausted ? "No scene renders remaining." : null);
+  const sceneArtAlreadyReadyForOpportunity =
+    !!displaySceneArt &&
+    displaySceneArt.status === "ready" &&
+    displaySceneArt.sceneKey === sceneRenderOpportunity?.sceneKey &&
+    displaySceneArt.promptHash === sceneRenderOpportunity?.promptHash;
+  const sceneArtAlreadyInflightForOpportunity =
+    !!displaySceneArt &&
+    (displaySceneArt.status === "queued" || displaySceneArt.status === "generating") &&
+    displaySceneArt.sceneKey === sceneRenderOpportunity?.sceneKey &&
+    displaySceneArt.promptHash === sceneRenderOpportunity?.promptHash;
+  const liveHasRenderableOpportunity =
+    !!sceneRenderOpportunity &&
+    sceneRenderOpportunity.canGenerate &&
+    !sceneRenderOpportunity.autoRender &&
+    !!sceneRenderOpportunity.sceneKey &&
+    !!sceneRenderOpportunity.promptHash &&
+    !sceneArtAlreadyReadyForOpportunity &&
+    !sceneArtAlreadyInflightForOpportunity;
+  const liveHasActiveSceneArt =
+    !!displaySceneArt &&
+    (displaySceneArt.status === "queued" ||
+      displaySceneArt.status === "generating" ||
+      displaySceneArt.status === "ready");
+  const hasRenderableOpportunity = hasHydrated ? liveHasRenderableOpportunity : initialHasRenderableOpportunity;
+  const hasActiveSceneArt = hasHydrated ? liveHasActiveSceneArt : initialHasActiveSceneArt;
+  const disableRenderCta =
+    creditsExhausted ||
+    isRenderingScene ||
+    !sceneRenderOpportunity?.canGenerate;
+  const renderOpportunityLabel = sceneRenderOpportunity
+    ? getRenderOpportunityLabel(sceneRenderOpportunity)
+    : "Render Scene";
+
+  type RenderSceneEndpointResponse =
+    | {
+        ok: true;
+        sceneArt: SceneArtContract;
+        queued: boolean;
+        reusedExisting: boolean;
+      }
+    | {
+        ok: false;
+        error?: string;
+      };
+
+  const onRenderScene = async () => {
+    console.log("onRenderScene clicked");
+    if (!adventureId || !sceneRenderOpportunity?.canGenerate) return;
+    const sceneKey = sceneRenderOpportunity.sceneKey;
+    const promptHash = sceneRenderOpportunity.promptHash;
+    if (!sceneKey || !promptHash) return;
+    if (isRenderingScene) return;
+
+    setIsRenderingScene(true);
+    try {
+      const response = await fetch("/api/scene-art/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adventureId,
+          sceneKey,
+          promptHash,
+        }),
+      });
+      const payload = (await response.json()) as RenderSceneEndpointResponse;
+      console.log("render response", payload);
+      if (!payload.ok) {
+        if (payload.error === "INSUFFICIENT_RENDER_CREDITS" || response.status === 402) {
+          setSceneRenderCreditError("No scene renders remaining.");
+          setSceneRenderCredits(0);
+        }
+        return;
+      }
+      const { sceneArt, reusedExisting } = payload;
+      if (sceneArt) {
+        setLiveSceneArt(sceneArt);
+      }
+      const nextSceneArt: ResolvedSceneImage = {
+        sceneKey: sceneArt.sceneKey,
+        promptHash: sceneArt.promptHash,
+        status: sceneArt.status ?? "queued",
+        imageUrl: sceneArt.imageUrl ?? null,
+        source: sceneArt.imageUrl ? "scene" : "scene",
+        pending:
+          sceneArt.status === "queued" ||
+          sceneArt.status === "generating",
+      };
+      setLiveSceneArt((prev) => mergeSceneArt(prev, nextSceneArt));
+      if (!reusedExisting) {
+        setSceneRenderCredits((prev) => (prev != null ? Math.max(prev - 1, 0) : prev));
+      }
+      setSceneRenderCreditError(null);
+      if (sceneArt.status !== "ready") {
+        void kickSceneArtWorker(sceneArt.sceneKey, sceneArt.promptHash);
+      }
+    } finally {
+      setIsRenderingScene(false);
+    }
+  };
 
   const pollingSceneKey = liveSceneArt?.sceneKey ?? null;
   const pollingPromptHash = liveSceneArt?.promptHash ?? null;
@@ -1048,7 +1233,7 @@ export default function PlayClient({
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(201,163,90,0.08),transparent_30%),radial-gradient(circle_at_bottom,rgba(92,63,31,0.1),transparent_28%)]" />
       <div className={ui.pageWrap}>
         <div className={ui.playSurface}>
-            <TopBar />
+            <TopBar pressureSummary={pressureSummary} />
           {dbOffline ? (
             <div className="chronicle-card mt-6 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100 shadow-inner">
               <p className="font-semibold text-amber-100">Database connection unavailable</p>
@@ -1074,18 +1259,32 @@ export default function PlayClient({
                   isHighlighted={highlightLatestTurn}
                 />
               </div>
-              <div className="mt-4">
-              <SceneImagePanel
-                sceneArt={sceneArtRenderInput}
-                caption={displayedSceneImageCaption ?? undefined}
-                transition={liveSceneTransition}
-                continuity={continuityState}
-                transitionCue={sceneTransitionCue}
-                retrySceneKey={sceneKey}
-                retrySceneText={sceneText ?? ""}
-                retryStylePreset={sceneStylePreset ?? null}
-                retryRenderMode={sceneRenderMode}
-              />
+              <div className="mt-4 space-y-4">
+                {hasActiveSceneArt ? (
+                  <SceneImagePanel
+                    sceneArt={sceneArtRenderInput}
+                    caption={displayedSceneImageCaption ?? undefined}
+                    transition={liveSceneTransition}
+                    continuity={continuityState}
+                    focusState={sceneFocusState}
+                    transitionCue={sceneTransitionCue}
+                    isRenderingScene={isRenderingScene}
+                  />
+                ) : hasRenderableOpportunity ? (
+                  <SceneRenderOpportunityCard
+                    label={renderOpportunityLabel}
+                    onRender={onRenderScene}
+                    isRendering={isRenderingScene}
+                    remainingCredits={creditsRemaining}
+                    creditMessage={sceneCreditMessage}
+                    ctaDisabled={disableRenderCta}
+                  />
+                ) : (
+                  <div className="mx-auto max-w-sm rounded-2xl border border-stone-800 bg-stone-950/70 px-4 py-3 text-center text-xs uppercase tracking-[0.3em] text-stone-400">
+                    <p className="text-[11px] font-semibold text-white/70">SCENE</p>
+                    <p className="mt-1 text-[11px] text-stone-500">No illustrated moment</p>
+                  </div>
+                )}
               </div>
           {adventureId ? (
             <TurnInput
@@ -1150,6 +1349,53 @@ export default function PlayClient({
       </div>
     </main>
   );
-
 }
-  // move polling effect before return
+
+type SceneRenderOpportunityCardProps = {
+  label: string;
+  onRender: () => void;
+  isRendering: boolean;
+  remainingCredits?: number | null;
+  creditMessage?: string | null;
+  ctaDisabled?: boolean;
+};
+
+function SceneRenderOpportunityCard({
+  label,
+  onRender,
+  isRendering,
+  remainingCredits,
+  creditMessage,
+}: SceneRenderOpportunityCardProps) {
+  const creditsLabel =
+    typeof remainingCredits === "number" ? `${remainingCredits} REMAINING` : null;
+  const creditsLine = creditsLabel ? (
+    <span className="text-[10px] uppercase tracking-[0.3em] text-amber-100/60">
+      · {creditsLabel}
+    </span>
+  ) : null;
+  const isDisabled =
+    isRendering || Boolean(creditMessage) || Boolean(ctaDisabled) || (typeof remainingCredits === "number" && remainingCredits <= 0);
+  const captionText = creditMessage ?? "Environmental Shift";
+  const captionClassName = creditMessage
+    ? "mt-2 text-xs text-rose-200"
+    : "mt-2 text-xs uppercase tracking-[0.3em] text-amber-100/70";
+  return (
+    <div className="mx-auto max-w-sm rounded-2xl border border-amber-400/30 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.12),transparent_70%)] px-6 py-6 text-center shadow-[0_0_30px_rgba(245,158,11,0.2)]">
+      <div className="flex items-center justify-center gap-2">
+        <span className="text-[11px] tracking-[0.25em] text-amber-200/80">SCENE</span>
+        {creditsLine}
+      </div>
+      <button
+        type="button"
+        onClick={onRender}
+        disabled={isDisabled}
+        className="mt-3 rounded-full border border-amber-300/60 bg-black/0 px-4 py-2 text-sm font-semibold uppercase tracking-[0.2em] text-amber-100 transition hover:border-amber-200 hover:bg-amber-300/10 disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ minWidth: 0 }}
+      >
+        {isRendering ? "Rendering…" : label}
+      </button>
+      <p className={captionClassName}>{captionText}</p>
+    </div>
+  );
+}

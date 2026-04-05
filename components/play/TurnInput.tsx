@@ -114,7 +114,7 @@ export default function TurnInput({ adventureId, isSubmitting, error, onSubmitTu
 
       <div className="flex flex-col gap-2 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">
         <p className="uppercase tracking-[0.3em] text-[#c9a35a]">
-          Describe what you do, say, or examine. One action resolves one turn.
+          What do you do next? One action resolves one turn.
         </p>
         <button
           type="submit"

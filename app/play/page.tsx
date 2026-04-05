@@ -11,7 +11,7 @@ import {
 import { getOptionalUser } from "@/lib/api/identity";
 import { prisma } from "@/lib/prisma";
 import { getSceneImageUpdateCaption } from "@/lib/sceneImageCaption";
-import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
+import { buildCanonicalSceneArtPayload } from "@/lib/scene-art/buildCanonicalSceneArtPayload";
 import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneActorState } from "@/lib/resolveSceneActorState";
@@ -557,6 +557,8 @@ let persistedAdventureOwnerId: string | null = null;
   const debugStripClasses = isProtectedRun
     ? "border-rose-500/60 bg-rose-500/10 text-rose-100"
     : "border-white/10 bg-white/5 text-white/60";
+  const showSceneDebug =
+    process.env.NODE_ENV === "development" && resolvedSearchParams.debug === "scene";
 
   const getStatValue = (key: string): PlayStateValue | null => {
     const match = statePanel.stats.find((stat) => stat.key.toLowerCase() === key.toLowerCase());
@@ -679,18 +681,20 @@ let persistedAdventureOwnerId: string | null = null;
 
   return (
     <main className="mx-auto max-w-6xl p-6">
-      <pre className="text-xs text-white/60">
-        {JSON.stringify(
-          {
-            currentScene: (rawState ?? {})?.currentScene ?? null,
-            turn0Scene: turns[0]?.scene ?? null,
-            resolvedSceneKey,
-            resolvedSceneText,
-          },
-          null,
-          2,
-        )}
-      </pre>
+      {showSceneDebug ? (
+        <pre className="text-xs text-white/60">
+          {JSON.stringify(
+            {
+              currentScene: (rawState ?? {})?.currentScene ?? null,
+              turn0Scene: turns[0]?.scene ?? null,
+              resolvedSceneKey,
+              resolvedSceneText,
+            },
+            null,
+            2,
+          )}
+        </pre>
+      ) : null}
       <div
         className={`mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-1.5 text-[10px] ${debugStripClasses}`}
       >
@@ -702,12 +706,6 @@ let persistedAdventureOwnerId: string | null = null;
           {isProtectedRun ? "Protected run" : "Sandbox run"}
         </span>
       </div>
-      <section className="mb-6 rounded-2xl border border-white/10 bg-black/60 p-4 text-white">
-        <div className="mb-2 text-xs uppercase tracking-[0.3em] text-white/60">Scene</div>
-        <p className="text-base leading-7 text-white">
-          {resolvedSceneText || "The scene will appear once a turn resolves."}
-        </p>
-      </section>
       <Suspense fallback={<div className="mt-6 text-sm text-gray-500">Loading play controls...</div>}>
         <PlayClient
           adventureId={adventureId}

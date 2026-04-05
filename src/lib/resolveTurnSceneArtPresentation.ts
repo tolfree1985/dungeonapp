@@ -10,7 +10,7 @@ import type { SceneDeltaKind } from "@/lib/resolveSceneDeltaKind";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
 import type { SceneCameraMemory, SceneShotIntent, SceneTransitionMemory } from "@/lib/sceneTypes";
 import type { SceneVisualState } from "@/lib/resolveSceneVisualState";
-import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
+import { buildCanonicalSceneArtPayload } from "@/lib/scene-art/buildCanonicalSceneArtPayload";
 import { resolveSceneDirectorBehavior } from "@/lib/resolveSceneDirectorBehavior";
 import { resolveSceneRefreshDecision, type SceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { resolveSceneTransition } from "@/lib/resolveSceneTransition";

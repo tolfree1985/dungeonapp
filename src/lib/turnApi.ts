@@ -3,6 +3,7 @@ import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";
 import type { SceneTransition } from "@/lib/resolveSceneTransition";
 import type { PlayTurn } from "@/app/play/types";
 import type { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
+import type { SceneRenderOpportunity } from "@/lib/scene-art/renderOpportunity";
 
 export type TurnInputPayload = {
   playerText: string;
@@ -16,6 +17,8 @@ export type TurnApiResponse = {
   scenePresentation?: ScenePresentation | null;
   sceneArt: CanonicalSceneArtState;
   sceneContinuity?: SceneContinuityInfo | null;
+  sceneRenderOpportunity?: SceneRenderOpportunity | null;
+  sceneRenderCredits?: number | null;
 };
 
 export async function parseTurnApiResponse(response: Response) {

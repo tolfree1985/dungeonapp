@@ -1,5 +1,5 @@
 import type { Turn } from "@prisma/client";
-import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
+import { buildCanonicalSceneArtPayload } from "@/lib/scene-art/buildCanonicalSceneArtPayload";
 import { buildSceneArtLookupIdentity, findSceneArt } from "@/lib/sceneArtRepo";
 import type { SceneArtPayload } from "@/lib/sceneArt";
 import type { SceneContinuityInfo } from "@/lib/sceneContinuityInfo";

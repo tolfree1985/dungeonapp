@@ -15,6 +15,7 @@ model Adventure {
   sceneCameraContinuityState Json?
   seed            Int?
   state           Json?
+  sceneRenderCredits Int       @default(0)
   ownerId         String?
   turns           Turn[]
   turnEvents      TurnEvent[]

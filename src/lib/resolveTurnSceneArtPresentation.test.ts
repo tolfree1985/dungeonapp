@@ -7,7 +7,7 @@ import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import { resolveSceneFramingState } from "@/lib/resolveSceneFramingState";
 import { resolveSceneSubjectState } from "@/lib/resolveSceneSubjectState";
 import { resolveSceneVisualState } from "@/lib/resolveSceneVisualState";
-import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
+import { buildCanonicalSceneArtPayload } from "@/lib/scene-art/buildCanonicalSceneArtPayload";
 import { buildMotifTags } from "@/lib/resolveSceneMotif";
 import {
   resolveTurnSceneArtPresentation,

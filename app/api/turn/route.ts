@@ -38,7 +38,7 @@ import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
 import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import { findSceneArt, queueSceneArt, type RenderMode } from "@/lib/sceneArtRepo";
 import { SceneArtPayload } from "@/lib/sceneArt";
-import { buildCanonicalSceneArtPayload } from "@/lib/canonicalSceneArtPayload";
+import { buildCanonicalSceneArtPayload } from "@/lib/scene-art/buildCanonicalSceneArtPayload";
 import { SceneArtStatus } from "@/generated/prisma";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
@@ -63,6 +63,10 @@ import {
   type SceneArtRow,
   type ScenePresentation,
 } from "@/lib/resolveTurnSceneArtPresentation";
+import {
+  mapSceneRenderOpportunity,
+  mapTriggerReason,
+} from "@/lib/scene-art/renderOpportunity";
 import type { SceneArtPriority } from "@/generated/prisma";
 import type { SceneDeltaKind } from "@/lib/resolveSceneDeltaKind";
 import type { FailForwardComplication } from "@/lib/fail-forward-complication";
@@ -993,6 +997,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         state: true,
         sceneTransitionMemory: true,
         sceneCameraContinuityState: true,
+        sceneRenderCredits: true,
       },
     });
     const previousTransitionMemory: SceneTransitionMemory | null =
@@ -1326,11 +1331,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             promptHash: canonicalSceneArtPayload.promptHash,
           }
         : null;
-    const canonicalSceneIdentityLog = {
-      sceneKey: sceneIdentity?.sceneKey ?? null,
-      promptHash: sceneIdentity?.promptHash ?? null,
-    };
-    console.log("scene.identity.canonical_source", canonicalSceneIdentityLog);
     if (canonicalSceneArtPayload && !sceneIdentity) {
       console.error("scene.identity.invalid", {
         sceneKey: canonicalSceneArtPayload.sceneKey ?? null,
@@ -1347,6 +1347,14 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         currentSceneIdentity,
         latestTurnScene: latestTurn?.scene ?? null,
         renderMode,
+      });
+    }
+    if (canonicalSceneArtPayload) {
+      console.log("scene.art.payload.final", {
+        sceneKey: canonicalSceneArtPayload.sceneKey,
+        promptHash: canonicalSceneArtPayload.promptHash,
+        basePrompt: canonicalSceneArtPayload.basePrompt,
+        renderPrompt: canonicalSceneArtPayload.renderPrompt,
       });
     }
     const { shotDuration } = persistShot({
@@ -1872,6 +1880,16 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         debugSceneIdentity,
       });
       latestTurnDebug.failForwardComplication = failForwardComplication ?? null;
+      const canonicalScenePayloadForDebug = canonicalSceneArtPayload
+        ? {
+            sceneKey: canonicalSceneArtPayload.sceneKey,
+            promptHash: canonicalSceneArtPayload.promptHash,
+            basePrompt: canonicalSceneArtPayload.basePrompt,
+            renderPrompt: canonicalSceneArtPayload.renderPrompt,
+            stylePreset: canonicalSceneArtPayload.stylePreset ?? null,
+            tags: canonicalSceneArtPayload.tags,
+          }
+        : null;
       await db.turn.update({
         where: { id: latestTurn.id },
         data: {
@@ -1879,6 +1897,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             ...latestTurnDebug,
             sceneContinuityInfo: finalContinuityInfo,
             sceneIdentity: sceneIdentity ?? null,
+            canonicalScenePayload: canonicalScenePayloadForDebug,
           },
         },
       });
@@ -2925,31 +2944,19 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       });
       baseSceneArtRow = null;
     }
-    let finalSceneArtRow = await resolveFinalSceneArtRow({
-      existingSceneArt: baseSceneArtRow,
-      refreshDecision,
-      sceneArtPayload,
-      renderPriority,
-      renderMode,
-      engineVersion: ENGINE_VERSION,
-    });
-
-    if (finalSceneArtRow && !finalSceneArtRow.promptHash) {
-      console.error("scene.art.row.missing_prompt_hash", {
-        stage: "final",
-        sceneKey: finalSceneArtRow.sceneKey,
-        promptHash: finalSceneArtRow.promptHash,
-        status: finalSceneArtRow.status,
-      });
-      finalSceneArtRow = null;
-    }
-
-    await maybeCacheSceneArt(finalSceneArtRow);
-    persistedFinalSceneArt = finalSceneArtRow;
-    persistedSceneArtContractCache = finalSceneArtRow
-      ? buildFinalSceneArtContract(finalSceneArtRow)
-      : null;
-    console.log("TURN_SCENE_ART_RETURN", persistedSceneArtContractCache);
+    let readyBaseSceneArtRow =
+      baseSceneArtRow && baseSceneArtRow.status === "ready" && typeof baseSceneArtRow.promptHash === "string"
+        ? baseSceneArtRow
+        : null;
+    let finalSceneArtRow: SceneArtRow | null = null;
+    let effectiveSceneDeltaKind: SceneDeltaKind = derivedSceneDeltaKind;
+    let reuseLogSource: string | null = null;
+    const previousPromptHash = previousTurnDebug?.sceneIdentity?.promptHash ?? null;
+    const canonicalSceneIdentity = {
+      sceneKey: sceneIdentity?.sceneKey ?? null,
+      promptHash: sceneIdentity?.promptHash ?? null,
+    };
+    const initialPromptHash = canonicalSceneIdentity.promptHash ?? null;
 
     const baseStateDeltas = [
       ...turnStateDeltas,
@@ -3152,7 +3159,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       ledgerAdds: finalResolvedTurn.ledgerAdds ?? [],
     });
 
-    let effectiveSceneDeltaKind: SceneDeltaKind = derivedSceneDeltaKind;
     let effectiveTriggerDecision: SceneArtTriggerDecision | null = null;
 
     if (visualDisruption.shouldForceEnvironmentTrigger) {
@@ -3170,6 +3176,70 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         effectiveSceneDeltaKind,
       });
     }
+
+    if (
+      !readyBaseSceneArtRow &&
+      sameScene &&
+      effectiveSceneDeltaKind === "none" &&
+      previousPromptHash &&
+      sceneIdentity?.sceneKey
+    ) {
+      console.info("scene.art.previous_prompt_hash_lookup", {
+        sceneKey: sceneIdentity.sceneKey,
+        promptHash: previousPromptHash,
+      });
+      const previousReadyRow = await prisma.sceneArt.findFirst({
+        where: {
+          sceneKey: sceneIdentity.sceneKey,
+          promptHash: previousPromptHash,
+          status: "ready",
+          imageUrl: { not: null },
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+      if (previousReadyRow) {
+        readyBaseSceneArtRow = previousReadyRow;
+        reuseLogSource = "previous-promptHash-lookup";
+      }
+    }
+
+    Object.freeze(canonicalSceneIdentity);
+
+    if (
+      !readyBaseSceneArtRow &&
+      sameScene &&
+      effectiveSceneDeltaKind === "none" &&
+      !previousSceneContinuity?.canonicalPayload &&
+      !previousSceneContinuity?.sceneArt &&
+      canonicalSceneIdentity.sceneKey &&
+      canonicalSceneIdentity.promptHash
+    ) {
+      console.info("scene.art.reuse.identity_check", {
+        sceneKey: canonicalSceneIdentity.sceneKey,
+        promptHash: canonicalSceneIdentity.promptHash,
+        previousTurnPromptHash: previousTurnDebug?.sceneIdentity?.promptHash ?? null,
+      });
+      const fallbackSceneArtRow = await prisma.sceneArt.findFirst({
+        where: {
+          sceneKey: canonicalSceneIdentity.sceneKey,
+          promptHash: canonicalSceneIdentity.promptHash,
+          status: "ready",
+          imageUrl: { not: null },
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+      if (fallbackSceneArtRow) {
+        readyBaseSceneArtRow = fallbackSceneArtRow;
+        reuseLogSource = "canonical-ready-row";
+      }
+    }
+
+    const reuseSceneArt =
+      renderDecisionOutcome?.renderPlan === "reuse-current" && Boolean(readyBaseSceneArtRow);
+    const keepCurrentWhileQueued =
+      refreshDecision?.renderPlan === "keep-current-while-queued" &&
+      Boolean(readyBaseSceneArtRow) &&
+      Boolean(sceneArtPayload);
 
     const integratedTriggerDecision = await runSceneArtTriggerIntegration({
       sceneArtPayload,
@@ -3197,13 +3267,130 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       finalTriggerDecision,
       effectiveSceneDeltaKind,
     });
+    const sceneRenderOpportunity = mapSceneRenderOpportunity({
+      canGenerate: finalTriggerDecision.shouldGenerate,
+      reason: mapTriggerReason(finalTriggerDecision),
+      sceneKey: canonicalSceneIdentity.sceneKey,
+      promptHash: canonicalSceneIdentity.promptHash,
+      estimatedCostTier: finalTriggerDecision.tier ?? null,
+    });
+    const shouldAutoQueueSceneArt =
+      sceneRenderOpportunity.canGenerate && sceneRenderOpportunity.autoRender;
+    console.info("scene.render.policy_decision", {
+      canGenerate: sceneRenderOpportunity.canGenerate,
+      autoRender: sceneRenderOpportunity.autoRender,
+      shouldAutoQueueSceneArt,
+      reason: sceneRenderOpportunity.reason,
+    });
+    console.info("scene.render.opportunity", sceneRenderOpportunity);
+    console.info("scene.render.auto_render_decision", {
+      canGenerate: sceneRenderOpportunity.canGenerate,
+      autoRender: sceneRenderOpportunity.autoRender,
+      reason: sceneRenderOpportunity.reason,
+    });
+    const queueRefreshDecision =
+      refreshDecision && !shouldAutoQueueSceneArt
+        ? { ...refreshDecision, shouldQueueRender: false }
+        : refreshDecision;
+
+    const mustReuseStableReady =
+      sameScene === true &&
+      effectiveSceneDeltaKind === "none" &&
+      Boolean(readyBaseSceneArtRow);
+
+    let skipSceneArtResolution = false;
+    let reusedReadyRow = false;
+    let keepCurrentUsed = false;
+    if (mustReuseStableReady && readyBaseSceneArtRow) {
+      skipSceneArtResolution = true;
+      reusedReadyRow = true;
+      finalSceneArtRow = readyBaseSceneArtRow;
+      persistedFinalSceneArt = readyBaseSceneArtRow;
+      persistedSceneArtContractCache = buildFinalSceneArtContract(readyBaseSceneArtRow);
+      console.info("scene.art.reuse.applied", {
+        sceneKey: readyBaseSceneArtRow.sceneKey,
+        promptHash: readyBaseSceneArtRow.promptHash,
+        source: "stable-same-scene-invariant",
+      });
+    }
+
+    if (!skipSceneArtResolution) {
+      if (reuseSceneArt && readyBaseSceneArtRow) {
+        console.info("scene.art.reuse.applied", {
+          sceneKey: readyBaseSceneArtRow.sceneKey,
+          promptHash: readyBaseSceneArtRow.promptHash,
+          source: reuseLogSource ?? "previous-turn",
+        });
+        finalSceneArtRow = readyBaseSceneArtRow;
+        reusedReadyRow = true;
+      } else {
+        const resolvedRow = await resolveFinalSceneArtRow({
+          existingSceneArt: baseSceneArtRow,
+          refreshDecision: queueRefreshDecision,
+          sceneArtPayload,
+          renderPriority,
+          renderMode,
+          engineVersion: ENGINE_VERSION,
+        });
+        if (keepCurrentWhileQueued && readyBaseSceneArtRow) {
+          console.info("scene.art.keep_current_queued", {
+            sceneKey: readyBaseSceneArtRow.sceneKey,
+            promptHash: readyBaseSceneArtRow.promptHash,
+          });
+          finalSceneArtRow = readyBaseSceneArtRow;
+          keepCurrentUsed = true;
+        } else {
+          finalSceneArtRow = resolvedRow;
+        }
+      }
+
+      if (finalSceneArtRow && !finalSceneArtRow.promptHash) {
+        console.error("scene.art.row.missing_prompt_hash", {
+          stage: "final",
+          sceneKey: finalSceneArtRow.sceneKey,
+          promptHash: finalSceneArtRow.promptHash,
+          status: finalSceneArtRow.status,
+        });
+        finalSceneArtRow = null;
+      }
+
+      await maybeCacheSceneArt(finalSceneArtRow);
+      persistedFinalSceneArt = finalSceneArtRow;
+      persistedSceneArtContractCache = finalSceneArtRow
+        ? buildFinalSceneArtContract(finalSceneArtRow)
+        : null;
+    }
+
+    console.log("TURN_SCENE_ART_RETURN", persistedSceneArtContractCache);
 
     const finalSceneArt = persistedSceneArtContractCache;
+    const queuedRow =
+      !reusedReadyRow &&
+      !keepCurrentUsed &&
+      Boolean(finalSceneArtRow && finalSceneArtRow.status !== "ready");
+    const finalSource = keepCurrentUsed
+      ? "keep-current"
+      : reusedReadyRow
+        ? "reuse-ready"
+        : queuedRow
+          ? "queue"
+          : "none";
+    console.info("scene.art.final_decision", {
+      sameScene,
+      effectiveSceneDeltaKind,
+      reusedReady: reusedReadyRow,
+      skippedResolution: skipSceneArtResolution,
+      finalStatus: finalSceneArt?.status ?? null,
+      finalPromptHash: finalSceneArt?.promptHash ?? null,
+      finalImageUrl: finalSceneArt?.imageUrl ?? null,
+      source: finalSource,
+    });
 
-    const responseBody = {
-      ok: true,
-      action: action ?? null,
-      tags,
+
+      const responseBody = {
+        ok: true,
+        action: action ?? null,
+        tags,
       rollTotal: rollTotal ?? null,
       ...finalized,
       turn: {
@@ -3223,7 +3410,9 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         : null,
       scenePresentation,
       sceneContinuity: finalContinuityInfo,
-    };
+      sceneRenderOpportunity,
+      sceneRenderCredits: previousAdventureStateRow?.sceneRenderCredits ?? null,
+      };
 
     if (finalSceneArt) {
       assertSceneArtInvariant({

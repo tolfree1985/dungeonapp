@@ -57,6 +57,12 @@ export const SCENARIO_TEMPLATE_LIBRARY: ScenarioTemplate[] = [
           heat: 0,
           trust: 2,
         },
+        pressure: {
+          suspicion: 1,
+          noise: 0,
+          time: 1,
+          danger: 1,
+        },
         inventory: [],
         relationships: {
           watchCaptain: "wary",
@@ -71,7 +77,8 @@ export const SCENARIO_TEMPLATE_LIBRARY: ScenarioTemplate[] = [
       },
       start: {
         sceneId: "dock_office",
-        prompt: "You arrive at dawn to inspect the missing harbor ledgers.",
+        prompt:
+          "You arrive at the dock office at first light. The ledger room door stands ajar and several shelves inside lie half-emptied. A single loose page flutters across the stone floor in the morning draft.",
       },
       turns: [
         {

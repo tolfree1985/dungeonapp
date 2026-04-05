@@ -24,6 +24,15 @@ import type { ConsequenceEntry } from "@/server/scene/consequence-bundle";
 import { projectLedgerEntries, type LedgerPresentationEntry } from "@/server/scene/ledger-presentation";
 import { buildPlayTurnPresentation } from "@/app/play/normalizeTurnPresentation";
 import type { TurnResolutionPresentation } from "@/server/scene/turn-resolution-presentation";
+import { shapeTurnPresentation } from "@/lib/presentation/shapeTurnPresentation";
+import type { TurnConsequenceSlots } from "@/lib/presentation/buildTurnConsequences";
+import {
+  describeMetricDetail,
+  describePressureSummary,
+  describeTurnPressure,
+  PressureAxis,
+  PressureSummary,
+} from "@/lib/presentation/pressureLanguage";
 
 type ResolvedResolution = Record<string, unknown>;
 
@@ -214,6 +223,7 @@ export type LatestTurnViewModel = {
   mode: "DO" | "SAY" | "LOOK" | null;
   playerInput: string | null;
   sceneText: string | null;
+  sceneSummary: string | null;
   outcomeLabel: string | null;
   pressureLabel: string;
   ledgerEntries: LedgerEntryViewModel[];
@@ -252,6 +262,10 @@ export type LatestTurnViewModel = {
   consequenceNarration?: { headline: string; lines: string[] } | null;
   narrationLines: string[];
   consequenceLedgerEntries: LedgerPresentationEntry[];
+  consequenceLines: string[];
+  followUpHook?: string | null;
+  pressureNote?: string | null;
+  consequenceSlots: TurnConsequenceSlots;
   opportunityWindow: OpportunityWindowState;
   opportunityResolutionModifier?: OpportunityResolutionModifier | null;
   opportunityCost?: string | null;
@@ -293,6 +307,8 @@ export type StatePanelViewModel = {
   turns: number | null;
   risk: StateTier | null;
   pressureStage: PressureStage;
+  pressureSummary: PressureSummary;
+  pressureAxisDescriptions: Record<PressureAxis, string>;
   pressureTotals: {
     suspicion: number;
     noise: number;
@@ -564,7 +580,8 @@ export function formatLedgerDisplay(entries: unknown[]): LedgerEntryViewModel[] 
 
 export function buildLatestTurnViewModel(
   turn: PlayTurn,
-  pressureStage: string | null | undefined
+  pressureStage: string | null | undefined,
+  context?: { recentSceneSummaries?: string[] }
 ): LatestTurnViewModel {
   const resolvedPressureStage = normalizePressureStage(pressureStage ?? null);
   const pressureLabel = resolvedPressureStage.toUpperCase();
@@ -576,6 +593,7 @@ export function buildLatestTurnViewModel(
   const pressureChanges = rawStateDeltas
     .map(extractPressureChange)
     .filter((entry): entry is { domain: string; amount: number } => Boolean(entry));
+  const pressureNote = describeTurnPressure(pressureChanges) ?? null;
   const thresholdEvents = rawStateDeltas
     .map(extractThresholdEvent)
     .filter((label): label is string => Boolean(label));
@@ -622,11 +640,43 @@ export function buildLatestTurnViewModel(
   const consequenceNarration = turnPresentation.narration;
   const narrationLines = consequenceNarration ? flattenNarrationLines(consequenceNarration) : [];
   const consequenceLedgerEntries = turnPresentation.ledgerEntries;
+  const rawLedgerLines = [
+    ...(consequenceLedgerEntries ?? []).map((entry) =>
+      (entry as { narrationText?: string; ledgerText?: string }).narrationText ??
+      (entry as { ledgerText?: string }).ledgerText ??
+      entry.text ??
+      ""
+    ),
+    ...(consequenceComplicationEntries ?? []).map((entry) =>
+      entry.narrationText ?? entry.ledgerText ?? ""
+    ),
+    ...(consequenceExtraCostEntries ?? []).map((entry) =>
+      entry.narrationText ?? entry.ledgerText ?? ""
+    ),
+  ];
+  const rawConsequenceLines = [
+    ...(consequenceNarration?.lines ?? []),
+    ...rawLedgerLines,
+  ]
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const shapedPresentation = shapeTurnPresentation({
+    turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
+    mode: parseIntentMode(turn.playerInput),
+    playerInput: turn.playerInput ?? null,
+    sceneSummary: turn.scene ? turn.scene.trim() : null,
+    consequenceLines: rawConsequenceLines,
+    ledgerEntries: consequenceLedgerEntries,
+    sceneKey: null,
+    promptHash: null,
+    outcomeTier: rollInfo.tier ?? (normalizedResolution?.tier ?? null),
+  });
   return {
     turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
     mode: parseIntentMode(turn.playerInput),
     playerInput: turn.playerInput ? turn.playerInput.trim() || null : null,
     sceneText: turn.scene ? turn.scene.trim() || null : null,
+    sceneSummary: shapedPresentation.sceneSummary,
     outcomeLabel,
     pressureLabel,
     ledgerEntries,
@@ -662,6 +712,10 @@ export function buildLatestTurnViewModel(
     consequenceNarration,
     narrationLines,
     consequenceLedgerEntries,
+    consequenceLines: shapedPresentation.consequenceLines,
+    followUpHook: shapedPresentation.followUpHook ?? null,
+    consequenceSlots: shapedPresentation.consequenceSlots,
+    pressureNote,
     presentation: turnPresentation,
     opportunityWindow,
     opportunityResolutionModifier,
@@ -925,6 +979,13 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     noise: pressureTotals.noise,
     heat: pressureTotals.danger,
   });
+  const pressureSummary = describePressureSummary(pressureTotals);
+  const pressureAxisDescriptions: Record<PressureAxis, string> = {
+    suspicion: describeMetricDetail("suspicion", pressureTotals.suspicion),
+    noise: describeMetricDetail("noise", pressureTotals.noise),
+    time: describeMetricDetail("time", pressureTotals.time),
+    danger: describeMetricDetail("danger", pressureTotals.danger),
+  };
   const inputTurnsValue =
     typeof (state as PlayStatePanel & { latestTurnIndex?: number }).latestTurnIndex === "number"
       ? (state as PlayStatePanel & { latestTurnIndex?: number }).latestTurnIndex
@@ -945,6 +1006,8 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     turns: turnsValue,
     risk,
     pressureStage: resolvedPressureStage,
+    pressureSummary,
+    pressureAxisDescriptions,
     pressureTotals,
   };
 }

@@ -4,6 +4,7 @@ import type { PresentedStateMetric, StateItemViewModel, StatePanelViewModel } fr
 import type { StateTier } from "@/lib/ui/present-state-tier";
 import { getPressureClasses } from "@/lib/ui/pressure-style";
 import { cardPadding, cardShell, emptyState, sectionHeading } from "./cardStyles";
+import type { PressureAxis } from "@/lib/presentation/pressureLanguage";
 
 type StatePanelProps = {
   viewModel: StatePanelViewModel;
@@ -30,6 +31,13 @@ const STATE_TIER_RANK: Record<StateTier, number> = {
   Moderate: 2,
   High: 3,
   Extreme: 4,
+};
+
+const METRIC_AXIS_MAP: Record<keyof StatePanelViewModel["metrics"], PressureAxis | null> = {
+  alert: "suspicion",
+  noise: "noise",
+  heat: "danger",
+  trust: null,
 };
 
 type StateMetricKey = keyof StatePanelViewModel["metrics"];
@@ -85,10 +93,16 @@ export default function StatePanel({ viewModel }: StatePanelProps) {
   const primaryMetricKeys = determinePrimaryMetrics(viewModel.metrics);
   const showDetails = detailEntries.length > 0 || viewModel.metrics.trust !== null;
   const riskLabel = viewModel.risk ?? "—";
+  const pressureSummary = viewModel.pressureSummary;
+  const summaryDetail = viewModel.pressureAxisDescriptions[pressureSummary.axis];
 
   return (
     <section className={`${cardShell} ${cardPadding} space-y-4`}>
       <div className={sectionHeading}>State</div>
+      <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+        <div className="text-sm font-semibold text-white">{pressureSummary.title}</div>
+        <p className="mt-1 text-xs text-white/60">{summaryDetail}</p>
+      </div>
       <div className={`rounded-xl border ${pressureStyles.border} ${pressureStyles.glow ?? ""} px-3 py-2`}>
         <div className={`text-sm font-semibold ${pressureStyles.text}`}>Risk — {riskLabel}</div>
       </div>
@@ -113,10 +127,17 @@ export default function StatePanel({ viewModel }: StatePanelProps) {
               const isPrimary = primaryMetricKeys.includes(entry.key);
               const labelClass = isPrimary ? "text-white" : "text-white/50";
               const valueClass = isPrimary ? "font-semibold text-white" : "font-semibold text-white/60";
+              const axis = METRIC_AXIS_MAP[entry.key];
+              const axisDetail = axis ? viewModel.pressureAxisDescriptions[axis] : null;
               return (
-                <div key={entry.label} className="flex items-center justify-between text-[11px]">
-                  <span className={labelClass}>{entry.label}</span>
-                  <span className={valueClass}>{entry.metric?.label ?? "—"}</span>
+                <div key={entry.label} className="space-y-1 text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span className={labelClass}>{entry.label}</span>
+                    <span className={valueClass}>{entry.metric?.label ?? "—"}</span>
+                  </div>
+                  {axisDetail ? (
+                    <p className="text-[10px] text-white/50">{axisDetail}</p>
+                  ) : null}
                 </div>
               );
             })}
