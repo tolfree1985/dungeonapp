@@ -52,6 +52,10 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
   const fallbackSceneSummary =
     model.sceneSummary ?? model.sceneText ?? "The scene will resolve once your action completes.";
   const narrativeText = model.storyBeat ?? fallbackSceneSummary;
+  const outcomeSummary =
+    (model.outcomeTierLabel && model.outcomeTierLabel.trim()) ||
+    (model.outcomeLabel && model.outcomeLabel.trim()) ||
+    "Outcome pending";
   const hasPersistentConsequences = Boolean(
     model.persistentWorldConsequences.length ||
     model.persistentRiskConsequences.length ||
@@ -75,6 +79,15 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
               {model.mode}
             </span>
           ) : null}
+        </div>
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">Outcome</div>
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-base font-semibold text-white">{outcomeSummary}</span>
+            {model.failForwardComplication ? (
+              <span className="text-[10px] uppercase tracking-[0.3em] text-amber-200">Fail-forward</span>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="mt-4 space-y-3">

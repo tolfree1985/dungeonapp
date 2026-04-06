@@ -1,6 +1,12 @@
 "use client";
 
-import type { PlayTurn, PlayStatePanel, PlayTurnPresentation, PressureStage } from "@/app/play/types";
+import type {
+  PlayTurn,
+  PlayStatePanel,
+  PlayTurnPresentation,
+  PressureStage,
+  StatePrioritySignal,
+} from "@/app/play/types";
 import type { StateTier } from "@/lib/ui/present-state-tier";
 import {
   presentAlertTier,
@@ -327,6 +333,7 @@ export type StatePanelViewModel = {
     time: number;
     danger: number;
   };
+  prioritySignals: StatePrioritySignal[];
 };
 
 export type AdventureHistoryRowViewModel = {
@@ -1550,5 +1557,6 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     pressureSummary,
     pressureAxisDescriptions,
     pressureTotals,
+    prioritySignals: state.prioritySignals ?? [],
   };
 }

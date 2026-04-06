@@ -1,4 +1,4 @@
-import type { PlayStatePanel, PlayStateValue } from "./types";
+import type { PlayStatePanel, PlayStateValue, StatePrioritySignal } from "./types";
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value) return null;
@@ -56,6 +56,18 @@ export function normalizeStatePanel(state: unknown): PlayStatePanel {
   const inventorySource = readSection(root, "inventory");
   const questsSource = readSection(root, "quests");
   const relationshipsSource = readSection(root, "relationships");
+  const flagsSource =
+    asRecord(readSection(root, "flags")) ??
+    asRecord(root?.flags) ??
+    asRecord(readSection(root, "stateFlags")) ??
+    asRecord(root?.state?.flags) ??
+    null;
+  const flagsSource =
+    asRecord(readSection(root, "flags")) ??
+    asRecord(root?.flags) ??
+    asRecord(readSection(root, "stateFlags")) ??
+    asRecord(root?.state?.flags) ??
+    null;
 
   const statsOrder = [
     "pressureStage",
@@ -158,5 +170,54 @@ export function normalizeStatePanel(state: unknown): PlayStatePanel {
         })
       : [];
 
-  return { pressureStage, stats, inventory, quests, relationships };
+  const toNumber = (value: unknown): number | null => {
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      const parsed = Number(value);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+    return null;
+  };
+  const severityFrom = (value: number | null): StatePrioritySignal["severity"] => {
+    if (value === null) return "low";
+    if (value >= 10) return "high";
+    if (value >= 6) return "medium";
+    return "low";
+  };
+  const signals: StatePrioritySignal[] = [];
+  const addSignal = (signal: StatePrioritySignal) => {
+    if (signals.some((entry) => entry.label === signal.label && entry.kind === signal.kind)) return;
+    signals.push(signal);
+  };
+  const dangerValue = toNumber(statsSource?.heat);
+  const noiseValue = toNumber(statsSource?.noise);
+  const dangerSeverity = severityFrom(dangerValue);
+  const noiseSeverity = severityFrom(noiseValue);
+  if ((flagsSource?.["scene.fire"] === true || flagsSource?.["scene.fire.accelerant"] === true)) {
+    addSignal({ kind: "hazard", label: "Fire is active", severity: "high" });
+  }
+  if (dangerSeverity !== "low") {
+    const label = dangerSeverity === "high" ? "Danger is high" : "Danger is elevated";
+    addSignal({ kind: "pressure", label, severity: dangerSeverity });
+  }
+  if (noiseSeverity !== "low") {
+    const label = noiseSeverity === "high" ? "Noise is high" : "Noise is elevated";
+    addSignal({ kind: "pressure", label, severity: noiseSeverity });
+  }
+  if (flagsSource?.["container.crate_open"] === true) {
+    addSignal({ kind: "opportunity", label: "Crate can be searched", severity: "medium" });
+  }
+  if (flagsSource?.["crate.weakened"] === true) {
+    addSignal({ kind: "opportunity", label: "Crate is weakened", severity: "medium" });
+  }
+
+  return {
+    pressureStage,
+    stats,
+    inventory,
+    quests,
+    relationships,
+    flags: flagsSource,
+    prioritySignals: signals,
+  };
 }

@@ -41,6 +41,11 @@ const METRIC_AXIS_MAP: Record<keyof StatePanelViewModel["metrics"], PressureAxis
 };
 
 type StateMetricKey = keyof StatePanelViewModel["metrics"];
+const SIGNAL_SEVERITY_CLASSES: Record<string, string> = {
+  high: "text-amber-200",
+  medium: "text-amber-300",
+  low: "text-white/60",
+};
 
 const metricSeverity = (metric: PresentedStateMetric | null): number => {
   if (!metric) return 0;
@@ -99,6 +104,23 @@ export default function StatePanel({ viewModel }: StatePanelProps) {
   return (
     <section className={`${cardShell} ${cardPadding} space-y-4`}>
       <div className={sectionHeading}>State</div>
+      {viewModel.prioritySignals.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 space-y-2 text-sm">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">Care now</div>
+          <div className="space-y-1">
+            {viewModel.prioritySignals.map((signal) => (
+              <div key={`${signal.kind}-${signal.label}`} className="flex items-center justify-between text-white">
+                <span className="font-semibold text-white/80">{signal.label}</span>
+                <span
+                  className={`text-[10px] uppercase tracking-[0.3em] ${SIGNAL_SEVERITY_CLASSES[signal.severity]}`}
+                >
+                  {signal.kind}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
         <div className="text-sm font-semibold text-white">{pressureSummary.title}</div>
         <p className="mt-1 text-xs text-white/60">{summaryDetail}</p>
