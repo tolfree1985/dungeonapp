@@ -228,6 +228,7 @@ export type LedgerEntryViewModel = {
   cause: string;
   effect: string;
   emphasis?: "normal" | "high";
+  priority: number;
 };
 
 export type LatestTurnViewModel = {
@@ -565,6 +566,19 @@ function classifyLedgerCategory(text: string): LedgerCategory {
   return "world";
 }
 
+function computeLedgerPriority(cause: string, effect: string, category: LedgerCategory): number {
+  const combined = `${cause} ${effect}`.toLowerCase();
+  if (/fire|burn|ignite/.test(combined)) return 100;
+  if (/crate/.test(combined) && /(open|pried|search|splinter)/.test(combined)) return 95;
+  if (/clue|evidence|hidden/.test(combined)) return 90;
+  if (category === "quest") return 85;
+  if (/noise|watch|attention|suspicion|alert/.test(combined)) return 80;
+  if (/danger|risk|heat/.test(combined)) return 75;
+  if (category === "pressure" || category === "time") return 70;
+  if (/time/.test(combined)) return 65;
+  return 50;
+}
+
 export function formatLedgerDisplay(entries: unknown[]): LedgerEntryViewModel[] {
   return entries
     .map((entry, index) => {
@@ -593,9 +607,11 @@ export function formatLedgerDisplay(entries: unknown[]): LedgerEntryViewModel[] 
         cause: displayCause,
         effect: displayEffect,
         emphasis,
+        priority: computeLedgerPriority(displayCause, displayEffect, category),
       };
     })
-    .filter((entry): entry is LedgerEntryViewModel => Boolean(entry));
+    .filter((entry): entry is LedgerEntryViewModel => Boolean(entry))
+    .sort((a, b) => b.priority - a.priority);
 }
 
 export function buildLatestTurnViewModel(
