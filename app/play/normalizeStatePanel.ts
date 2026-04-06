@@ -1,4 +1,5 @@
-import type { PlayStatePanel, PlayStateValue, StatePrioritySignal } from "./types";
+import type { PlayStatePanel, PlayStateValue } from "./types";
+import { buildStateSummary } from "@/lib/engine/presentation/stateSummaryTranslator";
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value) return null;
@@ -164,68 +165,7 @@ export function normalizeStatePanel(state: unknown): PlayStatePanel {
         })
       : [];
 
-  const toNumber = (value: unknown): number | null => {
-    if (typeof value === "number") return value;
-    if (typeof value === "string") {
-      const parsed = Number(value);
-      if (!Number.isNaN(parsed)) return parsed;
-    }
-    return null;
-  };
-  const noiseValue = toNumber(statsSource?.noise);
-  const dangerValue = toNumber(statsSource?.heat);
-  const timeValue = toNumber(statsSource?.time);
-  const fireActive = flagsSource?.["scene.fire"] === true;
-  const accelerantFire = flagsSource?.["scene.fire.accelerant"] === true;
-  const fabricOiled = flagsSource?.["fabric.oiled"] === true;
-
-  const signalCandidates: Array<{ condition: boolean; signal: StatePrioritySignal }> = [
-    {
-      condition: fireActive && fabricOiled && accelerantFire,
-      signal: { kind: "hazard", label: "Fire is spreading rapidly", severity: "high", priority: 100 },
-    },
-    {
-      condition: fireActive && !fabricOiled,
-      signal: { kind: "hazard", label: "Fire is active", severity: "medium", priority: 90 },
-    },
-    {
-      condition: dangerValue !== null && dangerValue >= 20,
-      signal: { kind: "pressure", label: "Danger is high", severity: "high", priority: 85 },
-    },
-    {
-      condition: dangerValue !== null && dangerValue >= 12,
-      signal: { kind: "pressure", label: "Danger is elevated", severity: "medium", priority: 70 },
-    },
-    {
-      condition: noiseValue !== null && noiseValue >= 25,
-      signal: { kind: "pressure", label: "Your actions are drawing attention", severity: "high", priority: 80 },
-    },
-    {
-      condition: noiseValue !== null && noiseValue >= 15,
-      signal: { kind: "pressure", label: "Noise is rising", severity: "medium", priority: 60 },
-    },
-    {
-      condition: timeValue !== null && timeValue >= 30,
-      signal: { kind: "pressure", label: "Time is working against you", severity: "high", priority: 65 },
-    },
-    {
-      condition: timeValue !== null && timeValue >= 15,
-      signal: { kind: "pressure", label: "Time pressure is mounting", severity: "medium", priority: 55 },
-    },
-    {
-      condition: flagsSource?.["container.crate_open"] === true,
-      signal: { kind: "opportunity", label: "Crate can be searched", severity: "medium", priority: 75 },
-    },
-    {
-      condition: flagsSource?.["crate.weakened"] === true,
-      signal: { kind: "opportunity", label: "Crate is weakened", severity: "medium", priority: 50 },
-    },
-  ];
-  const prioritySignals = signalCandidates
-    .filter((entry) => entry.condition)
-    .sort((a, b) => b.signal.priority - a.signal.priority)
-    .slice(0, 2)
-    .map((entry) => entry.signal);
+  const stateSummary = buildStateSummary({ flags: flagsSource, stats: statsSource });
 
   return {
     pressureStage,
@@ -233,6 +173,7 @@ export function normalizeStatePanel(state: unknown): PlayStatePanel {
     inventory,
     quests,
     relationships,
-    prioritySignals,
+    flags: flagsSource,
+    summary: stateSummary,
   };
 }

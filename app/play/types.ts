@@ -97,16 +97,5 @@ export type PlayStatePanel = {
   ambience?: string;
   contextTags?: string[];
   flags?: Record<string, unknown> | null;
-  prioritySignals?: StatePrioritySignal[];
-};
-
-export type StatePrioritySignalKind = "hazard" | "pressure" | "opportunity";
-
-export type StatePrioritySignalSeverity = "high" | "medium" | "low";
-
-export type StatePrioritySignal = {
-  kind: StatePrioritySignalKind;
-  label: string;
-  severity: StatePrioritySignalSeverity;
-  priority: number;
+  summary: StateSummaryBucket;
 };

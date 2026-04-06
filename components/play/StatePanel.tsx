@@ -81,7 +81,9 @@ export default function StatePanel({ viewModel }: StatePanelProps) {
     items: viewModel[section.key] as StateItemViewModel[],
     empty: section.empty,
   }));
-  const careSignals = viewModel.prioritySignals.slice(0, 2);
+  const careSignals = viewModel.summary.careNow;
+  const worldSummary = viewModel.summary.world;
+  const opportunitySummary = viewModel.summary.opportunities;
   const pressureTotals = viewModel.pressureTotals ?? {
     suspicion: 0,
     noise: 0,
@@ -116,6 +118,32 @@ export default function StatePanel({ viewModel }: StatePanelProps) {
                 <span className={`ml-auto text-[10px] uppercase tracking-[0.3em] ${SIGNAL_SEVERITY_CLASSES[signal.severity]}`}>
                   {signal.kind}
                 </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {worldSummary.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 space-y-2 text-sm text-white">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">WORLD</div>
+          <ul className="space-y-1 text-sm text-white/70">
+            {worldSummary.map((line) => (
+              <li key={line} className="flex items-center gap-2">
+                <span className="text-xs text-white/60">•</span>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {opportunitySummary.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 space-y-2 text-sm text-white">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">OPPORTUNITIES</div>
+          <ul className="space-y-1 text-sm text-white/70">
+            {opportunitySummary.map((line) => (
+              <li key={line} className="flex items-center gap-2">
+                <span className="text-xs text-white/60">•</span>
+                <span>{line}</span>
               </li>
             ))}
           </ul>

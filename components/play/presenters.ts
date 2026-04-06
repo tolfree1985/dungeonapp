@@ -40,6 +40,7 @@ import {
   PressureAxis,
   PressureSummary,
 } from "@/lib/presentation/pressureLanguage";
+import type { StateSummaryBucket } from "@/lib/engine/presentation/stateSummaryTranslator";
 import {
   ConsequenceCategory,
   ConsequenceLine,
@@ -335,6 +336,7 @@ export type StatePanelViewModel = {
     danger: number;
   };
   prioritySignals: StatePrioritySignal[];
+  summary: StateSummaryBucket;
 };
 
 export type AdventureHistoryRowViewModel = {
@@ -1574,5 +1576,6 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     pressureAxisDescriptions,
     pressureTotals,
     prioritySignals: state.prioritySignals ?? [],
+    summary: state.summary,
   };
 }
