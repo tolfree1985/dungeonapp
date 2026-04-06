@@ -62,12 +62,6 @@ export function normalizeStatePanel(state: unknown): PlayStatePanel {
     asRecord(readSection(root, "stateFlags")) ??
     asRecord(root?.state?.flags) ??
     null;
-  const flagsSource =
-    asRecord(readSection(root, "flags")) ??
-    asRecord(root?.flags) ??
-    asRecord(readSection(root, "stateFlags")) ??
-    asRecord(root?.state?.flags) ??
-    null;
 
   const statsOrder = [
     "pressureStage",
@@ -178,38 +172,60 @@ export function normalizeStatePanel(state: unknown): PlayStatePanel {
     }
     return null;
   };
-  const severityFrom = (value: number | null): StatePrioritySignal["severity"] => {
-    if (value === null) return "low";
-    if (value >= 10) return "high";
-    if (value >= 6) return "medium";
-    return "low";
-  };
-  const signals: StatePrioritySignal[] = [];
-  const addSignal = (signal: StatePrioritySignal) => {
-    if (signals.some((entry) => entry.label === signal.label && entry.kind === signal.kind)) return;
-    signals.push(signal);
-  };
-  const dangerValue = toNumber(statsSource?.heat);
   const noiseValue = toNumber(statsSource?.noise);
-  const dangerSeverity = severityFrom(dangerValue);
-  const noiseSeverity = severityFrom(noiseValue);
-  if ((flagsSource?.["scene.fire"] === true || flagsSource?.["scene.fire.accelerant"] === true)) {
-    addSignal({ kind: "hazard", label: "Fire is active", severity: "high" });
-  }
-  if (dangerSeverity !== "low") {
-    const label = dangerSeverity === "high" ? "Danger is high" : "Danger is elevated";
-    addSignal({ kind: "pressure", label, severity: dangerSeverity });
-  }
-  if (noiseSeverity !== "low") {
-    const label = noiseSeverity === "high" ? "Noise is high" : "Noise is elevated";
-    addSignal({ kind: "pressure", label, severity: noiseSeverity });
-  }
-  if (flagsSource?.["container.crate_open"] === true) {
-    addSignal({ kind: "opportunity", label: "Crate can be searched", severity: "medium" });
-  }
-  if (flagsSource?.["crate.weakened"] === true) {
-    addSignal({ kind: "opportunity", label: "Crate is weakened", severity: "medium" });
-  }
+  const dangerValue = toNumber(statsSource?.heat);
+  const timeValue = toNumber(statsSource?.time);
+  const fireActive = flagsSource?.["scene.fire"] === true;
+  const accelerantFire = flagsSource?.["scene.fire.accelerant"] === true;
+  const fabricOiled = flagsSource?.["fabric.oiled"] === true;
+
+  const signalCandidates: Array<{ condition: boolean; signal: StatePrioritySignal }> = [
+    {
+      condition: fireActive && fabricOiled && accelerantFire,
+      signal: { kind: "hazard", label: "Fire is spreading rapidly", severity: "high", priority: 100 },
+    },
+    {
+      condition: fireActive && !fabricOiled,
+      signal: { kind: "hazard", label: "Fire is active", severity: "medium", priority: 90 },
+    },
+    {
+      condition: dangerValue !== null && dangerValue >= 20,
+      signal: { kind: "pressure", label: "Danger is high", severity: "high", priority: 85 },
+    },
+    {
+      condition: dangerValue !== null && dangerValue >= 12,
+      signal: { kind: "pressure", label: "Danger is elevated", severity: "medium", priority: 70 },
+    },
+    {
+      condition: noiseValue !== null && noiseValue >= 25,
+      signal: { kind: "pressure", label: "Your actions are drawing attention", severity: "high", priority: 80 },
+    },
+    {
+      condition: noiseValue !== null && noiseValue >= 15,
+      signal: { kind: "pressure", label: "Noise is rising", severity: "medium", priority: 60 },
+    },
+    {
+      condition: timeValue !== null && timeValue >= 30,
+      signal: { kind: "pressure", label: "Time is working against you", severity: "high", priority: 65 },
+    },
+    {
+      condition: timeValue !== null && timeValue >= 15,
+      signal: { kind: "pressure", label: "Time pressure is mounting", severity: "medium", priority: 55 },
+    },
+    {
+      condition: flagsSource?.["container.crate_open"] === true,
+      signal: { kind: "opportunity", label: "Crate can be searched", severity: "medium", priority: 75 },
+    },
+    {
+      condition: flagsSource?.["crate.weakened"] === true,
+      signal: { kind: "opportunity", label: "Crate is weakened", severity: "medium", priority: 50 },
+    },
+  ];
+  const prioritySignals = signalCandidates
+    .filter((entry) => entry.condition)
+    .sort((a, b) => b.signal.priority - a.signal.priority)
+    .slice(0, 2)
+    .map((entry) => entry.signal);
 
   return {
     pressureStage,
@@ -217,7 +233,6 @@ export function normalizeStatePanel(state: unknown): PlayStatePanel {
     inventory,
     quests,
     relationships,
-    flags: flagsSource,
-    prioritySignals: signals,
+    prioritySignals,
   };
 }

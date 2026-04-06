@@ -108,4 +108,5 @@ export type StatePrioritySignal = {
   kind: StatePrioritySignalKind;
   label: string;
   severity: StatePrioritySignalSeverity;
+  priority: number;
 };

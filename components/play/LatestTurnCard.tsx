@@ -47,7 +47,6 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
     );
   }
 
-  const outcomeLabel = model.outcomeLabel ?? "Outcome pending";
   const commandLabel = model.playerInput ?? "Command missing";
   const fallbackSceneSummary =
     model.sceneSummary ?? model.sceneText ?? "The scene will resolve once your action completes.";
@@ -94,7 +93,6 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
         <div className="text-sm text-zinc-300">
           {model.mode ?? "Action"} — {commandLabel}
         </div>
-        <div className="text-lg font-semibold text-white">{outcomeLabel}</div>
         <div className="mt-6 space-y-2">
           <div className="text-[11px] uppercase tracking-[0.32em] text-zinc-500">Story</div>
           <p className="max-w-[68ch] text-[17px] leading-8 text-zinc-100">{narrativeText}</p>
