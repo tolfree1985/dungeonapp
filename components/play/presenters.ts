@@ -24,8 +24,9 @@ import type { ConsequenceEntry } from "@/server/scene/consequence-bundle";
 import { projectLedgerEntries, type LedgerPresentationEntry } from "@/server/scene/ledger-presentation";
 import { buildPlayTurnPresentation } from "@/app/play/normalizeTurnPresentation";
 import type { TurnResolutionPresentation } from "@/server/scene/turn-resolution-presentation";
+import type { InventoryDelta } from "@/lib/engine/types/inventory";
 import { shapeTurnPresentation } from "@/lib/presentation/shapeTurnPresentation";
-import type { TurnConsequenceSlots } from "@/lib/presentation/buildTurnConsequences";
+import { mapLedgerText } from "@/lib/presentation/ledgerLabels";
 import {
   describeMetricDetail,
   describePressureSummary,
@@ -33,6 +34,11 @@ import {
   PressureAxis,
   PressureSummary,
 } from "@/lib/presentation/pressureLanguage";
+import {
+  ConsequenceCategory,
+  ConsequenceLine,
+  translateConsequences,
+} from "@/lib/engine/presentation/consequenceTranslator";
 
 type ResolvedResolution = Record<string, unknown>;
 
@@ -224,6 +230,7 @@ export type LatestTurnViewModel = {
   playerInput: string | null;
   sceneText: string | null;
   sceneSummary: string | null;
+  storyBeat: string;
   outcomeLabel: string | null;
   pressureLabel: string;
   ledgerEntries: LedgerEntryViewModel[];
@@ -233,6 +240,13 @@ export type LatestTurnViewModel = {
   }>;
   pressureChanges: Array<{ domain: string; amount: number }>;
   thresholdEvents: string[];
+  worldConsequences: string[];
+  riskConsequences: string[];
+  opportunityConsequences: string[];
+  persistentWorldConsequences: string[];
+  persistentRiskConsequences: string[];
+  persistentOpportunityConsequences: string[];
+  fireNarrationLine?: string | null;
   rollSummary?: string | null;
   rollDetail?: string | null;
   outcomeTierLabel?: string | null;
@@ -262,10 +276,8 @@ export type LatestTurnViewModel = {
   consequenceNarration?: { headline: string; lines: string[] } | null;
   narrationLines: string[];
   consequenceLedgerEntries: LedgerPresentationEntry[];
-  consequenceLines: string[];
   followUpHook?: string | null;
   pressureNote?: string | null;
-  consequenceSlots: TurnConsequenceSlots;
   opportunityWindow: OpportunityWindowState;
   opportunityResolutionModifier?: OpportunityResolutionModifier | null;
   opportunityCost?: string | null;
@@ -559,8 +571,9 @@ export function formatLedgerDisplay(entries: unknown[]): LedgerEntryViewModel[] 
         .map((effectText) => tryHumanizeLedgerText(effectText) ?? effectText)
         .map((text) => text.trim())
         .filter(Boolean);
-      const displayCause = humanizedCause ?? cause;
-      const displayEffect = normalizedEffects.join(", ");
+  const displayCause = mapLedgerText(humanizedCause ?? cause);
+  const mappedEffects = normalizedEffects.map((value) => mapLedgerText(value));
+  const displayEffect = mappedEffects.join(", ");
       const category = classifyLedgerCategory(`${displayCause} ${displayEffect}`);
       const effectLower = displayEffect.toLowerCase();
       const emphasis =
@@ -660,6 +673,34 @@ export function buildLatestTurnViewModel(
   ]
     .map((line) => line.trim())
     .filter(Boolean);
+
+  const stateFlags = (turn as any).stateFlags as Record<string, unknown> | null;
+  const translatedConsequences = translateConsequences({
+    stateFlags,
+    stateDeltas: rawStateDeltas,
+    ledgerAdds: turn.ledgerAdds ?? [],
+  });
+  const persistentLines = translatedConsequences.filter((line) => line.scope === "persistent");
+  const turnLines = translatedConsequences.filter((line) => line.scope === "turn");
+  const hasAccelerantFire =
+    stateFlags?.["scene.fire.accelerant"] === true ||
+    persistentLines.some(
+      (line) =>
+        line.category === "world" &&
+        line.text.toLowerCase().includes("burning fast")
+    );
+  const hasSceneFire =
+    stateFlags?.["scene.fire"] === true ||
+    persistentLines.some(
+      (line) =>
+        line.category === "world" &&
+        line.text.toLowerCase().includes("on fire")
+    );
+  const fireNarrationLine = hasAccelerantFire
+    ? "Fire now spreads faster due to accelerant."
+    : hasSceneFire
+    ? "The chamber is on fire."
+    : null;
   const shapedPresentation = shapeTurnPresentation({
     turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
     mode: parseIntentMode(turn.playerInput),
@@ -671,18 +712,38 @@ export function buildLatestTurnViewModel(
     promptHash: null,
     outcomeTier: rollInfo.tier ?? (normalizedResolution?.tier ?? null),
   });
+  const intent = parseIntentMode(turn.playerInput);
+  const isInventoryTurn = Boolean(turn.isInventoryTurn);
+  const inventoryActionKind = turn.inventoryActionKind ?? null;
+  const inventoryTargetName = deriveInventoryTargetName(turn) ?? turn.inventoryActionTarget ?? null;
+  const storyBeat = isInventoryTurn
+    ? buildInventoryStoryBeat(inventoryActionKind, inventoryTargetName)
+    : shapedPresentation.storyBeat;
+  const consequencePresentation = buildPlayerConsequenceBuckets({
+    persistentLines,
+    turnLines,
+  });
+
   return {
     turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
     mode: parseIntentMode(turn.playerInput),
     playerInput: turn.playerInput ? turn.playerInput.trim() || null : null,
     sceneText: turn.scene ? turn.scene.trim() || null : null,
     sceneSummary: shapedPresentation.sceneSummary,
+    storyBeat,
     outcomeLabel,
     pressureLabel,
     ledgerEntries,
     stateDeltas: deltas,
     pressureChanges,
     thresholdEvents,
+    persistentWorldConsequences: consequencePresentation.persistent.world,
+    persistentRiskConsequences: consequencePresentation.persistent.risk,
+    persistentOpportunityConsequences: consequencePresentation.persistent.opportunity,
+    worldConsequences: consequencePresentation.thisTurn.world,
+    riskConsequences: consequencePresentation.thisTurn.risk,
+    opportunityConsequences: consequencePresentation.thisTurn.opportunity,
+    fireNarrationLine,
     rollSummary,
     rollDetail,
     outcomeTierLabel,
@@ -712,9 +773,7 @@ export function buildLatestTurnViewModel(
     consequenceNarration,
     narrationLines,
     consequenceLedgerEntries,
-    consequenceLines: shapedPresentation.consequenceLines,
-    followUpHook: shapedPresentation.followUpHook ?? null,
-    consequenceSlots: shapedPresentation.consequenceSlots,
+    followUpHook: isInventoryTurn ? null : shapedPresentation.followUpHook ?? null,
     pressureNote,
     presentation: turnPresentation,
     opportunityWindow,
@@ -729,6 +788,488 @@ export function buildLatestTurnViewModel(
   };
 }
 
+type ConsequenceBucketName = "gained" | "cost" | "worldChange" | "pressureChange";
+
+type ConsequenceBuckets = Record<ConsequenceBucketName, string[]>;
+
+type PlayerConsequenceBuckets = {
+  world: string[];
+  risk: string[];
+  opportunity: string[];
+};
+
+type PlayerConsequencePresentation = {
+  persistent: PlayerConsequenceBuckets;
+  thisTurn: PlayerConsequenceBuckets;
+};
+
+type ConsequencePriorityLevel = "high" | "medium" | "low";
+
+const LOW_SIGNAL_KEYS = new Set([
+  "scene shifted",
+  "additional effort required",
+  "partial read",
+]);
+
+const PRIORITY_RULES: Record<string, ConsequencePriorityLevel> = {
+  "The chamber is on fire.": "high",
+  "Fire is spreading faster due to accelerant.": "high",
+  "Fabric is oil-soaked.": "high",
+  "The crate is weakened.": "high",
+  "The crate is open.": "high",
+  "The crate is easier to pry open now.": "medium",
+  "The crate can now be searched.": "medium",
+  "The fabric is primed to ignite.": "medium",
+};
+
+const PLAYER_FACING_PERSISTENT_LINES = new Set([
+  "the chamber is on fire.",
+  "fire is spreading faster due to accelerant.",
+  "fabric is oil-soaked.",
+  "the crate is weakened.",
+  "the crate is open.",
+  "the crate is easier to pry open now.",
+]);
+
+const PLAYER_FACING_RISK_PATTERNS: RegExp[] = [
+  /noise increased/i,
+  /time/i,
+  /danger/i,
+  /pressure/i,
+];
+
+const PLAYER_FACING_OPPORTUNITY_PATTERNS: RegExp[] = [
+  /hidden clue/i,
+  /crate can now be searched/i,
+  /crate is easier to pry open/i,
+  /fabric is primed to ignite/i,
+  /route upward/i,
+];
+
+const BANNED_CONSEQUENCE_LINES = new Set([
+  "your position is less concealed",
+  "a scrape in the wood suggests the frame was forced recently.",
+  "dust patterns show something heavy was moved.",
+]);
+
+const INTERNAL_CONSEQUENCE_MAPPINGS: Array<[RegExp, string]> = [
+  [/^inventory\.chemical.*oil spreads across the fabric$/i, "Fabric is oil-soaked."],
+  [/^action.*partial access gained.*$/i, "The crate is partially opened."],
+];
+
+function prioritizeConsequenceLines(lines: string[], bucket: "world" | "risk" | "opportunity") {
+  const result: Record<ConsequencePriorityLevel, string[]> = {
+    high: [],
+    medium: [],
+    low: [],
+  };
+  for (const line of lines) {
+    const normalized = line.trim();
+    if (!normalized) continue;
+    if (LOW_SIGNAL_KEYS.has(normalized.toLowerCase())) {
+      result.low.push(line);
+      continue;
+    }
+    const priority = PRIORITY_RULES[normalized] ?? (bucket === "risk" ? "medium" : "medium");
+    result[priority].push(line);
+  }
+  return result;
+}
+
+function filterGeneralPressureLine(lines: string[]): string[] {
+  const normalizedLines = lines.map((line) => line.trim().toLowerCase());
+  const hasSpecific = normalizedLines.some((value) =>
+    value.includes("noise increased") ||
+    value.includes("time") ||
+    value.includes("danger") ||
+    value.includes("pressure from")
+  );
+  if (!hasSpecific) return lines;
+  return lines.filter((line) => line.trim().toLowerCase() !== "pressure increased");
+}
+
+function normalizePlayerFacingLine(line: string, bucket: "world" | "risk" | "opportunity") {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (BANNED_CONSEQUENCE_LINES.has(lower)) return null;
+  for (const [pattern, replacement] of INTERNAL_CONSEQUENCE_MAPPINGS) {
+    if (pattern.test(trimmed)) {
+      return replacement;
+    }
+  }
+  switch (bucket) {
+    case "world":
+      return PLAYER_FACING_PERSISTENT_LINES.has(lower) ? trimmed : null;
+    case "risk":
+      return PLAYER_FACING_RISK_PATTERNS.some((pattern) => pattern.test(trimmed)) ? trimmed : null;
+    case "opportunity":
+      return PLAYER_FACING_OPPORTUNITY_PATTERNS.some((pattern) => pattern.test(trimmed)) ? trimmed : null;
+  }
+  return null;
+}
+
+function filterPlayerFacingLines(lines: string[], bucket: "world" | "risk" | "opportunity") {
+  return lines
+    .map((line) => normalizePlayerFacingLine(line, bucket))
+    .filter((line): line is string => Boolean(line));
+}
+
+type ConsequencePreset = {
+  bucket: ConsequenceBucketName;
+  text: string;
+  key: string;
+  patterns: RegExp[];
+};
+
+type ConsequenceSourceKey = "clues" | "costs" | "world" | "pressure" | "social" | "position";
+
+type ConsequenceSource = Record<ConsequenceSourceKey, string[]>;
+
+const CONSEQUENCE_PRESETS: ConsequencePreset[] = [
+  { bucket: "gained", text: "Hidden clue recovered", key: "clue_recovered", patterns: [/clue/, /observation/, /evidence/, /ledger/] },
+  { bucket: "cost", text: "Time advanced", key: "time_advanced", patterns: [/time/, /delay/, /waiting/, /turn/, /opportunity/] },
+  { bucket: "worldChange", text: "Your position is less concealed", key: "position_exposed", patterns: [/position/, /stealth/, /cover/, /hostile/, /exposed/, /penalty|rank/] },
+  { bucket: "worldChange", text: "Scene shifted", key: "scene_shift", patterns: [/scene/, /door/, /floor/, /wall/, /tile/, /tapestry/, /brazier/, /lantern/] },
+  { bucket: "worldChange", text: "The environment becomes more dangerous", key: "scene_danger", patterns: [/complication/, /failforward/] },
+  { bucket: "pressureChange", text: "Noise increased", key: "noise", patterns: [/noise/, /attention/, /watchfulness/ ] },
+  { bucket: "pressureChange", text: "Pressure increased", key: "pressure_increase", patterns: [/pressure/, /danger/, /risk/, /suspicion/, /alert/, /threat/, /tension/] },
+  { bucket: "pressureChange", text: "Risk intensified", key: "risk", patterns: [/risk/] },
+  { bucket: "cost", text: "Additional effort required", key: "extra_cost", patterns: [/extra cost/, /consequence-budget/] },
+];
+
+const INVENTORY_KEY_LABELS: Record<string, string> = {
+  wax_seal_fragment: "Wax seal fragment",
+  stolen_reliquary: "Stolen reliquary",
+  iron_lantern: "Iron lantern",
+};
+
+function normalizeInventoryLabel(key?: string | null, fallback?: string): string {
+  if (!key) return fallback ?? "item";
+  const normalized = key.trim().toLowerCase();
+  if (normalized in INVENTORY_KEY_LABELS) {
+    return INVENTORY_KEY_LABELS[normalized];
+  }
+  return normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function deriveInventoryTargetName(turn: PlayTurn): string | null {
+  if (!Array.isArray(turn.stateDeltas)) return null;
+  for (const delta of turn.stateDeltas as InventoryDelta[]) {
+    if (!delta || typeof delta !== "object") continue;
+    switch (delta.type) {
+      case "inventory.add":
+        return delta.item?.name ?? normalizeInventoryLabel(delta.item?.key);
+      case "inventory.remove":
+        return normalizeInventoryLabel(delta.itemKey);
+      case "inventory.transfer_to_world":
+        return normalizeInventoryLabel(delta.placement.itemKey);
+      case "inventory.state":
+        return normalizeInventoryLabel(delta.itemKey);
+      default:
+        break;
+    }
+  }
+  return null;
+}
+
+function buildInventoryStructuredConsequences(actionKind?: string | null, targetName?: string | null): StructuredConsequences {
+  const label = targetName || "the item";
+  const lowerLabel = label.toLowerCase();
+  const worldLines: string[] = [];
+  const gainedLines: string[] = [];
+  switch (actionKind) {
+    case "take":
+      gainedLines.push(`${label} acquired`);
+      worldLines.push(`${label} removed from the scene`);
+      break;
+    case "drop":
+      worldLines.push(`${label} placed in the room`);
+      break;
+    case "stash":
+      worldLines.push(`${label} stashed away out of sight`);
+      break;
+    case "light":
+      worldLines.push(`${label} lit`);
+      break;
+    case "extinguish":
+      worldLines.push(`${label} extinguished`);
+      break;
+    case "present":
+      gainedLines.push(`${label} revealed to the room`);
+      worldLines.push(`${label} now stands at the center of attention`);
+      break;
+    default:
+      worldLines.push(`${label} handled with care`);
+      break;
+  }
+
+  return {
+    gained: gainedLines,
+    cost: [],
+    worldChange: worldLines,
+    pressureChange: [],
+  };
+}
+
+function buildInventoryStoryBeat(actionKind?: string | null, targetName?: string | null): string {
+  const label = targetName ? targetName : "the item";
+  switch (actionKind) {
+    case "take":
+      return `You lift ${label.toLowerCase()} and tuck it into your pack before the room can respond.`;
+    case "drop":
+      return `You set ${label.toLowerCase()} down with deliberate care and let the dust settle around it.`;
+    case "stash":
+      return `You slip ${label.toLowerCase()} into a hidden nook where it might stay unnoticed.`;
+    case "light":
+      return `You strike a small flame and let ${label.toLowerCase()} brighten the darkness.`;
+    case "extinguish":
+      return `You snuff ${label.toLowerCase()}, letting the shadows close in again.`;
+    case "present":
+      return `You hold ${label.toLowerCase()} up as evidence and wait to see who flinches.`;
+    default:
+      return `You handle ${label.toLowerCase()} with steady hands.`;
+  }
+}
+
+const SEMANTIC_KEY_MAP: Record<string, string> = {
+  scene_shift: "scene_change",
+  scene_danger: "scene_change",
+  position_exposed: "position_exposed",
+  extra_cost: "extra_cost",
+};
+
+const pressureLabelMap: Record<string, string> = {
+  suspicion: "Suspicion intensified",
+  danger: "Danger increased",
+  noise: "Noise increased",
+  time: "Time advanced",
+};
+
+const LOOK_CLUE_KEYWORDS = ["clue", "observation", "detail", "trace", "pattern", "ledger", "reveal", "seam", "evidence"];
+const COST_KEYWORDS = ["time", "delay", "waiting", "opportunity", "turn", "spent", "extra", "effort", "penalty", "strain", "budget"];
+const WORLD_REVEAL_KEYWORDS = ["scene", "door", "tile", "wall", "brazier", "tapestry", "floor", "compartment", "chamber", "frame", "seam"];
+const PRESSURE_KEYWORDS = ["pressure", "danger", "risk", "alert", "threat", "noise", "suspicion", "watch", "attention"];
+const SOCIAL_KEYWORDS = ["suspicion", "danger", "alert", "trust", "listen", "voice", "reaction", "silence", "watchful", "npc", "response", "counter", "attend"];
+const POSITION_KEYWORDS = ["position", "cover", "exposed", "penalty", "guard", "concealed", "ghost", "trace", "hall", "doorway"];
+const MINOR_PRESSURE_KEYWORDS = ["noise", "time", "suspicion", "alert"];
+const RESPONSE_KEYWORDS = ["response", "silence", "listen", "react", "answer", "movement", "watchful"];
+
+const CONSEQUENCE_BUCKET_ORDER: ConsequenceBucketName[] = ["gained", "cost", "worldChange", "pressureChange"];
+
+function includesKeyword(value: string, keywords: string[]): boolean {
+  const lower = value.toLowerCase();
+  return keywords.some((keyword) => lower.includes(keyword));
+}
+
+function classifySourceToken(token: string): ConsequenceSourceKey | null {
+  const lower = token.toLowerCase();
+  if (includesKeyword(lower, LOOK_CLUE_KEYWORDS)) return "clues";
+  if (includesKeyword(lower, COST_KEYWORDS)) return "costs";
+  if (includesKeyword(lower, PRESSURE_KEYWORDS)) return "pressure";
+  if (includesKeyword(lower, SOCIAL_KEYWORDS)) return "social";
+  if (includesKeyword(lower, POSITION_KEYWORDS)) return "position";
+  if (includesKeyword(lower, WORLD_REVEAL_KEYWORDS)) return "world";
+  return null;
+}
+
+function createConsequenceSource(): ConsequenceSource {
+  return {
+    clues: [],
+    costs: [],
+    world: [],
+    pressure: [],
+    social: [],
+    position: [],
+  };
+}
+
+function addSourceToken(source: ConsequenceSource, key: ConsequenceSourceKey, value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  if (source[key].includes(trimmed)) return;
+  source[key].push(trimmed);
+}
+
+function mapLedgerCategoryToSourceKey(category: LedgerCategory): ConsequenceSourceKey {
+  switch (category) {
+    case "pressure":
+      return "pressure";
+    case "time":
+      return "costs";
+    case "quest":
+    case "inventory":
+    case "npc":
+      return "clues";
+    case "world":
+    default:
+      return "world";
+  }
+}
+
+function extractConsequenceSources(params: {
+  stateDeltas: LatestTurnViewModel["stateDeltas"];
+  ledgerEntries: LedgerEntryViewModel[];
+  pressureChanges: LatestTurnViewModel["pressureChanges"];
+}): ConsequenceSource {
+  const sources = createConsequenceSource();
+
+  for (const delta of params.stateDeltas) {
+    const valueText = typeof delta.value === "string" ? delta.value : delta.value ? String(delta.value) : null;
+    const token = valueText && valueText.trim() ? valueText.trim() : delta.key;
+    if (!token) continue;
+    const category = classifySourceToken(token);
+    if (!category) {
+      addSourceToken(sources, "world", token);
+      continue;
+    }
+    addSourceToken(sources, category, token);
+  }
+
+  for (const entry of params.ledgerEntries) {
+    const cause = entry.cause ? mapLedgerText(entry.cause) : "";
+    const effect = entry.effect ? mapLedgerText(entry.effect) : "";
+    const text = [cause, effect].filter(Boolean).join(" → ");
+    if (!text) continue;
+    const categoryKey = mapLedgerCategoryToSourceKey(entry.category);
+    addSourceToken(sources, categoryKey, text);
+    const category = classifySourceToken(text) ?? categoryKey;
+    addSourceToken(sources, category, text);
+  }
+
+  for (const change of params.pressureChanges) {
+    const label = pressureLabelMap[change.domain] ?? `Pressure ${change.domain} increased`;
+    addSourceToken(sources, "pressure", label);
+  }
+
+  return sources;
+}
+
+function isAdditionalEffortToken(value: string): boolean {
+  return includesKeyword(value, ["extra", "effort", "penalty", "strain", "cost", "budget"]);
+}
+
+function isLookWorldSignal(value: string): boolean {
+  return includesKeyword(value, ["clue", "detail", "trace", "seam", "ledger", "reveal"]);
+}
+
+function isMinorPressureToken(value: string): boolean {
+  return includesKeyword(value, MINOR_PRESSURE_KEYWORDS);
+}
+
+function isSuspicionPressure(value: string): boolean {
+  return includesKeyword(value, ["suspicion", "alert", "watch", "reaction"]);
+}
+
+function isSocialWorldSignal(value: string): boolean {
+  return includesKeyword(value, RESPONSE_KEYWORDS);
+}
+
+const INTENT_BUCKET_MAP: Record<"DO" | "LOOK" | "SAY", Array<ConsequenceSourceKey>> = {
+  DO: ["clues", "costs", "world", "pressure", "position"],
+  LOOK: ["clues", "costs", "pressure"],
+  SAY: ["social", "costs", "pressure"],
+};
+
+function filterSourcesByIntent(intent: LatestTurnViewModel["mode"] | null, sources: ConsequenceSource): ConsequenceSource {
+  const intentKey: "DO" | "LOOK" | "SAY" = intent ?? "DO";
+  const allowed = new Set(INTENT_BUCKET_MAP[intentKey]);
+  const filtered = createConsequenceSource();
+  for (const key of Object.keys(sources) as ConsequenceSourceKey[]) {
+    filtered[key] = allowed.has(key) ? [...sources[key]] : [];
+  }
+  if (intentKey === "LOOK") {
+    filtered.costs = filtered.costs.filter((value) => !isAdditionalEffortToken(value));
+    filtered.pressure = filtered.pressure.filter(isMinorPressureToken);
+  }
+  if (intentKey === "SAY") {
+    filtered.costs = filtered.costs.filter((value) => includesKeyword(value, ["time", "suspicion", "noise", "alert"]));
+    filtered.pressure = filtered.pressure.filter(isSuspicionPressure);
+  }
+  return filtered;
+}
+
+function sanitizeConsequenceLine(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
+function addUniqueLine(lines: string[], text: string) {
+  const sanitized = sanitizeConsequenceLine(text);
+  if (!sanitized) return;
+  if (lines.includes(sanitized)) return;
+  lines.push(sanitized);
+}
+
+function buildPlayerConsequenceBuckets(params: {
+  persistentLines: ConsequenceLine[];
+  turnLines: ConsequenceLine[];
+}): PlayerConsequencePresentation {
+  const bucket = (lines: ConsequenceLine[], category: ConsequenceCategory) =>
+    lines
+      .filter((line) => line.category === category)
+      .sort((a, b) => b.priority - a.priority)
+      .map((line) => line.text);
+  return {
+    persistent: {
+      world: bucket(params.persistentLines, "world"),
+      risk: bucket(params.persistentLines, "risk"),
+      opportunity: bucket(params.persistentLines, "opportunity"),
+    },
+    thisTurn: {
+      world: bucket(params.turnLines, "world"),
+      risk: filterGeneralPressureLine(bucket(params.turnLines, "risk")),
+      opportunity: bucket(params.turnLines, "opportunity"),
+    },
+  };
+}
+
+const HARD_BLOCK_FOR_LOOK_SAY = new Set([
+  "Additional effort required",
+  "Your position is less concealed",
+  "Scene shifted",
+  "Noise increased",
+  "Pressure increased",
+]);
+
+function stripHardBlocked(intent: LatestTurnViewModel["mode"] | null, buckets: ConsequenceBuckets): ConsequenceBuckets {
+  const normalizedIntent: "DO" | "LOOK" | "SAY" = intent ?? "DO";
+  if (normalizedIntent === "DO") return buckets;
+  const deny = HARD_BLOCK_FOR_LOOK_SAY;
+  const filter = (values: string[]) => values.filter((value) => !deny.has(value));
+  return {
+    gained: filter(buckets.gained),
+    cost: filter(buckets.cost),
+    worldChange: filter(buckets.worldChange),
+    pressureChange: filter(buckets.pressureChange),
+  };
+}
+
+function enforceIntentContract(intent: LatestTurnViewModel["mode"] | null, buckets: ConsequenceBuckets): ConsequenceBuckets {
+  const normalizedIntent: "DO" | "LOOK" | "SAY" = intent ?? "DO";
+  if (normalizedIntent === "LOOK") {
+    const result: ConsequenceBuckets = {
+      gained: buckets.gained,
+      cost: buckets.cost.filter((value) => /time|delay|waiting|attention|turn/i.test(value)),
+      worldChange: [],
+      pressureChange: buckets.pressureChange.filter((value) => /slight|minor|attention|tension|time|noise/i.test(value)),
+    };
+    return stripHardBlocked(intent, result);
+  }
+  if (normalizedIntent === "SAY") {
+    const result: ConsequenceBuckets = {
+      gained: buckets.gained.filter((value) => /response|reaction|reply|attention|heard|voice|presence|suspicion|alert|watch/i.test(value)),
+      cost: buckets.cost.filter((value) => /time|delay|waiting|suspicion|attention/i.test(value)),
+      worldChange: buckets.worldChange.filter((value) => /heard|attention|presence|response|suspicion/i.test(value)),
+      pressureChange: buckets.pressureChange.filter((value) => /suspicion|alert|attention/i.test(value)),
+    };
+    return stripHardBlocked(intent, result);
+  }
+  return buckets;
+}
+
+
 export function buildAdventureHistoryRowViewModel(
   turn: PlayTurn,
   pressureStage: string | null | undefined
@@ -740,7 +1281,7 @@ export function buildAdventureHistoryRowViewModel(
     rawText.replace(/^([A-Za-z]+):\s*/, "").trim() || rawText || commandFallback;
   const ledgerEntries = formatLedgerDisplay(turn.ledgerAdds ?? []);
   const consequenceSummary =
-    ledgerEntries.slice(0, 2).map(({ cause, effect }) => (effect ? `${cause} → ${effect}` : cause)) ?? [];
+    ledgerEntries.slice(0, 1).map(({ cause, effect }) => (effect ? `${cause} → ${effect}` : cause)) ?? [];
   const pressureLabel = (pressureStage ?? "calm").toUpperCase();
   const resolutionSource = turn.resolutionJson ?? turn.resolution;
   const normalizedResolution = normalizeResolutionValue(resolutionSource);
