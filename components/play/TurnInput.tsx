@@ -85,16 +85,12 @@ export default function TurnInput({ adventureId, isSubmitting, error, onSubmitTu
   return (
     <form
       onSubmit={handleSubmit}
-      className={`${cardShell} ${cardPadding} space-y-4 transition-opacity duration-200 ${
+      className={`${cardShell} ${cardPadding} space-y-4 bg-black/40 border-white/10 transition-opacity duration-200 ${
         isSubmitting ? "opacity-70 pointer-events-none" : "opacity-100"
-      } ${composerStyle.inputBorder} ${composerStage === "crisis" ? composerStyle.glow : ""}`}
+      } ${composerStage === "crisis" ? composerStyle.glow : composerStyle.inputBorder}`}
     >
-      <div className="space-y-1">
-        <div className={sectionHeading}>Mode</div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-xs text-white/70">MODE: {mode}</span>
-          <p className="text-xs text-white/60">{modeConfig[mode].description}</p>
-        </div>
+      <div className="space-y-2">
+        <p className="text-[11px] font-semibold tracking-[0.3em] text-white/70">ACTION</p>
       </div>
 
       <div className="inline-flex flex-wrap gap-2 rounded-full border border-white/10 bg-black/20 p-1">
@@ -113,9 +109,6 @@ export default function TurnInput({ adventureId, isSubmitting, error, onSubmitTu
       />
 
       <div className="flex flex-col gap-2 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">
-        <p className="uppercase tracking-[0.3em] text-[#c9a35a]">
-          What do you do next? One action resolves one turn.
-        </p>
         <button
           type="submit"
           disabled={!canSubmit}

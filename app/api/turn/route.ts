@@ -148,8 +148,16 @@ import { classifyResolvedTurnDeltas } from "@/lib/engine/classifyResolvedTurnDel
 import { evaluatePressureThresholds } from "@/lib/engine/evaluatePressureThresholds";
 import { resolvePressureConsequences } from "@/lib/engine/resolvePressureConsequences";
 import { inferPressureDeltas } from "@/lib/engine/inferPressureDeltas";
+import type { InventoryDelta } from "@/lib/engine/types/inventory";
+import { parseInventoryIntent, type ParsedInventoryIntent } from "@/lib/engine/inventory/parseInventoryIntent";
+import { resolveInventoryIntent } from "@/lib/engine/inventory/resolveInventoryIntent";
+import { buildInventoryContext } from "@/lib/engine/inventory/inventoryContext";
 import { resolveActionEffects } from "@/lib/engine/resolveActionEffects";
 import { validateResolvedTurnContract } from "@/lib/engine/validateResolvedTurnContract";
+import { normalizeAdventureState as normalizePersistentAdventureState } from "@/lib/engine/state/normalizeAdventureState";
+import type { AdventureState } from "@/lib/engine/types/state";
+import type { PlayTurn } from "@/app/play/types";
+import { CompatibilityError } from "@/lib/engine/contracts/assertAdventureCompatibility";
 
 const FINALIZED_EFFECT_SUMMARY_VALUES = new Set<FinalizedEffectSummary>([
   "noise.escalation",
@@ -1006,6 +1014,106 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       (previousAdventureStateRow?.sceneCameraContinuityState as SceneCameraContinuityState | null) ??
       INITIAL_SCENE_CAMERA_CONTINUITY;
     const previousStateRecord = asRecord(previousAdventureStateRow?.state ?? null);
+    const normalizedAdventureState = normalizePersistentAdventureState(previousStateRecord as AdventureState);
+    const stateSource = previousAdventureStateRow?.state ? "persisted" : "seed";
+    console.log("inventory.state.load", {
+      adventureId,
+      stateSource,
+      inventoryKeys: (normalizedAdventureState.inventory?.items ?? []).map((item) => item.key),
+      worldItems: (normalizedAdventureState.worldItems ?? []).map((item) => item.itemId),
+    });
+    const inventorySceneIdentity = deriveSceneIdentityFromTurnState(normalizedAdventureState);
+    const inventorySceneIdentityKey = inventorySceneIdentity ? buildSceneIdentityKey(inventorySceneIdentity) : null;
+    const inventoryIntent = parseInventoryIntent({
+      mode: playerIntentMode ?? "DO",
+      text: playerText,
+    });
+    if (inventoryIntent) {
+      console.log("inventory.intent.debug", {
+        playerIntentMode,
+        playerText,
+        parsedInventoryIntent: inventoryIntent,
+      });
+      const inventoryResolution = resolveInventoryIntent({
+        state: normalizedAdventureState,
+        input: { mode: playerIntentMode ?? "DO", text: playerText },
+        parsed: inventoryIntent,
+        seed: `${playerIntentMode ?? "DO"}:${playerText}:${inventorySceneIdentityKey ?? ""}`,
+      });
+      console.log("inventory.resolve.debug", {
+        inventoryIntent,
+        resolved: inventoryResolution?.resolved ?? false,
+        inventoryResolution,
+        worldItems: normalizedAdventureState.worldItems,
+        inventoryItems: normalizedAdventureState.inventory?.items ?? [],
+        locationId: normalizedAdventureState.currentScene?.locationKey ?? null,
+      });
+      if (inventoryResolution) {
+        const latestInventoryTurn = await db.turn.findFirst({
+          where: { adventureId },
+          orderBy: { turnIndex: "desc" },
+        });
+        const inventoryTurnIndex = (latestInventoryTurn?.turnIndex ?? 0) + 1;
+        const inventorySceneText = asRecord(normalizedAdventureState.currentScene ?? null)?.text ?? "";
+        const targetName = inventoryResolution.target;
+        const inventoryTurn: PlayTurn = {
+          id: `inventory-${inventoryTurnIndex}`,
+          turnIndex: inventoryTurnIndex,
+          playerInput: playerText,
+          scene: inventorySceneText,
+          resolution: inventoryIntent.kind,
+          stateDeltas: inventoryResolution.stateDeltas,
+          ledgerAdds: inventoryResolution.ledgerAdds,
+          createdAt: new Date().toISOString(),
+          presentation: {
+            resolution: null,
+            narration: null,
+            ledgerEntries: [],
+          },
+          isInventoryTurn: true,
+          inventoryActionKind: inventoryIntent.kind,
+          inventoryActionTarget: targetName,
+        };
+        const responseBase = {
+          playerText,
+          mode: playerIntentMode ?? "DO",
+          action: null,
+          tags: [],
+          rollTotal: null,
+          turnIndex: inventoryTurnIndex,
+          turn: inventoryTurn,
+          isInventoryTurn: true,
+          inventoryActionKind: inventoryIntent.kind,
+          inventoryActionTarget: targetName,
+          stateDeltas: inventoryResolution.stateDeltas,
+          ledgerAdds: inventoryResolution.ledgerAdds,
+          sceneArt: null,
+          sceneUpdate: null,
+          scenePresentation: {
+            sceneText: inventorySceneText,
+            consequenceText: [],
+          },
+          sceneContinuity: null,
+          sceneRenderOpportunity: null,
+          sceneRenderCredits: previousAdventureStateRow?.sceneRenderCredits ?? null,
+          scenePresentationId: null,
+          opportunityWindow: null,
+          opportunityCost: null,
+        };
+        if (inventoryResolution.resolved) {
+          await db.adventure.update({ where: { id: adventureId }, data: { state: inventoryResolution.nextState } });
+          console.log("inventory.short_circuit.persist", {
+            items: inventoryResolution.nextState.inventory?.items ?? [],
+            worldItems: inventoryResolution.nextState.worldItems ?? [],
+          });
+          return NextResponse.json(
+            { ...responseBase, state: inventoryResolution.nextState },
+            { status: 200 },
+          );
+        }
+        return NextResponse.json({ ...responseBase, state: normalizedAdventureState }, { status: 200 });
+      }
+    }
     const previousStatsRecord = asRecord(previousStateRecord?.stats ?? null);
     const previousNoise = Number(previousStatsRecord?.noise ?? 0);
     const previousNpcSuspicion = Number(previousStatsRecord?.npcSuspicion ?? 0);
@@ -1083,6 +1191,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       await new Promise((r) => setTimeout(r, sleepMs));
     }
 
+
     const model = await runModelStub({
       prompt: playerText,
       max_tokens: preflight.perTurnMaxOutputTokens,
@@ -1149,7 +1258,14 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       where: { id: adventureId },
       select: { state: true },
     });
-    const stateRecord = asRecord(updatedAdventureState?.state ?? null);
+    const existingState = asRecord(updatedAdventureState?.state ?? null) ?? {};
+    const normalizedPersistentState = normalizePersistentAdventureState(existingState as AdventureState);
+    const stateRecord = normalizedPersistentState as Record<string, unknown> & {
+      noise?: number;
+      suspicion?: number;
+      time?: number;
+      danger?: number;
+    };
     const normalizedStateRecord = stateRecord as Record<string, unknown> & {
       noise?: number;
       suspicion?: number;
@@ -2630,6 +2746,8 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         outcomeTier: resolvedOutcomeTier,
       });
     }
+    const canonicalAdventureState = stateRecord as AdventureState;
+    const inventoryContext = buildInventoryContext(playerText, canonicalAdventureState);
     const authoredEffects =
       playerIntentMode === "LOOK" || playerIntentMode === "DO" || playerIntentMode === "SAY"
         ? resolveActionEffects({
@@ -2637,6 +2755,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             playerText,
             state: stateRecord,
             outcomeTier: resolvedOutcomeTier,
+            inventoryContext,
           })
         : null;
 
@@ -2974,6 +3093,12 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     });
     const deltaBuffer = [...baseStateDeltas];
     const normalizedStateDeltas = deltaBuffer as StateDelta[];
+    const fireFlagDelta = normalizedStateDeltas.find(
+      (delta) => delta.kind === "flag.set" && delta.key === "scene.fire",
+    );
+    const previousFlags = asRecord(stateRecord.flags) ?? {};
+    const sceneFireActive = fireFlagDelta ? Boolean(fireFlagDelta.value) : Boolean(previousFlags["scene.fire"]);
+    stateRecord.flags = { ...previousFlags, "scene.fire": sceneFireActive };
     const normalizedLedgerAdds: LedgerEntry[] = ledgerAddsWithVisual.map((entry) => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry as LedgerEntry;
       if (!Object.prototype.hasOwnProperty.call(entry, "outcome")) return entry as LedgerEntry;
@@ -3044,6 +3169,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     };
     stateRecord.stats = { ...updatedStats };
     stateRecord.pressure = nextPressure;
+    const canonicalFlags = asRecord(normalizedStateRecord.flags) ?? {};
     const nextAdventureState = {
       ...stateRecord,
       stats: {
@@ -3397,6 +3523,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         ...(finalized as any).turn,
         stateDeltas: turnStateDeltas,
         ledgerAdds: normalizedLedgerAdds,
+        stateFlags: canonicalFlags,
       },
       stateDeltas: turnStateDeltas,
       ledgerAdds: normalizedLedgerAdds,
@@ -3427,6 +3554,10 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
   } catch (err: unknown) {
     if (isRequestBodyTooLargeError(err)) {
       return errorResponse(413, "Payload too large");
+    }
+
+    if (err instanceof CompatibilityError) {
+      return errorResponse(409, err.message);
     }
 
     if (holdKey && leaseKeyForCleanup) {

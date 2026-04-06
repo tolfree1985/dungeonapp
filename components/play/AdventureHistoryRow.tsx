@@ -49,14 +49,9 @@ export default function AdventureHistoryRow({ model }: Props) {
       </div>
       <p className="mt-1 text-sm font-semibold text-white leading-snug">{model.command}</p>
       {model.consequenceSummary.length > 0 && (
-        <ul className="mt-2 space-y-1 text-xs text-white/70">
-          {model.consequenceSummary.map((line, index) => (
-            <li key={`${model.turnIndex}-${index}`} className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-white/40" />
-              <span>{line}</span>
-            </li>
-          ))}
-        </ul>
+        <p className="mt-2 text-xs text-white/70">
+          {model.consequenceSummary[0]}
+        </p>
       )}
     </div>
   );

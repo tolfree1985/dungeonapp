@@ -1,8 +1,9 @@
 import type { LedgerPresentationEntry } from "@/server/scene/ledger-presentation";
 import { enhanceConsequenceLine } from "./consequenceLanguage";
 import type { ConsequenceKind } from "./consequenceLanguage";
-import { buildTurnConsequences, type TurnConsequenceSlots } from "./buildTurnConsequences";
-import type { PressureSnapshot } from "./escalationBeats";
+import { buildTurnConsequences } from "./buildTurnConsequences";
+import { buildTurnStoryBeat } from "./buildTurnStoryBeat";
+import type { EscalationBeat, PressureSnapshot } from "./escalationBeats";
 
 export type ShapeTurnPresentationInput = {
   turnIndex: number | null;
@@ -20,9 +21,10 @@ export type ShapeTurnPresentationInput = {
 
 export type ShapeTurnPresentationResult = {
   sceneSummary: string;
+  storyBeat: string;
   consequenceLines: string[];
   followUpHook?: string | null;
-  consequenceSlots: TurnConsequenceSlots;
+  escalationBeat: EscalationBeat;
 };
 
 const ABSTRACT_SUMMARY_KEYWORDS = [
@@ -269,7 +271,7 @@ export function shapeTurnPresentation(input: ShapeTurnPresentationInput): ShapeT
     time: 0,
     danger: 0,
   };
-  const slots = buildTurnConsequences({
+  const consequenceResult = buildTurnConsequences({
     mode: input.mode,
     sceneKey: input.sceneKey ?? null,
     promptHash: input.promptHash ?? null,
@@ -280,6 +282,33 @@ export function shapeTurnPresentation(input: ShapeTurnPresentationInput): ShapeT
     pressure: pressureSnapshot,
     repeatedInvestigations,
   });
+  const slots = consequenceResult.slots;
+  const escalationBeat = consequenceResult.escalationBeat;
+  const clueDetail = focus?.summary ?? changeLine ?? baseSceneSummary;
+  const worldDetail =
+    changeLine ??
+    focus?.summary ??
+    escalationBeat.sceneShift ??
+    baseSceneSummary;
+  const reactionDetail =
+    attentionLine ??
+    escalationBeat.responseCue ??
+    escalationBeat.sceneShift ??
+    null;
+  const storyBeat = buildTurnStoryBeat({
+    mode: input.mode,
+    actionText: input.playerInput ?? null,
+    outcomeTier: input.outcomeTier ?? null,
+    sceneKey: input.sceneKey ?? null,
+    promptHash: input.promptHash ?? null,
+    turnIndex: input.turnIndex,
+    clueDetail,
+    worldDetail,
+    reactionDetail,
+    escalationBeat,
+    pressure: pressureSnapshot,
+    baseSummary: baseSceneSummary,
+  });
   const curatedConsequenceLines = [
     slots.gain,
     slots.shift,
@@ -288,8 +317,9 @@ export function shapeTurnPresentation(input: ShapeTurnPresentationInput): ShapeT
 
   return {
     sceneSummary: baseSceneSummary,
+    storyBeat,
     consequenceLines: curatedConsequenceLines,
     followUpHook: slots.hook ?? baseFollowUpHook ?? null,
-    consequenceSlots: slots,
+    escalationBeat,
   };
 }

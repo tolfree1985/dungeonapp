@@ -14,6 +14,7 @@
     "ci:billing": "bash scripts/with-sqlite-env.sh sh -lc 'npx prisma generate && npm run smoke:billing'",
     "scenario:bootstrap:test": "SCENARIO_ID=mystery-docks node --import tsx scripts/test-scenario-bootstrap.ts",
     "scenario:validate": "node --import tsx scripts/validate-scenario.ts scenarios",
+    "affordance:lint": "node --import tsx scripts/affordance-lint.ts",
     "ci:creator": "npm run scenario:validate && npm run typecheck",
     "ci:all": "npm run ci:billing && npm run ci:creator",
     "ci:smoke-prod-surface": "bash scripts/with-sqlite-env.sh node --import tsx scripts/smoke-prod-surface.ts",

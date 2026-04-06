@@ -11,6 +11,7 @@ import type { ConsequenceEntry } from "@/server/scene/consequence-bundle";
 import type { FinalizedConsequenceNarration } from "@/server/scene/finalized-consequence-narration";
 import type { LedgerPresentationEntry } from "@/server/scene/ledger-presentation";
 import type { TurnResolutionPresentation } from "@/server/scene/turn-resolution-presentation";
+import type { ParsedInventoryIntent } from "@/lib/engine/inventory/parseInventoryIntent";
 
 export type PressureStage = "calm" | "tension" | "danger" | "crisis";
 
@@ -21,6 +22,7 @@ export type PlayTurn = {
   scene: string;
   resolution: string;
   stateDeltas: unknown[];
+  stateFlags?: Record<string, unknown>;
   ledgerAdds: unknown[];
   createdAt: string;
   resolutionJson?: unknown;
@@ -58,6 +60,9 @@ export type PlayTurn = {
     lines: string[];
   };
   presentation: PlayTurnPresentation;
+  isInventoryTurn?: boolean;
+  inventoryActionKind?: ParsedInventoryIntent["kind"] | null;
+  inventoryActionTarget?: string | null;
   pressureStage?: PressureStage | null;
 };
 

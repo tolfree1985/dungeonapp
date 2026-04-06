@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
 import type { SceneContinuityState } from "@/lib/sceneContinuity";
 import type { SceneFocusState } from "@/lib/resolveSceneFocusState";
@@ -27,12 +28,21 @@ export function SceneImagePanel({
   transitionCue?: string | null;
   isRenderingScene?: boolean;
 }) {
-  const resolvedImageUrl = sceneArt?.imageUrl ?? sceneArt?.resolvedBackdropUrl ?? null;
+  const [imageFailed, setImageFailed] = useState(false);
+  const resolvedImageUrl = sceneArt?.resolvedBackdropUrl ?? sceneArt?.imageUrl ?? null;
+  console.log("scene.image.debug", {
+    sceneKey: sceneArt?.sceneKey ?? null,
+    promptHash: sceneArt?.promptHash ?? null,
+    status: sceneArt?.status ?? null,
+    imageUrl: sceneArt?.imageUrl ?? null,
+    resolvedBackdropUrl: sceneArt?.resolvedBackdropUrl ?? null,
+  });
+  const trimmedImageUrl = typeof resolvedImageUrl === "string" ? resolvedImageUrl.trim() : null;
   const status = sceneArt?.status;
   const isActivated = status === "queued" || status === "generating" || status === "ready";
-  const hasReadyImage = Boolean(resolvedImageUrl && status === "ready");
+  const hasRenderableImage = !imageFailed && Boolean(trimmedImageUrl) && status === "ready";
   const focusLabel = focusState?.focusLabel ? `Focus: ${focusState.focusLabel}` : undefined;
-  const renderStateBadge = hasReadyImage
+  const renderStateBadge = hasRenderableImage
     ? "Scene art ready"
     : isRenderingScene
     ? "Rendering scene art"
@@ -42,16 +52,16 @@ export function SceneImagePanel({
     <div
       className={`relative overflow-hidden rounded-2xl border bg-black/40 transition duration-500 ${
         isActivated
-          ? hasReadyImage
+          ? hasRenderableImage
             ? "border-emerald-400/40 shadow-[0_0_36px_rgba(16,185,129,0.22)]"
             : "border-emerald-400/25 shadow-[0_0_24px_rgba(16,185,129,0.12)]"
           : "border-white/10"
       }`}
     >
       <div className="relative aspect-[16/9] w-full bg-stone-900">
-        {hasReadyImage && resolvedImageUrl ? (
+        {hasRenderableImage && trimmedImageUrl ? (
           <img
-            src={resolvedImageUrl}
+            src={trimmedImageUrl}
             alt={sceneArt?.sceneKey ?? "Scene art"}
             className="h-full w-full object-cover"
             onError={(event) => {
@@ -62,6 +72,7 @@ export function SceneImagePanel({
                 src,
                 status: sceneArt?.status ?? null,
               });
+              setImageFailed(true);
             }}
           />
         ) : (
@@ -82,13 +93,13 @@ export function SceneImagePanel({
         </div>
         <div className="absolute top-4 left-2 text-[10px] uppercase tracking-[0.3em]">
           <span
-            className={`rounded-md border px-2 py-1 ${
-              hasReadyImage
+          className={`rounded-md border px-2 py-1 ${
+            hasRenderableImage
                 ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-200"
                 : "border-white/15 bg-black/50 text-neutral-400"
             }`}
           >
-            {hasReadyImage ? "GENERATED SCENE" : "SCENE VIEWPORT"}
+            {hasRenderableImage ? "GENERATED SCENE" : "SCENE VIEWPORT"}
           </span>
         </div>
         {transition && (

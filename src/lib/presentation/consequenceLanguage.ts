@@ -52,7 +52,7 @@ const CONSEQUENCE_DEFINITIONS: ConsequenceDefinition[] = [
   },
   {
     kind: "scene_disturbed",
-    keywords: ["disturb", "disturbed", "moved", "changed"],
+    keywords: ["disturb", "disturbed", "moved", "changed", "fire", "burn", "flame", "ignite", "smoke", "heat"],
     text: "The room is no longer undisturbed.",
     summary: "the scene has shifted",
     followUp: "Take stock before it morphs again.",

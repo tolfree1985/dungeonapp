@@ -1,3 +1,6 @@
+import type { AdventureState, CurrentScene } from "@/lib/engine/types/state";
+import { normalizeAdventureState } from "@/lib/engine/state/normalizeAdventureState";
+
 type ScenarioContent = {
   initialState?: Record<string, unknown>;
   start?: {
@@ -11,32 +14,6 @@ type ScenarioContent = {
   summary?: string;
 };
 
-type CurrentScene = {
-  key: string;
-  kind: "scenario_start";
-  text: string;
-  locationKey: string | null;
-  timeKey: string | null;
-  source: {
-    type: "start.scene" | "start.prompt";
-  };
-};
-
-type AdventureState = Record<string, unknown> & {
-  flags: Record<string, unknown>;
-  stats: Record<string, unknown>;
-  quests: Record<string, unknown>;
-  inventory: unknown[];
-  relationships: Record<string, unknown>;
-  memory: unknown[];
-  currentScene: CurrentScene | null;
-  _meta: {
-    openingPrompt: string | null;
-    locationKey: string | null;
-    timeKey: string | null;
-    [key: string]: unknown;
-  };
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -123,12 +100,16 @@ export function buildAdventureStateFromScenario(input: ScenarioContent | { conte
       }
     : null;
 
+  const rawInventory = Array.isArray(initial.inventory) ? initial.inventory : [];
   const state: AdventureState = {
     ...initial,
     flags: isRecord(initial.flags) ? initial.flags : {},
     stats: isRecord(initial.stats) ? initial.stats : {},
     quests: isRecord(initial.quests) ? initial.quests : {},
-    inventory: Array.isArray(initial.inventory) ? initial.inventory : [],
+    inventory: {
+      items: rawInventory,
+    },
+    worldItems: Array.isArray(initial.worldItems) ? initial.worldItems : [],
     relationships: isRecord(initial.relationships) ? initial.relationships : {},
     memory: Array.isArray(initial.memory) ? initial.memory : [],
     currentScene,
@@ -139,6 +120,8 @@ export function buildAdventureStateFromScenario(input: ScenarioContent | { conte
       timeKey,
     },
   };
+
+  return normalizeAdventureState(state);
 
   return state;
 }

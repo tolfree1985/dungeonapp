@@ -1,16 +1,38 @@
 import type { LedgerEntry } from "@/lib/engine/resolveTurnContract";
 
+type LedgerTextMapping = {
+  predicate: (value: string) => boolean;
+  label: string;
+};
+
+const LEDGER_TEXT_MAPPINGS: LedgerTextMapping[] = [
+  { predicate: (value) => value.includes("pressure"), label: "Pressure increased" },
+  { predicate: (value) => value.includes("time"), label: "Time advanced" },
+  { predicate: (value) => value.includes("position") && value.includes("worsened"), label: "Your position worsened" },
+  { predicate: (value) => value.includes("observation"), label: "Clue recovered" },
+  { predicate: (value) => value.includes("risk"), label: "Risk increased" },
+  { predicate: (value) => value.includes("noise"), label: "Noise disturbed" },
+  { predicate: (value) => value.includes("suspicion"), label: "Suspicion rises" },
+  { predicate: (value) => value.includes("burn") || value.includes("fire"), label: "The environment heats up" },
+  { predicate: (value) => value.includes("search"), label: "Investigation deepens" },
+  { predicate: (value) => value.includes("guard"), label: "Guards take notice" },
+  { predicate: (value) => value.includes("obstacle"), label: "Obstacle cleared" },
+  { predicate: (value) => value.includes("door"), label: "Door moved" },
+  { predicate: (value) => value.includes("scene"), label: "Scene shifted" },
+];
+
+export function mapLedgerText(value: string): string {
+  const lower = value.toLowerCase();
+  for (const mapping of LEDGER_TEXT_MAPPINGS) {
+    if (mapping.predicate(lower)) {
+      return mapping.label;
+    }
+  }
+  return value;
+}
+
 export function toPlayerFacingLabel(entry: LedgerEntry): string {
-  const key = (entry.effect ?? entry.cause ?? "").toLowerCase();
-  if (key.includes("pressure")) return "Pressure increased";
-  if (key.includes("time")) return "Time advanced";
-  if (key.includes("position") && key.includes("worsened")) return "Your position worsened";
-  if (key.includes("observation")) return "Clue recovered";
-  if (key.includes("risk")) return "Risk increased";
-  if (key.includes("noise")) return "Noise disturbed";
-  if (key.includes("suspicion")) return "Suspicion rises";
-  if (key.includes("burn") || key.includes("fire")) return "The environment heats up";
-  if (key.includes("search")) return "Investigation deepens";
-  if (key.includes("guard")) return "Guards take notice";
-  return entry.effect ? entry.effect : entry.cause ? entry.cause : "Situation changed";
+  const candidate = (entry.effect ?? entry.cause ?? "").trim();
+  if (!candidate) return "Situation changed";
+  return mapLedgerText(candidate);
 }

@@ -4,19 +4,26 @@ import { sectionHeading, cardShell, cardPadding } from "./cardStyles";
 import type { LatestTurnViewModel } from "./presenters";
 import { pressureBorderClass } from "@/lib/ui/pressure-style";
 
-function Slot({
+function ConsequenceList({
   label,
-  value,
+  items,
 }: {
   label: string;
-  value: string | null;
+  items: string[];
 }) {
-  if (!value) return null;
+  if (!items.length) return null;
 
   return (
     <div className="space-y-1">
       <div className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">{label}</div>
-      <div className="text-sm text-zinc-300">{value}</div>
+      <ul className="mt-1 space-y-1 text-sm text-zinc-300">
+        {items.map((item) => (
+          <li key={item} className="flex gap-2 leading-relaxed">
+            <span className="text-amber-400">•</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -42,15 +49,20 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
 
   const outcomeLabel = model.outcomeLabel ?? "Outcome pending";
   const commandLabel = model.playerInput ?? "Command missing";
-  const sceneSummary =
+  const fallbackSceneSummary =
     model.sceneSummary ?? model.sceneText ?? "The scene will resolve once your action completes.";
-  const consequenceSlots = model.consequenceSlots;
-  const hasConsequenceSlots = Boolean(
-    consequenceSlots.gain ||
-    consequenceSlots.shift ||
-    consequenceSlots.cost ||
-    consequenceSlots.hook
+  const narrativeText = model.storyBeat ?? fallbackSceneSummary;
+  const hasPersistentConsequences = Boolean(
+    model.persistentWorldConsequences.length ||
+    model.persistentRiskConsequences.length ||
+    model.persistentOpportunityConsequences.length
   );
+  const hasThisTurnConsequences = Boolean(
+    model.worldConsequences.length ||
+    model.riskConsequences.length ||
+    model.opportunityConsequences.length
+  );
+  const hasConsequences = hasPersistentConsequences || hasThisTurnConsequences;
 
   return (
     <section className={`${cardShell} ${cardPadding} ${pressureBorderClass(model.pressureStage)} ${highlightClass}`}>
@@ -70,21 +82,49 @@ export default function LatestTurnCard({ model, isHighlighted }: Props) {
           {model.mode ?? "Action"} — {commandLabel}
         </div>
         <div className="text-lg font-semibold text-white">{outcomeLabel}</div>
-        <div className="text-sm text-zinc-300">{sceneSummary}</div>
-        <div className="mt-5 space-y-4">
-          <Slot label="You gained" value={consequenceSlots.gain} />
-          <Slot label="The scene changed" value={consequenceSlots.shift} />
-          <Slot label="It cost" value={consequenceSlots.cost} />
-          <Slot label="Next move" value={consequenceSlots.hook} />
-          {!hasConsequenceSlots ? (
-            <div className="text-sm text-zinc-500">No immediate consequences detected.</div>
-          ) : null}
+        <div className="mt-6 space-y-2">
+          <div className="text-[11px] uppercase tracking-[0.32em] text-zinc-500">Story</div>
+          <p className="max-w-[68ch] text-[17px] leading-8 text-zinc-100">{narrativeText}</p>
+        </div>
+        <div className="mt-8">
+          <div className="text-[11px] uppercase tracking-[0.32em] text-zinc-500">Consequences</div>
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4">
+            {hasConsequences ? (
+              <>
+                {hasPersistentConsequences ? (
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">Persistent</div>
+                    <div className="mt-3 space-y-4 md:grid md:grid-cols-3 md:gap-6">
+                      <ConsequenceList label="WORLD" items={model.persistentWorldConsequences} />
+                      <ConsequenceList label="RISK" items={model.persistentRiskConsequences} />
+                      <ConsequenceList label="OPPORTUNITY" items={model.persistentOpportunityConsequences} />
+                    </div>
+                  </div>
+                ) : null}
+                {hasThisTurnConsequences ? (
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">This Turn</div>
+                    <div className="mt-3 space-y-4 md:grid md:grid-cols-3 md:gap-6">
+                      <ConsequenceList label="WORLD" items={model.worldConsequences} />
+                      <ConsequenceList label="RISK" items={model.riskConsequences} />
+                      <ConsequenceList label="OPPORTUNITY" items={model.opportunityConsequences} />
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="text-sm text-zinc-500">No immediate consequences detected.</div>
+            )}
+          </div>
         </div>
         {model.followUpHook ? (
           <p className="mt-2 text-xs italic text-amber-200/80">{model.followUpHook}</p>
         ) : null}
         {model.pressureNote ? (
-          <p className="mt-2 text-xs text-amber-200/70">{model.pressureNote}</p>
+          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs uppercase tracking-[0.3em] text-amber-200">
+            <p className="font-semibold">PRESSURE</p>
+            <p className="mt-1 text-[11px] text-amber-100/80">{model.pressureNote}</p>
+          </div>
         ) : null}
       </div>
     </section>

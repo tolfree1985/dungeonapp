@@ -1,0 +1,36 @@
+{
+  "version": "1",
+  "id": "rope-beam",
+  "title": "The Rope Over the Dock",
+  "summary": "A fraying line tossed over the harbor beam could give you the high ground.",
+  "tags": ["exploration", "acrobatics"],
+  "affordanceExclusions": [
+    "lit_lantern_ignites_fabric",
+    "oil_spreads_fire",
+    "crowbar_pries_crate",
+    "crowbar_pries_weakened_crate",
+    "crate_is_weakened"
+  ],
+  "initialState": {
+    "player": { "hp": 8, "maxHp": 8, "stress": 0 },
+    "inventory": [
+      {
+        "id": "item_rope",
+        "key": "rope",
+        "name": "Length of Rope",
+        "category": "tool",
+        "tags": ["climb", "tether"],
+        "description": "A sturdy coil of hemp rope suitable for climbing or securing rigging.",
+        "state": {}
+      }
+    ],
+    "flags": {},
+    "quests": []
+  },
+  "start": {
+    "sceneId": "roof-beam",
+    "prompt": "The warehouse canopy pitches overhead with thick beams and a sagging rigging mast. A loop of rope drapes over the nearest beam, waiting to be secured.",
+    "sceneTags": ["warehouse", "beam", "high-ground"]
+  },
+  "content": { "rating": "PG", "warnings": ["none"] }
+}

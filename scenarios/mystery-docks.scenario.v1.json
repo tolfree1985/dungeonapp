@@ -4,9 +4,47 @@
   "title": "The Fog at Blackwater Docks",
   "summary": "A missing courier, a sealed crate, and too many witnesses who saw nothing.",
   "tags": ["mystery", "adventure", "sandbox"],
+  "affordanceExclusions": ["rope_anchors_beam"],
   "initialState": {
     "player": { "hp": 10, "maxHp": 10, "stress": 0 },
-    "inventory": [],
+    "inventory": [
+      {
+        "id": "item_iron_lantern",
+        "key": "iron_lantern",
+        "name": "Iron Lantern",
+        "category": "tool",
+        "tags": ["light", "portable", "inspection"],
+        "description": "A sturdy lantern that brightens the darkest corners.",
+        "state": { "lit": false, "charges": 3 }
+      },
+      {
+        "id": "item_wax_seal_fragment",
+        "key": "wax_seal_fragment",
+        "name": "Wax Seal Fragment",
+        "category": "evidence",
+        "tags": ["proof", "archives"],
+        "description": "Evidence tied to the abbey archives.",
+        "state": {}
+      },
+      {
+        "id": "item_oil_vial",
+        "key": "oil_vial",
+        "name": "Oil Vial",
+        "category": "resource",
+        "tags": ["oil", "flammable"],
+        "description": "A small vial of lamp oil reclaimed from the docks.",
+        "state": {}
+      },
+      {
+        "id": "item_crowbar",
+        "key": "crowbar",
+        "name": "Crowbar",
+        "category": "tool",
+        "tags": ["pry", "metal"],
+        "description": "A heavy crowbar used by stevedores to pry open crates.",
+        "state": {}
+      }
+    ],
     "flags": { "knowsCourierName": false },
     "quests": [{ "id": "find-courier", "status": "open" }]
   },
@@ -20,7 +58,7 @@
   ],
   "start": {
     "sceneId": "docks-arrival",
-    "prompt": "Night. Fog curls around the pilings. A lantern swings on a hook, unmanned. The harbormaster's office is dark—except for one thin line of light under the door.",
+    "prompt": "Night. Fog curls around the pilings. A lantern swings on a hook, unmanned. The harbormaster's office is dark—except for one thin line of light under the door. A damp tapestry and faded drapes billow beside a sealed crate that reeks of old wax.",
     "sceneTags": ["docks", "night", "fog"]
   },
   "locks": { "tone": "noir", "pacing": "steady", "genre": "mystery-adventure" },

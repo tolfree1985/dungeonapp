@@ -18,6 +18,7 @@ import LedgerPanel from "@/components/play/LedgerPanel";
 import { cardPadding, cardShell, emptyState, sectionHeading } from "@/components/play/cardStyles";
 import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
+import { normalizeStatePanel } from "./normalizeStatePanel";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
@@ -36,6 +37,7 @@ import { useRouter } from "next/navigation";
 import type { CanonicalSceneArtState } from "@/lib/scene-art/canonicalSceneArtState";
 import type { SceneArtContract, SceneRenderOpportunity } from "@/lib/scene-art/renderOpportunity";
 import type { PressureSummary } from "@/lib/presentation/pressureLanguage";
+
 
 const SCENE_TRANSITION_KEY = "chronicle:sceneTransition";
 
@@ -104,33 +106,29 @@ function RecentTurnsPanel({ rows }: { rows: AdventureHistoryRowViewModel[] }) {
   return (
     <section className={`${cardShell} ${cardPadding} space-y-4`}>
       <div className={sectionHeading}>Chronicle</div>
-      {visibleRows.length === 0 ? (
-        <div className={emptyState}>No history recorded yet.</div>
-      ) : (
-        <div className="space-y-3">
-          {visibleRows.map((row) => (
+      <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+        {visibleRows.length === 0 ? (
+          <div className={emptyState}>No history recorded yet.</div>
+        ) : (
+          visibleRows.map((row) => (
             <AdventureHistoryRow key={`${row.turnIndex}-${row.timestampLabel}`} model={row} />
-          ))}
-          {hiddenRows.length > 0 ? (
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => setShowFullHistory((v) => !v)}
-                className="text-xs text-zinc-500 hover:text-zinc-300"
-              >
-                {showFullHistory ? "Hide full chronicle" : "View full chronicle"}
-              </button>
-            </div>
-          ) : null}
-          {showFullHistory && hiddenRows.length > 0 && (
-            <div className="space-y-3 pt-2">
-              {hiddenRows.map((row) => (
-                <AdventureHistoryRow key={`hidden-${row.turnIndex}-${row.timestampLabel}`} model={row} />
-              ))}
-            </div>
-          )}
+          ))
+        )}
+        {hiddenRows.length > 0 && showFullHistory && hiddenRows.map((row) => (
+          <AdventureHistoryRow key={`hidden-${row.turnIndex}-${row.timestampLabel}`} model={row} />
+        ))}
+      </div>
+      {hiddenRows.length > 0 ? (
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => setShowFullHistory((v) => !v)}
+            className="text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            {showFullHistory ? "Hide full chronicle" : "View full chronicle"}
+          </button>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -271,6 +269,13 @@ export default function PlayClient({
   const MAX_HISTORY = 6;
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [resolvedTurns, setResolvedTurns] = useState<PlayTurn[]>(turns);
+  const [rawPlayState, setRawPlayState] = useState<unknown>(null);
+  const currentStatePanel = useMemo(() => {
+    if (rawPlayState) {
+      return normalizeStatePanel(rawPlayState);
+    }
+    return statePanel;
+  }, [rawPlayState, statePanel]);
   useEffect(() => {
     setResolvedTurns(turns);
   }, [turns]);
@@ -657,6 +662,9 @@ export default function PlayClient({
       if (result.turn && result.turn.id) {
         setResolvedTurns((prev) => [result.turn, ...prev]);
       }
+      if (result.state) {
+        setRawPlayState(result.state);
+      }
       setLiveSceneContinuity(result.sceneContinuity ?? null);
       setSceneRenderOpportunity(result.sceneRenderOpportunity ?? null);
       if (typeof result.sceneRenderCredits === "number") {
@@ -694,7 +702,7 @@ export default function PlayClient({
 
   const latestTurn = resolvedTurns[0] ?? null;
   const previousTurns = resolvedTurns.slice(1);
-  const pressureStage = statePanel.pressureStage ?? "calm";
+  const pressureStage = currentStatePanel.pressureStage ?? "calm";
   const currentEntry = currentId ? history.find((entry) => entry.adventureId === currentId) ?? null : null;
   const pinnedEntries = history.filter((entry) => entry.pinned && entry.adventureId !== currentId);
   const recentEntries = history.filter((entry) => !entry.pinned && entry.adventureId !== currentId);
@@ -811,7 +819,7 @@ export default function PlayClient({
     () => recentDisplayTurns.map((turn) => buildAdventureHistoryRowViewModel(turn, displayPressureStage)),
     [displayPressureStage, recentDisplayTurns]
   );
-  const statePanelViewModel = useMemo(() => buildStatePanelViewModel(statePanel), [statePanel]);
+  const statePanelViewModel = useMemo(() => buildStatePanelViewModel(currentStatePanel), [currentStatePanel]);
   const initialPressureSummaryRef = useRef(statePanelViewModel.pressureSummary);
   const pressureSummary = hasHydrated
     ? statePanelViewModel.pressureSummary
@@ -1252,49 +1260,44 @@ export default function PlayClient({
                   </span>
                 </div>
               ) : null}
-              <div ref={latestTurnRef}>
-                <LatestTurnCard
-                  key={latestDisplayTurn?.id ?? "latest"}
-                  model={latestTurnModel}
-                  isHighlighted={highlightLatestTurn}
-                />
-              </div>
-              <div className="mt-4 space-y-4">
-                {hasActiveSceneArt ? (
-                  <SceneImagePanel
-                    sceneArt={sceneArtRenderInput}
-                    caption={displayedSceneImageCaption ?? undefined}
-                    transition={liveSceneTransition}
-                    continuity={continuityState}
-                    focusState={sceneFocusState}
-                    transitionCue={sceneTransitionCue}
-                    isRenderingScene={isRenderingScene}
-                  />
-                ) : hasRenderableOpportunity ? (
-                  <SceneRenderOpportunityCard
-                    label={renderOpportunityLabel}
-                    onRender={onRenderScene}
-                    isRendering={isRenderingScene}
-                    remainingCredits={creditsRemaining}
-                    creditMessage={sceneCreditMessage}
-                    ctaDisabled={disableRenderCta}
-                  />
-                ) : (
-                  <div className="mx-auto max-w-sm rounded-2xl border border-stone-800 bg-stone-950/70 px-4 py-3 text-center text-xs uppercase tracking-[0.3em] text-stone-400">
-                    <p className="text-[11px] font-semibold text-white/70">SCENE</p>
-                    <p className="mt-1 text-[11px] text-stone-500">No illustrated moment</p>
+              <div className="rounded-3xl border border-white/10 bg-black/40 shadow-[0_35px_55px_rgba(0,0,0,0.55)]">
+                <div className="p-6 space-y-6">
+                  <div ref={latestTurnRef}>
+                    <LatestTurnCard
+                      key={latestDisplayTurn?.id ?? "latest"}
+                      model={latestTurnModel}
+                      isHighlighted={highlightLatestTurn}
+                    />
                   </div>
-                )}
+                </div>
+                <div className="border-t border-white/10 px-6 py-4">
+                  {hasActiveSceneArt ? (
+                    <SceneImagePanel
+                      sceneArt={sceneArtRenderInput}
+                      caption={displayedSceneImageCaption ?? undefined}
+                      transition={liveSceneTransition}
+                      continuity={continuityState}
+                      focusState={sceneFocusState}
+                      transitionCue={sceneTransitionCue}
+                      isRenderingScene={isRenderingScene}
+                    />
+                  ) : null}
+                </div>
+                <div className="border-t border-white/5 px-6 py-4">
+                  {adventureId ? (
+                    <TurnInput
+                      adventureId={adventureId}
+                      isSubmitting={isSubmittingTurn}
+                      error={turnError}
+                      onSubmitTurn={handleSubmitTurn}
+                      pressureStage={displayPressureStage}
+                    />
+                  ) : null}
+                </div>
+              <div className="border-t border-white/5 px-6 py-4 text-center text-xs uppercase tracking-[0.3em] text-white/50">
+                The moment waits on your decision.
               </div>
-          {adventureId ? (
-            <TurnInput
-              adventureId={adventureId}
-              isSubmitting={isSubmittingTurn}
-              error={turnError}
-              onSubmitTurn={handleSubmitTurn}
-              pressureStage={displayPressureStage}
-            />
-          ) : null}
+            </div>
           </section>
 
             <aside className={ui.rightColumn}>
@@ -1302,12 +1305,33 @@ export default function PlayClient({
                 <section className="space-y-4">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">World</div>
                   <WorldContext
-                    location={statePanel.location ?? "Servants’ Wing"}
-                    timeOfDay={statePanel.timeOfDay ?? "Late Night"}
-                    ambience={statePanel.ambience ?? "Cold / Quiet"}
-                    tags={statePanel.contextTags ?? []}
+                    location={currentStatePanel.location ?? "Servants’ Wing"}
+                    timeOfDay={currentStatePanel.timeOfDay ?? "Late Night"}
+                    ambience={currentStatePanel.ambience ?? "Cold / Quiet"}
+                    tags={currentStatePanel.contextTags ?? []}
                   />
-                  <StatePanel viewModel={statePanelViewModel} />
+                  {hasRenderableOpportunity && (
+                    <SceneRenderStatusStrip
+                      label={renderOpportunityLabel}
+                      onRender={onRenderScene}
+                      isRendering={isRenderingScene}
+                      remainingCredits={creditsRemaining}
+                      creditMessage={sceneCreditMessage}
+                    />
+                  )}
+                  {(() => {
+                    console.log("play.inventory.render", {
+                      statePanelInventory: currentStatePanel.inventory,
+                    });
+                    console.log("play.inventory.items", currentStatePanel.inventory);
+                    console.log("play.statePanel", currentStatePanel);
+                    console.log("play.statePanel.inventory", currentStatePanel.inventory);
+                    console.log("play.statePanel.inventory.items", currentStatePanel.inventory);
+                    console.log("play.rawState", rawPlayState);
+                    console.log("play.rawState.inventory", (rawPlayState as any)?.inventory);
+                    console.log("play.rawState.inventory.items", (rawPlayState as any)?.inventory?.items);
+                    return <StatePanel viewModel={statePanelViewModel} />;
+                  })()}
                 </section>
                 <section className="space-y-4">
                   <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
@@ -1319,6 +1343,11 @@ export default function PlayClient({
               </div>
             </aside>
           </div>
+        </div>
+        <div className="mt-6 flex items-center gap-4 text-[10px] uppercase tracking-[0.3em] text-white/35">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+          <span>System utilities</span>
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/40 to-transparent" />
         </div>
 
         <details className="mt-8 rounded-2xl border border-slate-200 bg-slate-950/60 p-4 text-xs text-slate-300">
@@ -1357,45 +1386,41 @@ type SceneRenderOpportunityCardProps = {
   isRendering: boolean;
   remainingCredits?: number | null;
   creditMessage?: string | null;
-  ctaDisabled?: boolean;
 };
 
-function SceneRenderOpportunityCard({
+function SceneRenderStatusStrip({
   label,
   onRender,
   isRendering,
   remainingCredits,
   creditMessage,
 }: SceneRenderOpportunityCardProps) {
-  const creditsLabel =
-    typeof remainingCredits === "number" ? `${remainingCredits} REMAINING` : null;
-  const creditsLine = creditsLabel ? (
-    <span className="text-[10px] uppercase tracking-[0.3em] text-amber-100/60">
-      · {creditsLabel}
-    </span>
-  ) : null;
-  const isDisabled =
-    isRendering || Boolean(creditMessage) || Boolean(ctaDisabled) || (typeof remainingCredits === "number" && remainingCredits <= 0);
-  const captionText = creditMessage ?? "Environmental Shift";
-  const captionClassName = creditMessage
-    ? "mt-2 text-xs text-rose-200"
-    : "mt-2 text-xs uppercase tracking-[0.3em] text-amber-100/70";
+  const isAvailable = typeof remainingCredits === "number" ? remainingCredits > 0 : !creditMessage;
+  const statusText = (() => {
+    if (isRendering) return "Rendering…";
+    if (typeof remainingCredits === "number") {
+      return remainingCredits > 0 ? `Available · ${remainingCredits} remaining` : "Unavailable · 0 remaining";
+    }
+    if (creditMessage) return creditMessage;
+    return "Unavailable · 0 remaining";
+  })();
   return (
-    <div className="mx-auto max-w-sm rounded-2xl border border-amber-400/30 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.12),transparent_70%)] px-6 py-6 text-center shadow-[0_0_30px_rgba(245,158,11,0.2)]">
-      <div className="flex items-center justify-center gap-2">
-        <span className="text-[11px] tracking-[0.25em] text-amber-200/80">SCENE</span>
-        {creditsLine}
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-2 text-left text-xs text-slate-300">
+      <div>
+        <p className="text-[9px] uppercase tracking-[0.3em] text-slate-500">Scene Render</p>
+        <p className="text-sm font-semibold text-white">{statusText}</p>
+        <p className="text-[11px] text-slate-500">Rendering is optional presentation; continue play uninterrupted.</p>
       </div>
-      <button
-        type="button"
-        onClick={onRender}
-        disabled={isDisabled}
-        className="mt-3 rounded-full border border-amber-300/60 bg-black/0 px-4 py-2 text-sm font-semibold uppercase tracking-[0.2em] text-amber-100 transition hover:border-amber-200 hover:bg-amber-300/10 disabled:cursor-not-allowed disabled:opacity-50"
-        style={{ minWidth: 0 }}
-      >
-        {isRendering ? "Rendering…" : label}
-      </button>
-      <p className={captionClassName}>{captionText}</p>
+      {isAvailable && (
+        <button
+          type="button"
+          onClick={onRender}
+          disabled={isRendering}
+          className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-amber-300 transition hover:border-amber-200 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {label}
+        </button>
+      )}
     </div>
   );
 }

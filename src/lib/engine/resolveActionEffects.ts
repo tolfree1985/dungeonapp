@@ -1,10 +1,14 @@
 import type { OutcomeTier, StateDelta, LedgerEntry } from "./resolveTurnContract";
+import type { InventoryContext } from "@/lib/engine/inventory/inventoryContext";
+import { normalizeActionText } from "@/lib/engine/inventory/actionMatchers";
+import { evaluateInventoryAffordanceRules } from "@/lib/engine/inventory/affordanceRegistry";
 
 export type ResolveActionEffectsInput = {
   mode: "DO" | "SAY" | "LOOK";
   playerText: string;
   state: Record<string, unknown> | null;
   outcomeTier: OutcomeTier;
+  inventoryContext?: InventoryContext | null;
 };
 
 export type ResolveActionEffectsResult = {
@@ -78,6 +82,8 @@ const SAY_KEYWORDS = [
   "request",
   "demand",
 ];
+
+const FIRE_TARGET_PATTERN = /\b(tapestry|drapes?|curtain|cloth|banner)\b/;
 
 const buildLedgerEntry = (delta: StateDelta, tier: OutcomeTier, detail: string): LedgerEntry => ({
   kind: "state_change",
@@ -305,24 +311,58 @@ const buildSayEffects = (tier: OutcomeTier, normalized: string): ResolveActionEf
 };
 
 export function resolveActionEffects(input: ResolveActionEffectsInput): ResolveActionEffectsResult {
-  const normalized = input.playerText.toLowerCase();
+  const normalized = normalizeActionText(input.playerText);
   const matchesLook = LOOK_KEYWORDS.some((keyword) => normalized.includes(keyword));
   const matchesDo = DO_KEYWORDS.some((keyword) => normalized.includes(keyword));
   const matchesSay = SAY_KEYWORDS.some((keyword) => normalized.includes(keyword));
-  if (input.mode === "LOOK" && matchesLook) {
-    return buildLookEffects(input.outcomeTier);
+  let result: ResolveActionEffectsResult = { stateDeltas: [], ledgerAdds: [] };
+
+  if (input.mode === "LOOK") {
+    result = matchesLook ? buildLookEffects(input.outcomeTier) : { stateDeltas: [], ledgerAdds: [] };
+  } else if (input.mode === "DO") {
+    result = matchesDo ? buildDoEffects(input.outcomeTier) : buildDoFallback(input.outcomeTier);
+  } else if (input.mode === "SAY") {
+    result = matchesSay ? buildSayEffects(input.outcomeTier, normalized) : buildSayFallback(input.outcomeTier);
   }
-  if (input.mode === "DO" && matchesDo) {
-    return buildDoEffects(input.outcomeTier);
-  }
-  if (input.mode === "SAY" && matchesSay) {
-    return buildSayEffects(input.outcomeTier, normalized);
-  }
-  if (input.mode === "DO") {
-    return buildDoFallback(input.outcomeTier);
-  }
-  if (input.mode === "SAY") {
-    return buildSayFallback(input.outcomeTier);
-  }
-  return { stateDeltas: [], ledgerAdds: [] };
+
+  return augmentWithInventoryAffordances(result, normalized, input.playerText, input.inventoryContext, input);
 }
+
+const augmentWithInventoryAffordances = (
+  result: ResolveActionEffectsResult,
+  normalized: string,
+  rawText: string,
+  inventoryContext?: InventoryContext | null,
+  input?: ResolveActionEffectsInput,
+): ResolveActionEffectsResult => {
+  if (!inventoryContext || !input) return result;
+  const carriedItems = inventoryContext.carriedItems.map((item) => ({
+    key: item.key,
+    lit: item.state?.lit === true,
+    capabilities: item.tags ?? [],
+  }));
+  const context = {
+    mode: input.mode,
+    input: rawText,
+    inventoryContext: {
+      carriedItems,
+      referencedItems: inventoryContext.referencedItems,
+      capabilities: inventoryContext.capabilities,
+    },
+    state: input.state ?? null,
+  };
+  const match = evaluateInventoryAffordanceRules(context);
+  console.log("inventory.affordance.rule_match", {
+    ruleId: match?.ruleId ?? null,
+    priority: match?.priority ?? null,
+    matched: Boolean(match),
+    canonicalInput: normalized,
+    referencedItems: inventoryContext.referencedItems,
+  });
+  if (!match) return result;
+  return {
+    ...result,
+    stateDeltas: [...result.stateDeltas, ...match.result.stateDeltas],
+    ledgerAdds: [...result.ledgerAdds, ...match.result.ledgerAdds],
+  };
+};

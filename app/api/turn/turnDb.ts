@@ -3,6 +3,8 @@ import type { DbClient } from "@/lib/dbClient";
 import type { Prisma } from "@/generated/prisma";
 import { resolveDeterministicTurn } from "@/server/turn/deterministicTurn";
 import type { IntentMode } from "@/lib/watchfulness-action-flags";
+import type { AdventureState } from "@/lib/engine/types/state";
+import { assertAdventureCompatibility, type CompatibilityInfo } from "@/lib/engine/contracts/assertAdventureCompatibility";
 
 export async function loadSaveState(saveId: string, db: DbClient = prisma) {
   return db.save.findUniqueOrThrow({
@@ -81,6 +83,10 @@ export async function turnPersistence(
     where: { id: args.adventureId },
     select: { id: true, latestTurnIndex: true, state: true },
   });
+  const compatibilityInfo = await assertAdventureCompatibility({
+    db,
+    state: currentAdventure.state as AdventureState,
+  });
   const nextTurnIndex = currentAdventure.latestTurnIndex + 1;
   const resolvedTurn = resolveDeterministicTurn({
     playerText: args.playerText,
@@ -89,11 +95,20 @@ export async function turnPersistence(
     mode: args.mode,
   });
 
+  const previousMeta = ((currentAdventure.state as any)?._meta ?? {}) as Record<string, unknown>;
+  const nextStateWithMeta = {
+    ...resolvedTurn.nextState,
+    _meta: {
+      ...previousMeta,
+      ...(((resolvedTurn.nextState as any)?._meta ?? {}) as Record<string, unknown>),
+      compatibility: compatibilityInfo,
+    },
+  };
   await db.adventure.update({
     where: { id: args.adventureId },
     data: {
       latestTurnIndex: nextTurnIndex,
-      state: resolvedTurn.nextState as any,
+      state: nextStateWithMeta as any,
     },
     select: { id: true, latestTurnIndex: true },
   });

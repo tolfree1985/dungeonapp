@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveActionEffects } from "../resolveActionEffects";
+import type { InventoryContext } from "../inventory/inventoryContext";
+import type { ReferencedInventoryItem } from "../inventory/extractReferencedInventoryItems";
 
 const baseInput = {
   mode: "LOOK" as const,
@@ -64,6 +66,31 @@ describe("resolveActionEffects (DO)", () => {
     const result = resolveActionEffects({ ...doInput, playerText: "dance close", outcomeTier: "mixed" });
     expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "obstacle.disturbed")).toBe(true);
     expect(result.stateDeltas.some((delta) => (delta as any).domain === "noise")).toBe(true);
+  });
+
+  it("ignites fabric when a lit lantern meets tapestry", () => {
+    const lanternItem: ReferencedInventoryItem = {
+      key: "iron_lantern",
+      name: "Iron Lantern",
+      tags: ["light"],
+      category: "tool",
+      effects: ["enable_low_light_inspection"],
+      state: { lit: true },
+    };
+    const inventoryContext: InventoryContext = {
+      carriedItems: [lanternItem],
+      referencedItems: [lanternItem],
+      capabilities: ["fire_source_available"],
+    };
+    const result = resolveActionEffects({
+      ...doInput,
+      playerText: "throw the lantern into the tapestry",
+      outcomeTier: "success",
+      inventoryContext,
+    });
+    expect(result.stateDeltas.some((delta) => delta.kind === "flag.set" && (delta as any).key === "scene.fire")).toBe(true);
+    expect(result.stateDeltas.some((delta) => delta.kind === "pressure.add" && (delta as any).domain === "danger")).toBe(true);
+    expect(result.ledgerAdds.some((entry) => entry.effect === "fabric ignited")).toBe(true);
   });
 });
 

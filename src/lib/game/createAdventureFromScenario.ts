@@ -1,6 +1,8 @@
 import { buildAdventureStateFromScenario } from "./adventureFromScenario";
 import type { ScenarioV1 } from "@/lib/scenario/scenarioValidator";
 import { normalizeScenarioContent } from "@/lib/scenario/scenarioValidator";
+import { buildScenarioVersionStamp } from "@/lib/scenario/scenarioVersion";
+import { buildCompatibilityInfo } from "@/lib/engine/contracts/assertAdventureCompatibility";
 
 type TxLike = {
   adventure: {
@@ -79,6 +81,7 @@ export async function createAdventureFromScenarioId(args: {
     ),
   );
   const initialState = buildAdventureStateFromScenario(scenario);
+  const scenarioStamp = buildScenarioVersionStamp(scenario);
   const openingPrompt = initialState._meta?.openingPrompt ?? null;
 
   if (!initialState.currentScene?.key || !initialState.currentScene?.text) {
@@ -94,6 +97,17 @@ export async function createAdventureFromScenarioId(args: {
   }
 
   const isFreshCreate = !existing;
+
+  const compatibility = buildCompatibilityInfo({
+    scenarioVersion: scenarioStamp.scenarioVersion,
+    scenarioContentHash: scenarioStamp.contentHash,
+  });
+
+  initialState._meta = {
+    ...(isRecord(initialState._meta) ? initialState._meta : {}),
+    scenarioId,
+    compatibility,
+  };
 
   const adv = await tx.adventure.upsert({
     where: { id: adventureId },

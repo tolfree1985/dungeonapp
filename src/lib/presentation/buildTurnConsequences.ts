@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { buildEscalationBeat, type PressureSnapshot } from "./escalationBeats";
+import { buildEscalationBeat, type EscalationBeat, type PressureSnapshot } from "./escalationBeats";
 
 export type TurnMode = "DO" | "LOOK" | "SAY";
 
@@ -8,6 +8,11 @@ export type TurnConsequenceSlots = {
   shift: string | null;
   cost: string | null;
   hook: string | null;
+};
+
+export type TurnConsequenceResult = {
+  slots: TurnConsequenceSlots;
+  escalationBeat: EscalationBeat;
 };
 
 type BuildTurnConsequencesInput = {
@@ -124,7 +129,7 @@ function buildSaySlots(input: BuildTurnConsequencesInput): TurnConsequenceSlots 
 
 export function buildTurnConsequences(
   input: BuildTurnConsequencesInput,
-): TurnConsequenceSlots {
+): TurnConsequenceResult {
   const cleanedLines = uniq(input.consequenceLines).filter((line) => !isFiltered(line));
 
   const beat = buildEscalationBeat({
@@ -144,10 +149,15 @@ export function buildTurnConsequences(
 
   const preferred = cleanedLines.slice(0, 3);
 
-  return {
+  const slots: TurnConsequenceSlots = {
     gain: preferred[0] ?? base.gain,
     shift: preferred[1] ?? beat.sceneShift ?? base.shift,
     cost: preferred[2] ?? beat.threat ?? base.cost,
     hook: beat.exhaustion ?? beat.responseCue ?? base.hook,
+  };
+
+  return {
+    slots,
+    escalationBeat: beat,
   };
 }
