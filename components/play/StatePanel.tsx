@@ -81,9 +81,10 @@ export default function StatePanel({ viewModel }: StatePanelProps) {
     items: viewModel[section.key] as StateItemViewModel[],
     empty: section.empty,
   }));
-  const careSignals = viewModel.summary.careNow;
-  const worldSummary = viewModel.summary.world;
-  const opportunitySummary = viewModel.summary.opportunities;
+  const summary = viewModel.summary ?? { careNow: [], world: [], opportunities: [] };
+  const careSignals = summary.careNow;
+  const worldSummary = summary.world;
+  const opportunitySummary = summary.opportunities;
   const pressureTotals = viewModel.pressureTotals ?? {
     suspicion: 0,
     noise: 0,

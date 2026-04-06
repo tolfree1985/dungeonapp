@@ -1576,6 +1576,6 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     pressureAxisDescriptions,
     pressureTotals,
     prioritySignals: state.prioritySignals ?? [],
-    summary: state.summary,
+    summary: state.summary ?? { careNow: [], world: [], opportunities: [] },
   };
 }
