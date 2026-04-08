@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@/generated/prisma";
 import { resolveDeterministicTurn } from "@/server/turn/deterministicTurn";
+import type { IntentMode } from "@/lib/watchfulness-action-flags";
 
 type TransactionClient = Parameters<PrismaClient["$transaction"]>[0] extends (tx: infer T) => any ? T : never;
 
@@ -15,6 +16,7 @@ export type RunLegacyTurnFlowArgs = {
   holdKey: string;
   leaseKey: string;
   estInputTokens: number;
+  mode: IntentMode;
 };
 
 export type RunLegacyTurnFlowDeps = {
@@ -59,6 +61,7 @@ export async function runLegacyTurnFlow(args: RunLegacyTurnFlowArgs, deps: RunLe
       playerText,
       previousState: currentAdventure.state,
       turnIndex: nextTurnIndex,
+      mode: args.mode,
     });
 
     await tx.adventure.update({
@@ -148,7 +151,7 @@ export async function runLegacyTurnFlow(args: RunLegacyTurnFlowArgs, deps: RunLe
       },
     });
 
-    return { turn, billing: committed, idempotencyKey };
+    return { turn, resolvedTurn, billing: committed, idempotencyKey };
   });
   return finalized;
 }

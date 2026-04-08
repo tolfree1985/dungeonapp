@@ -1,5 +1,5 @@
 import type { PlayStatePanel, PlayStateValue } from "./types";
-import { buildStateSummary } from "@/lib/engine/presentation/stateSummaryTranslator";
+import { deriveMechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value) return null;
@@ -165,7 +165,18 @@ export function normalizeStatePanel(state: unknown): PlayStatePanel {
         })
       : [];
 
-  const stateSummary = buildStateSummary({ flags: flagsSource, stats: statsSource });
+  const statsMap: Record<string, unknown> = {};
+  if (statsSource) {
+    for (const [key, value] of Object.entries(statsSource)) {
+      statsMap[key.toLowerCase()] = value;
+    }
+  }
+
+  const mechanicFacts = deriveMechanicFacts({
+    stateFlags: flagsSource,
+    stateDeltas: [],
+    stats: statsMap,
+  });
 
   return {
     pressureStage,
@@ -174,6 +185,6 @@ export function normalizeStatePanel(state: unknown): PlayStatePanel {
     quests,
     relationships,
     flags: flagsSource,
-    summary: stateSummary,
+    summary: mechanicFacts,
   };
 }

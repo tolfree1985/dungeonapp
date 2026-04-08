@@ -1218,6 +1218,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           holdKey,
           leaseKey,
           estInputTokens,
+          mode: playerIntentMode ?? "LOOK",
         },
         deps: {
           hashHex,
@@ -1231,6 +1232,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
           adventureId,
           idempotencyKey,
           normalizedInput: playerText,
+          mode: playerIntentMode ?? "LOOK",
           prisma: db,
           model,
           preflightMaxTokens: preflight.perTurnMaxOutputTokens,
@@ -1250,6 +1252,61 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         },
       },
     });
+
+    const persistedTurn = (finalized as any)?.turn ?? {};
+    const resolvedTurn = (finalized as any)?.resolvedTurn ?? {};
+    const canonicalTurn = {
+      ...resolvedTurn,
+      ...persistedTurn,
+      stateDeltas: resolvedTurn.stateDeltas ?? persistedTurn.stateDeltas ?? [],
+      ledgerAdds: resolvedTurn.ledgerAdds ?? persistedTurn.ledgerAdds ?? [],
+      mechanicFacts: resolvedTurn.mechanicFacts ?? persistedTurn.mechanicFacts ?? null,
+      debug: resolvedTurn.debug ?? persistedTurn.debug ?? null,
+      isFinalizedByAffordance: resolvedTurn.isFinalizedByAffordance ?? false,
+      playerInput: resolvedTurn.playerInput ?? persistedTurn.playerInput ?? null,
+    } as any;
+    const isAffordanceFinalized = Boolean(canonicalTurn?.isFinalizedByAffordance);
+    if (isAffordanceFinalized) {
+      const illegalLegacyMutation = Boolean(
+        (canonicalTurn?.stateDeltas ?? []).some((delta: any) =>
+          delta?.key === "Fail-forward complication" ||
+          delta?.key === "Opportunity cost" ||
+          delta?.kind === "pressure.add",
+        ),
+      );
+      if (illegalLegacyMutation) {
+        throw new Error(
+          "[AFFORDANCE_ROUTE_VIOLATION] finalized affordance turn contains legacy-authored consequence deltas",
+        );
+      }
+      console.log("api.turn.affordance_early_return", {
+        turnId: canonicalTurn?.id ?? null,
+        affordancePath: canonicalTurn?.debug?.resolutionPath ?? null,
+        finalDeltaOps: (canonicalTurn?.stateDeltas ?? []).map((delta: any) => delta?.op ?? delta?.kind ?? "unknown"),
+        ledgerCount: (canonicalTurn?.ledgerAdds ?? []).length ?? 0,
+      });
+      const responseBody = {
+        ok: true,
+        action: canonicalTurn.action ?? null,
+        tags,
+        rollTotal: rollTotal ?? null,
+        turn: {
+          ...canonicalTurn,
+          stateDeltas: canonicalTurn.stateDeltas ?? [],
+          ledgerAdds: canonicalTurn.ledgerAdds ?? [],
+        },
+        stateDeltas: canonicalTurn.stateDeltas ?? [],
+        ledgerAdds: canonicalTurn.ledgerAdds ?? [],
+        sceneArt: canonicalTurn.sceneArt ?? null,
+        sceneUpdate: canonicalTurn.sceneUpdate ?? null,
+        scenePresentation: canonicalTurn.presentation ?? null,
+        sceneContinuity: canonicalTurn.sceneContinuity ?? null,
+        sceneRenderOpportunity: canonicalTurn.sceneRenderOpportunity ?? null,
+        sceneRenderCredits: previousAdventureStateRow?.sceneRenderCredits ?? null,
+      };
+      logFinalSceneArtContract(responseBody);
+      return NextResponse.json(responseBody, { status: 200 });
+    }
 
     const turnStateDeltas = asUnknownArray((finalized as any)?.turn?.stateDeltas);
     const turnLedgerAdds = asUnknownArray((finalized as any)?.turn?.ledgerAdds);
@@ -3233,7 +3290,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         ? (scenePresentation as { consequenceText?: string | null }).consequenceText ?? null
         : null;
 
-    const resolvedTurn: ResolvedTurn = {
+    const legacyResolvedTurn: ResolvedTurn = {
       outcome: {
         tier: resolvedOutcomeTier,
         roll: resolvedRoll,
@@ -3253,7 +3310,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       },
     };
 
-    const validationIssues = validateResolvedTurnContract(resolvedTurn);
+    const validationIssues = validateResolvedTurnContract(legacyResolvedTurn);
     if (validationIssues.length > 0) {
       console.log("turn.contract.validation", {
         issues: validationIssues,
@@ -3262,7 +3319,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
 
     const finalResolvedTurn = stripNonLookObservationArtifacts(
       {
-        ...resolvedTurn,
+        ...legacyResolvedTurn,
         stateDeltas: normalizedStateDeltas,
         ledgerAdds: normalizedLedgerAdds,
         sceneUpdate: sceneTransitionPayload
@@ -3655,7 +3712,7 @@ function stripNonLookObservationArtifacts(
     return true;
   });
 
-  const cleanedLedgerAdds = (resolvedTurn.ledgerAdds ?? []).filter((entry: any) => {
+  const cleanedLedgerAdds = (legacyResolvedTurn.ledgerAdds ?? []).filter((entry: any) => {
     const cause = String(entry?.cause ?? "");
     const action = String(entry?.action ?? "");
     const detail = String(entry?.detail ?? "");
@@ -3668,7 +3725,7 @@ function stripNonLookObservationArtifacts(
   });
 
   return {
-    ...resolvedTurn,
+    ...legacyResolvedTurn,
     stateDeltas: cleanedStateDeltas,
     ledgerAdds: cleanedLedgerAdds,
   };

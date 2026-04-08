@@ -1,5 +1,13 @@
 import { createInitialStateV1, DEFAULT_ALERT_CLOCK_ID, DEFAULT_NOISE_CLOCK_ID } from "@/lib/game/bootstrap";
 import { applyDeltas } from "@/lib/game/state";
+import { deriveMechanicFacts, type MechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
+import { WORLD_FLAGS } from "@/lib/engine/worldFlags";
+import { isForcedDoorAction } from "@/server/turn/interactionResolution";
+import type { ActionIntent } from "@/server/turn/actionIntent";
+import { parseActionIntent } from "@/server/turn/actionIntent";
+import { getSceneAffordances } from "@/server/turn/sceneAffordances";
+import { matchAffordance } from "@/server/turn/affordanceMatch";
+import type { AffordanceMatch } from "@/server/turn/affordanceMatch";
 
 type SupportedAction = "OBSERVE" | "MOVE" | "TALK" | "STEALTH" | "WAIT";
 type OutcomeBand = "SUCCESS" | "SUCCESS_WITH_COST" | "FAIL_FORWARD";
@@ -22,7 +30,147 @@ type DeterministicTurnResult = {
   stateDeltas: Array<Record<string, unknown>>;
   ledgerAdds: Array<Record<string, unknown>>;
   nextState: Record<string, unknown>;
+  mechanicFacts?: MechanicFacts;
+  debug?: Record<string, unknown>;
+  isFinalizedByAffordance?: boolean;
 };
+
+type CanonicalIntentMode = "DO" | "SAY" | "LOOK";
+
+type CanonicalTurnIntent = {
+  mode: CanonicalIntentMode;
+  normalizedInput: string;
+  rawInput: string;
+};
+
+type StateDelta = Record<string, unknown>;
+type LedgerEntry = Record<string, unknown>;
+const ACTION_FLAGS = {
+  crateInspect: "action.crate.inspect",
+  crateSearch: "action.crate.search",
+  drawerInspect: "action.drawer.inspect",
+  drawerPull: "action.drawer.pull",
+  deskInspect: "action.desk.inspect",
+  deskSearch: "action.desk.search",
+} as const;
+function flagSet(key: string, value = true, detail?: string): StateDelta {
+  return {
+    op: "flag.set",
+    kind: "flag.set",
+    key,
+    value,
+    detail,
+  };
+}
+
+function pressureAdd(
+  domain: "time" | "noise" | "danger" | "suspicion",
+  amount: number,
+): StateDelta {
+  return {
+    op: "pressure.add",
+    kind: "pressure.add",
+    domain,
+    amount,
+  };
+}
+
+function assertInteractionResolutionResult(result: InteractionResolutionResult): void {
+  for (const delta of result.stateDeltas) {
+    if (!delta || typeof delta !== "object" || !(delta as Record<string, unknown>).op) {
+      throw new Error(
+        `Interaction resolver emitted state delta without op: ${JSON.stringify(delta)}`,
+      );
+    }
+  }
+  for (const delta of result.pressureAdds ?? []) {
+    if (!delta || typeof delta !== "object" || !(delta as Record<string, unknown>).op) {
+      throw new Error(
+        `Interaction resolver emitted pressure delta without op: ${JSON.stringify(delta)}`,
+      );
+    }
+  }
+  const hasWorldLedger = result.ledgerAdds.some(
+    (entry) => entry && typeof entry === "object" && (entry as Record<string, unknown>).domain === "world",
+  );
+  const hasFlagDelta = result.stateDeltas.some(
+    (delta) =>
+      delta &&
+      typeof delta === "object" &&
+      (delta as Record<string, unknown>).op === "flag.set",
+  );
+  if (hasWorldLedger && !hasFlagDelta) {
+    throw new Error(
+      `[INTERACTION_CONTRACT_VIOLATION] Interaction emitted world ledger entries without canonical flag.set deltas`,
+    );
+  }
+}
+
+type InteractionDeltaOp = StateDelta;
+
+function normalizeInteractionDeltaOpsToStateDeltas(deltas: InteractionDeltaOp[]): StateDelta[] {
+  const normalized: StateDelta[] = [];
+  for (const delta of deltas) {
+    if (!delta || typeof delta !== "object") continue;
+    const op = (delta as Record<string, unknown>).op;
+    if (op === "pressure.add") {
+      const domain = (delta as Record<string, unknown>).domain;
+      const amount = Number((delta as Record<string, unknown>).amount ?? 0);
+      if (!Number.isFinite(amount) || amount === 0) continue;
+      if (domain === "time") {
+        normalized.push({ op: "time.inc", by: amount });
+      }
+      continue;
+    }
+    normalized.push(delta);
+  }
+  return normalized;
+}
+
+type InteractionResolutionResult = {
+  stateDeltas: StateDelta[];
+  ledgerAdds: LedgerEntry[];
+  pressureAdds?: StateDelta[];
+  actionTags?: string[];
+  outcomeHint?: "clean" | "risky" | "costly" | "mixed";
+  failForwardEligible?: boolean;
+  mechanicContext?: {
+    interactionType: "inspect" | "search" | "force" | "pull";
+    targetId: string;
+    visibility: "observational" | "physical";
+    noisiness: "silent" | "low" | "medium" | "high";
+    urgency: "slow" | "normal" | "fast";
+  };
+};
+
+function normalizeIntentMode(mode?: string): CanonicalIntentMode {
+  const candidate = (mode ?? "LOOK").trim().toUpperCase();
+  if (candidate === "DO") return "DO";
+  if (candidate === "SAY") return "SAY";
+  return "LOOK";
+}
+
+function assertIntentParity(intent: CanonicalTurnIntent, authoredMode: string) {
+  const normalizedAuthoredMode = normalizeIntentMode(authoredMode);
+  if (intent.mode !== normalizedAuthoredMode) {
+    console.error(
+      "turn.intent.drift",
+      JSON.stringify(
+        {
+          interactionMode: intent.mode,
+          authoredMode,
+          normalizedAuthoredMode,
+          normalizedInput: intent.normalizedInput,
+        },
+        null,
+        2,
+      ),
+    );
+    if (process.env.NODE_ENV !== "production") {
+      throw new Error("Canonical turn intent drift detected");
+    }
+  }
+}
 
 function ensurePressureTotals(value: unknown): Record<string, number> {
   if (value && typeof value === "object") {
@@ -288,6 +436,220 @@ function nextMoveDestination(state: Record<string, unknown>): string | null {
   return exits[0] ?? null;
 }
 
+const FLAG_COMPATIBILITY_MAP: Record<string, string[]> = {
+  [WORLD_FLAGS.crate.opened]: [WORLD_FLAGS.crate.opened, "crateOpened"],
+};
+
+const FORCE_DOOR_PATTERNS = [
+  "force the door open",
+  "force door open",
+  "force the ledger room door open",
+  "force open the door",
+  "force the ledger room door",
+];
+
+function matchesForcedDoorPhrase(input: string): boolean {
+  return FORCE_DOOR_PATTERNS.some((pattern) => input.includes(pattern));
+}
+
+function hasAnyWorldFlag(worldFlags: Record<string, boolean>, key: string, legacyKeys: string[] = []): boolean {
+  const candidates = FLAG_COMPATIBILITY_MAP[key] ?? [key];
+  for (const candidate of candidates) {
+    if (Boolean(worldFlags[candidate])) return true;
+  }
+  for (const legacy of legacyKeys) {
+    if (Boolean(worldFlags[legacy])) return true;
+  }
+  return false;
+}
+
+function resolveAffordance(params: {
+  intent: ActionIntent;
+  match: AffordanceMatch;
+  stateFlags: Record<string, boolean>;
+}): InteractionResolutionResult | null {
+  if (params.match.resolver !== "container") return null;
+  return resolveContainerAffordance(params.intent, params.match, params.stateFlags);
+}
+
+function resolveContainerAffordance(
+  intent: ActionIntent,
+  match: AffordanceMatch,
+  stateFlags: Record<string, boolean>,
+): InteractionResolutionResult | null {
+  const stateDeltas: StateDelta[] = [];
+  const ledgerAdds: LedgerEntry[] = [];
+
+  const emitFlag = (key: string, detail: string) => {
+    stateDeltas.push(flagSet(key, true, detail));
+  };
+
+  const emitActionFlag = (key: string, detail: string) => emitFlag(key, detail);
+
+  if (match.affordanceId === "crate") {
+    if (intent.verb === "inspect") {
+      emitActionFlag(ACTION_FLAGS.crateInspect, "You study the crate and watch its seams.");
+      emitFlag(WORLD_FLAGS.crate.inspected, "You study the crate and watch its structure.");
+      emitFlag(WORLD_FLAGS.crate.conditionRevealed, "You now understand the crate’s condition.");
+      ledgerAdds.push({
+        kind: "state_change",
+        domain: "world",
+        cause: "crate.inspect",
+        effect: WORLD_FLAGS.crate.conditionRevealed,
+      });
+      return {
+        stateDeltas,
+        ledgerAdds,
+        mechanicContext: {
+          interactionType: "inspect",
+          targetId: "crate",
+          visibility: "observational",
+          noisiness: "silent",
+          urgency: "slow",
+        },
+        outcomeHint: "clean",
+      };
+    }
+
+    if (intent.verb === "search" && hasAnyWorldFlag(stateFlags, WORLD_FLAGS.crate.opened, ["crateOpened"])) {
+      emitActionFlag(ACTION_FLAGS.crateSearch, "You search through the opened crate.");
+      emitFlag(WORLD_FLAGS.crate.searched, "You search through the opened crate.");
+      emitFlag(WORLD_FLAGS.crate.contentsRevealed, "The crate’s contents are now known.");
+      ledgerAdds.push({
+        kind: "state_change",
+        domain: "world",
+        cause: "crate.search",
+        effect: WORLD_FLAGS.crate.contentsRevealed,
+      });
+      const pressureAdds: StateDelta[] = [pressureAdd("time", 1), pressureAdd("noise", 0)];
+      return {
+        stateDeltas,
+        ledgerAdds,
+        pressureAdds,
+        mechanicContext: {
+          interactionType: "search",
+          targetId: "crate",
+          visibility: "physical",
+          noisiness: "low",
+          urgency: "normal",
+        },
+        outcomeHint: "costly",
+        failForwardEligible: true,
+      };
+    }
+  }
+
+  if (match.affordanceId === "hall_drawer" && intent.verb === "inspect") {
+    emitActionFlag(ACTION_FLAGS.drawerInspect, "You examine the drawer's construction.");
+    emitFlag(WORLD_FLAGS.drawer.inspected, "You examine the drawer's construction.");
+    emitFlag(WORLD_FLAGS.drawer.detailsRevealed, "You understand the drawer's condition.");
+    const pressureAdds: StateDelta[] = [pressureAdd("time", 1)];
+    ledgerAdds.push({
+      kind: "state_change",
+      domain: "world",
+      cause: "drawer.inspect",
+      effect: WORLD_FLAGS.drawer.detailsRevealed,
+    });
+    return {
+      stateDeltas,
+      ledgerAdds,
+      pressureAdds,
+      mechanicContext: {
+        interactionType: "inspect",
+        targetId: "hall_drawer",
+        visibility: "observational",
+        noisiness: "silent",
+        urgency: "slow",
+      },
+      outcomeHint: "clean",
+    };
+  }
+
+  if (match.affordanceId === "hall_drawer" && intent.verb === "pull") {
+    emitActionFlag(ACTION_FLAGS.drawerPull, "You pull the drawer out.");
+    emitFlag(WORLD_FLAGS.drawer.pulled, "The drawer slides out, exposing a hidden recess.");
+    emitFlag(WORLD_FLAGS.drawer.open, "The drawer stays open, showing its contents.");
+    ledgerAdds.push({
+      kind: "state_change",
+      domain: "world",
+      cause: "drawer.pull",
+      effect: WORLD_FLAGS.drawer.open,
+    });
+    const pressureAdds: StateDelta[] = [pressureAdd("time", 1)];
+    return {
+      stateDeltas,
+      ledgerAdds,
+      pressureAdds,
+      mechanicContext: {
+        interactionType: "pull",
+        targetId: "hall_drawer",
+        visibility: "physical",
+        noisiness: "medium",
+        urgency: "normal",
+      },
+      outcomeHint: "costly",
+      failForwardEligible: true,
+    };
+  }
+
+  if (match.affordanceId === "desk") {
+    if (intent.verb === "inspect") {
+      emitActionFlag(ACTION_FLAGS.deskInspect, "You inspect the desk closely.");
+      emitFlag(WORLD_FLAGS.desk.inspected, "You inspect the desk closely.");
+      emitFlag(WORLD_FLAGS.desk.detailsRevealed, "You know the desk's condition.");
+      const pressureAdds: StateDelta[] = [pressureAdd("time", 1)];
+      ledgerAdds.push({
+        kind: "state_change",
+        domain: "world",
+        cause: "desk.inspect",
+        effect: WORLD_FLAGS.desk.detailsRevealed,
+      });
+      return {
+        stateDeltas,
+        ledgerAdds,
+        pressureAdds,
+        mechanicContext: {
+          interactionType: "inspect",
+          targetId: "desk",
+          visibility: "observational",
+          noisiness: "silent",
+          urgency: "slow",
+        },
+        outcomeHint: "clean",
+      };
+    }
+
+    if (intent.verb === "search") {
+      emitActionFlag(ACTION_FLAGS.deskSearch, "You search through the desk.");
+      emitFlag(WORLD_FLAGS.desk.searched, "You search through the desk.");
+      emitFlag(WORLD_FLAGS.desk.detailsRevealed, "Desk details are now exposed.");
+      const pressureAdds: StateDelta[] = [pressureAdd("time", 1), pressureAdd("noise", 1)];
+      ledgerAdds.push({
+        kind: "state_change",
+        domain: "world",
+        cause: "desk.search",
+        effect: WORLD_FLAGS.desk.detailsRevealed,
+      });
+      return {
+        stateDeltas,
+        ledgerAdds,
+        pressureAdds,
+        mechanicContext: {
+          interactionType: "search",
+          targetId: "desk",
+          visibility: "physical",
+          noisiness: "medium",
+          urgency: "normal",
+        },
+        outcomeHint: "costly",
+        failForwardEligible: true,
+      };
+    }
+  }
+
+  return null;
+}
+
 function selectOutcome(turnIndex: number): OutcomeBand {
   return OUTCOME_CYCLE[turnIndex % OUTCOME_CYCLE.length] ?? "SUCCESS";
 }
@@ -416,6 +778,53 @@ function getWorldFlag(state: Record<string, unknown>, key: string): boolean {
   const typedFlags = flags as Record<string, unknown>;
   const value = (typedFlags as any)[key];
   return Boolean(value);
+}
+
+function appendRitualFacts(params: {
+  intent: CanonicalTurnIntent;
+  finalStateDeltas: Array<Record<string, unknown>>;
+  finalLedgerAdds: Array<Record<string, unknown>>;
+  nextWorldFlags: Record<string, boolean>;
+}) {
+  const { intent, finalStateDeltas, finalLedgerAdds, nextWorldFlags } = params;
+  const emitFlag = (key: string, detail: string) => {
+    const alreadyApplied = finalStateDeltas.some((delta) => {
+      const kind = (delta as any).kind;
+      const deltaKey = (delta as any).key;
+      return kind === "flag.set" && deltaKey === key;
+    });
+    if (!alreadyApplied) {
+      finalStateDeltas.push({
+        kind: "flag.set",
+        key,
+        value: true,
+      });
+    }
+    finalLedgerAdds.push({
+      kind: "state_change",
+      cause: "action",
+      effect: detail,
+      deltaKind: "flag.set",
+    });
+    nextWorldFlags[key] = true;
+  };
+
+  if (intent.normalizedInput.includes("splash oil")) {
+    emitFlag("oilSpread", "Oil spreads across the floor");
+    return;
+  }
+  if (intent.normalizedInput.includes("throw lantern") && nextWorldFlags["oilSpread"]) {
+    emitFlag("fireStarted", "Flames take hold");
+    return;
+  }
+  if (intent.normalizedInput.includes("weaken crate")) {
+    emitFlag("crateWeakened", "The crate structure weakens");
+    return;
+  }
+  if (intent.normalizedInput.includes("pry crate") && nextWorldFlags["crateWeakened"]) {
+    emitFlag("crateOpened", "The crate breaks open");
+    return;
+  }
 }
 
 function makeClockDelta(
@@ -729,7 +1138,6 @@ export function resolveDeterministicTurn(args: DeterministicTurnArgs): Determini
     fromStats: args.previousState?.stats,
     result: previousPressure,
   });
-  const playerIntentMode = args.mode ?? "LOOK";
   const action = classifyAction(args.playerText);
   const outcome = selectOutcome(args.turnIndex);
   const summary = summarizeAction(args.playerText, action);
@@ -740,15 +1148,75 @@ export function resolveDeterministicTurn(args: DeterministicTurnArgs): Determini
   const stage = pressureStage(normalizedState);
   const pressureEffects = pressureEffectsForState(normalizedState);
   const existingStats = asRecord(normalizedState.stats) ?? {};
+  const normalizedInput = args.playerText.trim().toLowerCase();
+  const authoredMode = args.mode ?? "LOOK";
+  const canonicalIntent: CanonicalTurnIntent = {
+    mode: normalizeIntentMode(authoredMode),
+    normalizedInput,
+    rawInput: args.playerText,
+  };
+  assertIntentParity(canonicalIntent, authoredMode);
 
-  let stateDeltas: Array<Record<string, unknown>>;
-  let ledgerAdds: Array<Record<string, unknown>>;
+  const parsedIntent = parseActionIntent(canonicalIntent.mode, canonicalIntent.rawInput);
+  const currentWorldFlags = asRecord(normalizedState.world)?.flags ?? {};
+  const stateFlags: Record<string, boolean> = {};
+  for (const [key, value] of Object.entries(currentWorldFlags)) {
+    stateFlags[key] = Boolean(value);
+  }
+  const sceneAffordances = getSceneAffordances(canonicalIntent.mode);
+  const affordanceMatch = matchAffordance(parsedIntent, sceneAffordances, stateFlags);
+  console.log(
+    "action.intent",
+    JSON.stringify(
+      {
+        canonicalIntent,
+        parsedIntent,
+        affordanceMatch,
+      },
+      null,
+      2,
+    ),
+  );
+
+  let stateDeltas: StateDelta[] = [];
+  let ledgerAdds: LedgerEntry[] = [];
   let scene: string;
   let resolution: { outcome: string; notes: string; action: SupportedAction };
 
   scene = selectScene(action, outcome, args.turnIndex, args.playerText);
 
-  switch (action) {
+  const interactionResolution = affordanceMatch
+    ? resolveAffordance({ intent: parsedIntent, match: affordanceMatch, stateFlags })
+    : null;
+  const resolvedByAffordance = Boolean(interactionResolution);
+  const interactionPressureAdds = resolvedByAffordance ? interactionResolution!.pressureAdds ?? [] : [];
+  const interactionActionTags = resolvedByAffordance ? interactionResolution!.actionTags ?? [] : [];
+  const interactionConsequenceProfile = resolvedByAffordance ? interactionResolution!.mechanicContext ?? null : null;
+  const interactionOutcomeHint = resolvedByAffordance ? interactionResolution!.outcomeHint ?? null : null;
+  const interactionFailForwardEligible = resolvedByAffordance ? interactionResolution!.failForwardEligible ?? false : null;
+
+  const affordanceHandled = resolvedByAffordance;
+
+  if (resolvedByAffordance) {
+    const interactionOps = [...interactionResolution!.stateDeltas, ...interactionPressureAdds];
+    stateDeltas = normalizeInteractionDeltaOpsToStateDeltas(interactionOps);
+    ledgerAdds = interactionResolution!.ledgerAdds;
+    console.log(
+      "interaction.result.contract",
+      JSON.stringify(
+        {
+          affordanceId: affordanceMatch?.affordanceId,
+          stateDeltaOps: interactionResolution!.stateDeltas.map((delta) => (delta as Record<string, unknown>).op),
+          pressureDeltaOps: interactionPressureAdds.map((delta) => (delta as Record<string, unknown>).op),
+          normalizedFinalOps: stateDeltas.map((delta) => (delta as Record<string, unknown>).op),
+          ledgerCount: ledgerAdds.length,
+        },
+        null,
+        2,
+      ),
+    );
+  } else {
+    switch (action) {
     case "MOVE":
       stateDeltas =
         outcome === "SUCCESS"
@@ -985,7 +1453,7 @@ export function resolveDeterministicTurn(args: DeterministicTurnArgs): Determini
       break;
     case "OBSERVE":
     default:
-      if (playerIntentMode !== "LOOK") {
+      if (canonicalIntent.mode !== "LOOK") {
         stateDeltas = [];
         ledgerAdds = [];
         break;
@@ -1090,6 +1558,64 @@ export function resolveDeterministicTurn(args: DeterministicTurnArgs): Determini
       }
       break;
   }
+  }
+
+  const interactionStateDeltas = resolvedByAffordance ? interactionResolution!.stateDeltas : [];
+  console.log(
+    "door.force.debug",
+    JSON.stringify(
+      {
+        normalizedInput: canonicalIntent.normalizedInput,
+        mode: canonicalIntent.mode,
+        interactionStateDeltas,
+        finalStateDeltas: stateDeltas,
+      },
+      null,
+      2,
+    ),
+  );
+  if (resolvedByAffordance) {
+    console.log(
+      "interaction.consequence.profile",
+      JSON.stringify(
+        {
+          profile: interactionConsequenceProfile,
+          actionTags: interactionActionTags,
+          outcomeHint: interactionOutcomeHint,
+          failForwardEligible: interactionFailForwardEligible,
+        },
+        null,
+        2,
+      ),
+    );
+  }
+  const forcedDoorPhraseDetected = matchesForcedDoorPhrase(canonicalIntent.normalizedInput);
+  if (forcedDoorPhraseDetected && canonicalIntent.mode !== "DO") {
+    console.error(
+      "door.force.mode_mismatch",
+      JSON.stringify(
+      {
+        normalizedInput: canonicalIntent.normalizedInput,
+        normalizedMode: canonicalIntent.mode,
+      },
+        null,
+        2,
+      ),
+    );
+  }
+  if (isForcedDoorAction(canonicalIntent.mode, canonicalIntent.normalizedInput)) {
+    const hasDoorForced = stateDeltas.some(
+      (delta) =>
+        delta &&
+        typeof delta === "object" &&
+        (delta as Record<string, unknown>).kind === "flag.set" &&
+        (delta as Record<string, unknown>).key === "door.forced" &&
+        (delta as Record<string, unknown>).value === true,
+    );
+    if (!hasDoorForced) {
+      throw new Error("Resolver must emit door.forced flag for forced door actions.");
+    }
+  }
 
   resolution = {
     outcome: outcomeLabel(outcome),
@@ -1102,127 +1628,331 @@ export function resolveDeterministicTurn(args: DeterministicTurnArgs): Determini
     action,
   };
 
-  const intermediateAppliedState = applyDeltas(normalizedState as any, stateDeltas as any) as Record<string, unknown>;
-  const intermediateNextState = projectReadableState(
-    normalizedState,
-    intermediateAppliedState,
-    action,
-    outcome,
-    args.turnIndex,
-    pressureEffects,
-  );
-  const previousStage = pressureStage(normalizedState);
-  const nextStage = pressureStage(intermediateNextState);
-
-  if (pressureRank(nextStage) > pressureRank(previousStage) && nextStage !== "calm") {
-    stateDeltas.push(
-      makeFlagDelta(
-        pressureFlagKey(nextStage),
-        true,
-        `Pressure has crossed into ${nextStage}, and later turns should react accordingly.`,
-        "Pressure stage",
-      ),
-    );
-    ledgerAdds.push({
-      cause: "pressure",
-      effect:
-        nextStage === "tension"
-          ? "Pressure has started to tighten around the scene."
-          : nextStage === "danger"
-            ? "Pressure has escalated into open danger."
-            : "Pressure has broken into outright crisis.",
-      detail:
-        nextStage === "tension"
-          ? "Enough alert, noise, or heat has accumulated that the world is now actively focusing on you."
-          : nextStage === "danger"
-            ? "The situation has moved beyond background risk and is now escalating in plain sight."
-            : "The accumulated pressure is high enough that the situation is close to breaking.",
+  if (affordanceHandled) {
+    const context = `${affordanceMatch?.affordanceId ?? "unknown"}:${parsedIntent.mode}:${parsedIntent.verb ?? "unknown"}`;
+    assertInteractionResolutionResult(interactionResolution!, context);
+    const canonicalStateDeltas = stateDeltas;
+    const canonicalLedgerAdds = ledgerAdds;
+    const appliedState = applyDeltas(normalizedState as any, canonicalStateDeltas as any) as Record<
+      string,
+      unknown
+    >;
+    const nextState = projectReadableState(
+      normalizedState,
+      appliedState,
       action,
       outcome,
-      summary,
-      stage: nextStage,
-      refTurnIndex: args.turnIndex,
+      args.turnIndex,
+      pressureEffects,
+    );
+    const finalWorldFlags = asRecord(asRecord(nextState.world)?.flags ?? {});
+    const normalizedFinalFlags: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(finalWorldFlags)) {
+      normalizedFinalFlags[key] = Boolean(value);
+    }
+    const mechanicFacts = deriveMechanicFacts({
+      stateFlags: normalizedFinalFlags,
+      stateDeltas: canonicalStateDeltas,
+      ledgerAdds: canonicalLedgerAdds,
+      stats: asRecord(nextState.stats) ?? {},
     });
-    scene = applyPressureToScene(scene, nextStage);
+    console.log("turn.path.affordance_finalized", {
+      affordanceId: affordanceMatch?.affordanceId,
+      mode: canonicalIntent.mode,
+      input: canonicalIntent.normalizedInput,
+      finalDeltaOps: canonicalStateDeltas.map((delta) =>
+        (delta as Record<string, unknown>).op ?? (delta as Record<string, unknown>).kind,
+      ),
+      ledgerCount: canonicalLedgerAdds.length,
+    });
+    return buildAffordanceResolvedTurn({
+      nextState,
+      canonicalIntent,
+      parsedIntent,
+      affordanceMatch: affordanceMatch!,
+      interactionResult: interactionResolution!,
+      finalStateDeltas: canonicalStateDeltas,
+      finalLedgerAdds: canonicalLedgerAdds,
+      mechanicFacts,
+      scene,
+      resolution,
+      action,
+      outcome,
+    });
   }
 
-  const preReactionState = applyDeltas(normalizedState as any, stateDeltas as any) as Record<string, unknown>;
-  let nextState = projectReadableState(
-    normalizedState,
-    preReactionState,
-    action,
-    outcome,
-    args.turnIndex,
-    pressureEffects,
-  );
+  if (!affordanceHandled) {
+    const intermediateAppliedState = applyDeltas(normalizedState as any, stateDeltas as any) as Record<string, unknown>;
+    const intermediateNextState = projectReadableState(
+      normalizedState,
+      intermediateAppliedState,
+      action,
+      outcome,
+      args.turnIndex,
+      pressureEffects,
+    );
+    const previousStage = pressureStage(normalizedState);
+    const nextStage = pressureStage(intermediateNextState);
 
-  applyPostTurnReactions({
-    nextState,
-    stateDeltas,
-    ledgerAdds,
-    action,
-    outcome,
-    summary,
-    turnIndex: args.turnIndex,
-  });
+    if (pressureRank(nextStage) > pressureRank(previousStage) && nextStage !== "calm") {
+      stateDeltas.push(
+        makeFlagDelta(
+          pressureFlagKey(nextStage),
+          true,
+          `Pressure has crossed into ${nextStage}, and later turns should react accordingly.`,
+          "Pressure stage",
+        ),
+      );
+      ledgerAdds.push({
+        cause: "pressure",
+        effect:
+          nextStage === "tension"
+            ? "Pressure has started to tighten around the scene."
+            : nextStage === "danger"
+              ? "Pressure has escalated into open danger."
+              : "Pressure has broken into outright crisis.",
+        detail:
+          nextStage === "tension"
+            ? "Enough alert, noise, or heat has accumulated that the world is now actively focusing on you."
+            : nextStage === "danger"
+              ? "The situation has moved beyond background risk and is now escalating in plain sight."
+              : "The accumulated pressure is high enough that the situation is close to breaking.",
+        action,
+        outcome,
+        summary,
+        stage: nextStage,
+        refTurnIndex: args.turnIndex,
+      });
+      scene = applyPressureToScene(scene, nextStage);
+    }
 
-  const postReactionState = applyDeltas(normalizedState as any, stateDeltas as any) as Record<string, unknown>;
-  nextState = projectReadableState(
-    normalizedState,
-    postReactionState,
-    action,
-    outcome,
-    args.turnIndex,
-    pressureEffects,
-  );
+    const preReactionState = applyDeltas(normalizedState as any, stateDeltas as any) as Record<string, unknown>;
+    let nextState = projectReadableState(
+      normalizedState,
+      preReactionState,
+      action,
+      outcome,
+      args.turnIndex,
+      pressureEffects,
+    );
 
-  evaluateQuestTriggers({
-    nextState,
-    stateDeltas,
-    ledgerAdds,
-  });
+    if (!resolvedByAffordance) {
+      applyPostTurnReactions({
+        nextState,
+        stateDeltas,
+        ledgerAdds,
+        action,
+        outcome,
+        summary,
+        turnIndex: args.turnIndex,
+      });
+    } else {
+      console.log(
+        "interaction.consequence.applied",
+        JSON.stringify(
+          {
+            profile: interactionConsequenceProfile,
+            actionTags: interactionActionTags,
+            outcome: interactionOutcomeHint,
+            pressureAdds: interactionPressureAdds,
+          },
+          null,
+          2,
+        ),
+      );
+    }
 
-  const finalAppliedState = applyDeltas(normalizedState as any, stateDeltas as any) as Record<string, unknown>;
-  nextState = projectReadableState(
-    normalizedState,
-    finalAppliedState,
-    action,
-    outcome,
-    args.turnIndex,
-    pressureEffects,
-  );
+    const postReactionState = applyDeltas(normalizedState as any, stateDeltas as any) as Record<string, unknown>;
+    nextState = projectReadableState(
+      normalizedState,
+      postReactionState,
+      action,
+      outcome,
+      args.turnIndex,
+      pressureEffects,
+    );
 
-  let resolvedTurn = {
+    evaluateQuestTriggers({
+      nextState,
+      stateDeltas,
+      ledgerAdds,
+    });
+
+    const finalAppliedState = applyDeltas(normalizedState as any, stateDeltas as any) as Record<string, unknown>;
+    nextState = projectReadableState(
+      normalizedState,
+      finalAppliedState,
+      action,
+      outcome,
+      args.turnIndex,
+      pressureEffects,
+    );
+
+    let resolvedTurn = {
+      action,
+      outcome,
+      scene,
+      resolution,
+      stateDeltas,
+      ledgerAdds,
+      nextState,
+    };
+
+    if (canonicalIntent.mode !== "LOOK") {
+      resolvedTurn.stateDeltas = resolvedTurn.stateDeltas.filter((delta) => {
+        const op = (delta as any).op ?? null;
+        const kind = (delta as any).kind ?? null;
+        const key = (delta as any).key ?? null;
+        const keyStr = typeof key === "string" ? key : null;
+        if (op === "inv.add") return false;
+        if (op === "time.inc") return false;
+        if (op === "flag.set" && keyStr?.startsWith("observed.")) return false;
+        if (op === "flag.set" && keyStr === "knowledge.gained") return false;
+        if (kind === "flag.set" && keyStr === "knowledge.gained") return false;
+        return true;
+      });
+      resolvedTurn.ledgerAdds = resolvedTurn.ledgerAdds.filter((entry) => {
+        const cause = (entry as any).cause;
+        const actionName = (entry as any).action;
+        if (cause === "observation") return false;
+        if (actionName === "OBSERVE") return false;
+        return true;
+      });
+    }
+
+    const finalStateDeltas = resolvedTurn.stateDeltas ?? [];
+    const finalLedgerAdds = resolvedTurn.ledgerAdds ?? [];
+    const interactionFlagKeys = interactionStateDeltas
+      .filter(
+        (delta): delta is Record<string, unknown> =>
+          !!delta && typeof delta === "object" && (delta as Record<string, unknown>).kind === "flag.set",
+      )
+      .map((delta) => (delta as Record<string, unknown>).key)
+      .filter((key): key is string => typeof key === "string");
+    const finalFlagKeys = stateDeltas
+      .filter(
+        (delta): delta is Record<string, unknown> =>
+          !!delta && typeof delta === "object" && (delta as Record<string, unknown>).kind === "flag.set",
+      )
+      .map((delta) => (delta as Record<string, unknown>).key)
+      .filter((key): key is string => typeof key === "string");
+    console.log(
+      "mechanic.truth.pre_derive",
+      JSON.stringify(
+        {
+          canonicalIntent,
+          interactionStateDeltas,
+          finalStateDeltas: stateDeltas,
+          finalLedgerAdds: ledgerAdds,
+          interactionFlagKeys,
+          finalFlagKeys,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      "mechanic.truth.audit",
+      JSON.stringify(
+        {
+          action: canonicalIntent.normalizedInput,
+          mode: canonicalIntent.mode,
+          interactionStateDeltas,
+          finalStateDeltas,
+          finalLedgerAdds,
+        },
+        null,
+        2,
+      ),
+    );
+    const nextWorldFlags = asRecord(asRecord(nextState.world)?.flags ?? {});
+    appendRitualFacts({
+      intent: canonicalIntent,
+      finalStateDeltas,
+      finalLedgerAdds,
+      nextWorldFlags,
+    });
+    const worldView = asRecord(nextState.world) ?? {};
+    worldView.flags = nextWorldFlags;
+    nextState.world = worldView;
+    resolvedTurn.stateDeltas = finalStateDeltas;
+    resolvedTurn.ledgerAdds = finalLedgerAdds;
+    resolvedTurn.nextState = nextState;
+
+    console.log(
+      "TURN DEBUG",
+      JSON.stringify(
+        {
+          action: canonicalIntent.normalizedInput,
+          stateDeltas: finalStateDeltas,
+          ledgerAdds: finalLedgerAdds,
+          nextWorldFlags,
+        },
+        null,
+        2,
+      ),
+    );
+    const finalWorldFlags = asRecord(nextState.world)?.flags ?? {};
+    console.log("FINAL_DELTAS", JSON.stringify(resolvedTurn.stateDeltas ?? [], null, 2));
+    console.log("FINAL_FLAGS", JSON.stringify(finalWorldFlags, null, 2));
+    return resolvedTurn;
+  }
+}
+
+function buildAffordanceResolvedTurn(params: {
+  nextState: Record<string, unknown>;
+  canonicalIntent: CanonicalTurnIntent;
+  parsedIntent: ActionIntent;
+  affordanceMatch: AffordanceMatch;
+  interactionResult: InteractionResolutionResult;
+  finalStateDeltas: StateDelta[];
+  finalLedgerAdds: LedgerEntry[];
+  mechanicFacts: MechanicFacts;
+  scene: string;
+  resolution: {
+    outcome: string;
+    notes: string;
+    action: SupportedAction;
+  };
+  action: SupportedAction;
+  outcome: OutcomeBand;
+}): DeterministicTurnResult {
+  const {
     action,
     outcome,
     scene,
     resolution,
-    stateDeltas,
-    ledgerAdds,
+    finalStateDeltas,
+    finalLedgerAdds,
     nextState,
+    mechanicFacts,
+    canonicalIntent,
+    parsedIntent,
+    affordanceMatch,
+    interactionResult,
+  } = params;
+  return {
+    id: null,
+    playerInput: canonicalIntent.rawInput,
+    action,
+    outcome,
+    scene,
+    resolution,
+    stateDeltas: finalStateDeltas,
+    ledgerAdds: finalLedgerAdds,
+    nextState,
+    mechanicFacts,
+    debug: {
+      resolutionPath: "affordance",
+      affordanceId: affordanceMatch.affordanceId,
+      normalizedInput: canonicalIntent.normalizedInput,
+      parsedIntent: {
+        verb: parsedIntent.verb,
+        targetText: parsedIntent.targetText,
+      },
+      interactionOutcomeHint: interactionResult.outcomeHint ?? null,
+      actionTags: interactionResult.actionTags ?? [],
+    },
+    isFinalizedByAffordance: true,
   };
-
-  if (playerIntentMode !== "LOOK") {
-    resolvedTurn.stateDeltas = resolvedTurn.stateDeltas.filter((delta) => {
-      const op = (delta as any).op ?? null;
-      const kind = (delta as any).kind ?? null;
-      const key = (delta as any).key ?? null;
-      const keyStr = typeof key === "string" ? key : null;
-      if (op === "inv.add") return false;
-      if (op === "time.inc") return false;
-      if (op === "flag.set" && keyStr?.startsWith("observed.")) return false;
-      if (op === "flag.set" && keyStr === "knowledge.gained") return false;
-      if (kind === "flag.set" && keyStr === "knowledge.gained") return false;
-      return true;
-    });
-    resolvedTurn.ledgerAdds = resolvedTurn.ledgerAdds.filter((entry) => {
-      const cause = (entry as any).cause;
-      const actionName = (entry as any).action;
-      if (cause === "observation") return false;
-      if (actionName === "OBSERVE") return false;
-      return true;
-    });
-  }
-
-  return resolvedTurn;
 }

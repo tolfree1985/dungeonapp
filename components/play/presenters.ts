@@ -33,6 +33,11 @@ import type { TurnResolutionPresentation } from "@/server/scene/turn-resolution-
 import type { InventoryDelta } from "@/lib/engine/types/inventory";
 import { shapeTurnPresentation } from "@/lib/presentation/shapeTurnPresentation";
 import { mapLedgerText } from "@/lib/presentation/ledgerLabels";
+import type { ConsequenceLine } from "@/lib/engine/presentation/consequenceTranslator";
+import { buildTurnChanges, type TurnChangeItem } from "@/lib/engine/presentation/turnChangesTranslator";
+import { deriveMechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
+import type { FactLine, MechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
+export type { FactLine, MechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
 import {
   describeMetricDetail,
   describePressureSummary,
@@ -40,14 +45,159 @@ import {
   PressureAxis,
   PressureSummary,
 } from "@/lib/presentation/pressureLanguage";
-import type { StateSummaryBucket } from "@/lib/engine/presentation/stateSummaryTranslator";
-import {
-  ConsequenceCategory,
-  ConsequenceLine,
-  translateConsequences,
-} from "@/lib/engine/presentation/consequenceTranslator";
 
-type ResolvedResolution = Record<string, unknown>;
+function toOutcomeLabel(raw: string | null | undefined, failForward: boolean): string {
+  const normalized = raw ? raw.trim().toLowerCase() : "";
+  if (!raw) return "Outcome";
+  if (failForward) {
+    if (normalized.includes("success with cost") || normalized.includes("success at a cost")) {
+      return "Success at a Cost";
+    }
+    if (normalized.includes("setback")) return "Setback";
+    return "Partial Success";
+  }
+  if (normalized.includes("success with cost") || normalized.includes("success at a cost")) return "Success at a Cost";
+  if (normalized.includes("success")) return "Success";
+  if (normalized.includes("partial")) return "Partial Success";
+  if (normalized.includes("setback")) return "Setback";
+  if (normalized.includes("failure")) return "Failure";
+  return raw.trim();
+}
+
+function deriveDeterministicTurnSignals(params: {
+  stateDeltas?: Array<any>;
+  ledgerAdds?: Array<{ cause?: string; effect?: string } | null>;
+  ledgerTexts?: string[];
+  turnChanges: TurnChangeItem[];
+}) {
+  const achievementSignals: DerivedTurnSignal[] = [];
+  const costSignals: DerivedTurnSignal[] = [];
+  const achievementSeen = new Set<string>();
+  const costSeen = new Set<string>();
+
+  if (Array.isArray(params.stateDeltas)) {
+    for (const delta of params.stateDeltas) {
+      if (!delta || typeof delta !== "object") continue;
+      if (delta.kind === "flag.set" && typeof delta.key === "string") {
+        const mapping = FLAG_SIGNAL_MAP[delta.key];
+        if (mapping) {
+        const signal: DerivedTurnSignal = {
+          label: canonicalizeLabel(mapping.label),
+          kind: mapping.kind === "achievement" ? "progress" : "cost",
+          source: "stateDelta",
+          isNewThisTurn: true,
+        };
+          addDerivedSignal(
+            mapping.kind === "achievement" ? achievementSignals : costSignals,
+            mapping.kind === "achievement" ? achievementSeen : costSeen,
+            signal
+          );
+        }
+      }
+      if (typeof delta.key === "string") {
+        const keyLower = delta.key.toLowerCase();
+        const valueText = delta.value ? String(delta.value).toLowerCase() : "";
+        if (keyLower.includes("crate") && /(weakened|loosen)/.test(valueText)) {
+          addDerivedSignal(achievementSignals, achievementSeen, {
+            label: canonicalizeLabel("Crate weakened"),
+            kind: "progress",
+            source: "stateDelta",
+            isNewThisTurn: true,
+          });
+        }
+      }
+      if (delta.kind === "pressure.add" && typeof delta.domain === "string") {
+        const label = PRESSURE_SIGNAL_LABELS[delta.domain.toLowerCase()];
+        if (label) {
+          addDerivedSignal(
+            costSignals,
+            costSeen,
+            {
+              label,
+              kind: "hazard",
+              source: "stateDelta",
+              isNewThisTurn: true,
+            }
+          );
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(params.ledgerAdds)) {
+    for (const entry of params.ledgerAdds) {
+      if (!entry) continue;
+      const text = `${entry.cause ?? ""} ${entry.effect ?? ""}`.trim().toLowerCase();
+      if (!text) continue;
+      if (includesKeyword(text, ["clue", "hidden", "evidence"])) {
+        addDerivedSignal(achievementSignals, achievementSeen, {
+          label: "A hidden clue was uncovered.",
+          kind: "clue",
+          source: "ledger",
+          isNewThisTurn: true,
+        });
+      }
+      if (includesKeyword(text, ["crate", "open", "pry"])) {
+        addDerivedSignal(achievementSignals, achievementSeen, {
+          label: "The crate can now be searched.",
+          kind: "opportunity",
+          source: "ledger",
+          isNewThisTurn: true,
+        });
+      }
+      if (includesKeyword(text, ["crate", "weakened", "loosen"])) {
+        addDerivedSignal(achievementSignals, achievementSeen, {
+          label: canonicalizeLabel("Crate weakened"),
+          kind: "progress",
+          source: "ledger",
+          isNewThisTurn: true,
+        });
+      }
+      if (includesKeyword(text, ["movement", "heavy object", "drag"])) {
+        addDerivedSignal(achievementSignals, achievementSeen, {
+          label: "Signs of movement found",
+          kind: "opportunity",
+          source: "ledger",
+          isNewThisTurn: true,
+        });
+      }
+      if (PRESSURE_COST_KEYWORDS.some((keyword) => text.includes(keyword))) {
+        addDerivedSignal(costSignals, costSeen, {
+          label: "Noise increased",
+          kind: "hazard",
+          source: "ledger",
+          isNewThisTurn: true,
+        });
+      }
+    }
+  }
+
+  for (const text of params.ledgerTexts ?? []) {
+    const normalized = text.toLowerCase();
+    if (normalized.includes("crate") && normalized.includes("weaken")) {
+      addDerivedSignal(achievementSignals, achievementSeen, {
+        label: canonicalizeLabel("Crate weakened"),
+        kind: "progress",
+        source: "ledger",
+        isNewThisTurn: true,
+      });
+    }
+  }
+
+  for (const change of params.turnChanges) {
+    if (!change.label) continue;
+    const target = change.kind === "cost" || change.kind === "hazard" ? costSignals : achievementSignals;
+    const seenSet = change.kind === "cost" || change.kind === "hazard" ? costSeen : achievementSeen;
+    addDerivedSignal(target, seenSet, {
+      label: canonicalizeLabel(change.label),
+      kind: change.kind === "cost" || change.kind === "hazard" ? "hazard" : "progress",
+      source: "turnChange",
+      isNewThisTurn: true,
+    });
+  }
+
+  return { achievements: achievementSignals, costs: costSignals };
+}
 
 function tryParseJson(text: string): Record<string, unknown> | null {
   try {
@@ -255,6 +405,9 @@ export type LatestTurnViewModel = {
   persistentRiskConsequences: string[];
   persistentOpportunityConsequences: string[];
   fireNarrationLine?: string | null;
+  turnChanges: TurnChangeItem[];
+  turnChangeAchievements: string[];
+  turnChangeCosts: string[];
   rollSummary?: string | null;
   rollDetail?: string | null;
   outcomeTierLabel?: string | null;
@@ -311,6 +464,13 @@ export type PresentedStateMetric = {
   label: string;
 };
 
+export type RightRailPresentation = {
+  careNow: string[];
+  world: string[];
+  opportunities: string[];
+  showLedgerFirst: boolean;
+};
+
 export type StatePanelViewModel = {
   status: StateItemViewModel[];
   world: StateItemViewModel[];
@@ -336,7 +496,19 @@ export type StatePanelViewModel = {
     danger: number;
   };
   prioritySignals: StatePrioritySignal[];
-  summary: StateSummaryBucket;
+  summary: MechanicFacts;
+  rightRail: RightRailPresentation;
+  latestTurnStateDeltas: unknown[];
+  latestTurnLedgerAdds: unknown[];
+  worldFlags: Record<string, unknown>;
+  playerInput: string | null;
+  devInspection: {
+    mechanicFacts: MechanicFacts;
+    latestTurnStateDeltas: unknown[];
+    latestTurnLedgerAdds: unknown[];
+    worldFlags: Record<string, unknown>;
+    playerInput: string | null;
+  };
 };
 
 export type AdventureHistoryRowViewModel = {
@@ -619,7 +791,7 @@ export function formatLedgerDisplay(entries: unknown[]): LedgerEntryViewModel[] 
 export function buildLatestTurnViewModel(
   turn: PlayTurn,
   pressureStage: string | null | undefined,
-  context?: { recentSceneSummaries?: string[] }
+  context?: { recentSceneSummaries?: string[]; mechanicFacts?: MechanicFacts }
 ): LatestTurnViewModel {
   const resolvedPressureStage = normalizePressureStage(pressureStage ?? null);
   const pressureLabel = resolvedPressureStage.toUpperCase();
@@ -628,6 +800,11 @@ export function buildLatestTurnViewModel(
     ? turn.stateDeltas.map((delta) => describeStateDelta(delta)).filter(Boolean)
     : [];
   const rawStateDeltas = Array.isArray(turn.stateDeltas) ? turn.stateDeltas : [];
+  const flagSetThisTurn = (key: string) =>
+    rawStateDeltas.some(
+      (delta) => delta && typeof delta === "object" && (delta as Record<string, unknown>).kind === "flag.set" &&
+      (delta as Record<string, unknown>).key === key
+    );
   const pressureChanges = rawStateDeltas
     .map(extractPressureChange)
     .filter((entry): entry is { domain: string; amount: number } => Boolean(entry));
@@ -700,25 +877,28 @@ export function buildLatestTurnViewModel(
     .filter(Boolean);
 
   const stateFlags = (turn as any).stateFlags as Record<string, unknown> | null;
-  const translatedConsequences = translateConsequences({
-    stateFlags,
-    stateDeltas: rawStateDeltas,
-    ledgerAdds: turn.ledgerAdds ?? [],
-  });
-  const persistentLines = translatedConsequences.filter((line) => line.scope === "persistent");
-  const turnLines = translatedConsequences.filter((line) => line.scope === "turn");
+  const resolvedMechanicFacts =
+    context?.mechanicFacts ??
+    deriveMechanicFacts({
+      stateFlags,
+      stateDeltas: rawStateDeltas,
+      ledgerAdds: turn.ledgerAdds ?? [],
+      stats: {},
+    });
+  const persistentLines = resolvedMechanicFacts.persistent;
+  const turnLines = resolvedMechanicFacts.turnChanges;
   const hasAccelerantFire =
     stateFlags?.["scene.fire.accelerant"] === true ||
     persistentLines.some(
       (line) =>
-        line.category === "world" &&
+        line.bucket === "world" &&
         line.text.toLowerCase().includes("burning fast")
     );
   const hasSceneFire =
     stateFlags?.["scene.fire"] === true ||
     persistentLines.some(
       (line) =>
-        line.category === "world" &&
+        line.bucket === "world" &&
         line.text.toLowerCase().includes("on fire")
     );
   const fireNarrationLine = hasAccelerantFire
@@ -726,6 +906,21 @@ export function buildLatestTurnViewModel(
     : hasSceneFire
     ? "The chamber is on fire."
     : null;
+  const turnChanges = buildTurnChanges({
+    stateDeltas: rawStateDeltas,
+    ledger: turn.ledgerAdds ?? [],
+  });
+  const mechanicFacts = resolvedMechanicFacts;
+  const factToTurnChangeItem = (fact: FactLine): TurnChangeItem => {
+    let kind: TurnChangeItem["kind"] = "progress";
+    if (fact.bucket === "costs") kind = "cost";
+    else if (fact.bucket === "opportunities") kind = "opportunity";
+    else if (fact.bucket === "persistent" || fact.bucket === "careNow") kind = "hazard";
+    return { label: fact.text, kind, priority: fact.priority ?? 0 };
+  };
+  const turnChangeAchievements = mechanicFacts.achieved.map((fact) => fact.text);
+  const turnChangeCosts = mechanicFacts.costs.map((fact) => fact.text);
+  const filteredTurnChanges = mechanicFacts.turnChanges.map(factToTurnChangeItem);
   const shapedPresentation = shapeTurnPresentation({
     turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
     mode: parseIntentMode(turn.playerInput),
@@ -748,6 +943,7 @@ export function buildLatestTurnViewModel(
     persistentLines,
     turnLines,
   });
+  const showPersistentConsequences = Boolean(mechanicFacts.persistent.length);
 
   return {
     turnIndex: Number.isFinite(turn.turnIndex) ? turn.turnIndex : null,
@@ -762,12 +958,13 @@ export function buildLatestTurnViewModel(
     stateDeltas: deltas,
     pressureChanges,
     thresholdEvents,
-    persistentWorldConsequences: consequencePresentation.persistent.world,
+    persistentWorldConsequences: mechanicFacts.persistent.map((fact) => fact.text),
     persistentRiskConsequences: consequencePresentation.persistent.risk,
     persistentOpportunityConsequences: consequencePresentation.persistent.opportunity,
     worldConsequences: consequencePresentation.thisTurn.world,
     riskConsequences: consequencePresentation.thisTurn.risk,
     opportunityConsequences: consequencePresentation.thisTurn.opportunity,
+    showPersistentConsequences,
     fireNarrationLine,
     rollSummary,
     rollDetail,
@@ -810,6 +1007,9 @@ export function buildLatestTurnViewModel(
     complicationDeltaApplied,
     npcStance,
     pressureStage: resolvedPressureStage,
+    turnChanges: filteredTurnChanges,
+    turnChangeAchievements,
+    turnChangeCosts,
   };
 }
 
@@ -1460,7 +1660,17 @@ function addWorldContextRows(state: PlayStatePanel, worldItems: StateItemViewMod
   }
 }
 
-export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewModel {
+export function buildStatePanelViewModel(
+  state: PlayStatePanel,
+  latestLedgerAdds: unknown[] = [],
+  mechanicFacts?: MechanicFacts,
+  options?: {
+    latestTurnStateDeltas?: unknown[];
+    latestTurnLedgerAdds?: unknown[];
+    worldFlags?: Record<string, unknown>;
+    playerInput?: string | null;
+  }
+): StatePanelViewModel {
   const seenLabels = new Set<string>();
   const statusItems: StateItemViewModel[] = [];
   const worldItems: StateItemViewModel[] = [];
@@ -1523,6 +1733,10 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
       statMap.set(key, value);
     }
   });
+  const statsRecord: Record<string, unknown> = {};
+  statMap.forEach((value, key) => {
+    statsRecord[key] = value;
+  });
   const pressureTotals = {
     suspicion:
       state.pressure?.suspicion ?? statMap.get("suspicion") ?? statMap.get("npc suspicion") ?? 0,
@@ -1560,6 +1774,18 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     ? ((state as PlayStatePanel & { turns?: unknown[] }).turns as unknown[]).length
     : null;
   const turnsValue = inputTurnsValue ?? stateTurnsValue ?? 0;
+  const resolvedMechanicFacts =
+    mechanicFacts ??
+    deriveMechanicFacts({
+      stateFlags: state.flags ?? null,
+      stateDeltas: [],
+      stats: statsRecord,
+    });
+  const rightRail = presentRightRail({ mechanicFacts: resolvedMechanicFacts, latestLedgerAdds });
+  const latestTurnStateDeltas = options?.latestTurnStateDeltas ?? [];
+  const latestTurnLedgerAdds = options?.latestTurnLedgerAdds ?? [];
+  const worldFlags = options?.worldFlags ?? {};
+  const playerInput = options?.playerInput ?? null;
 
   return {
     status: statusItems,
@@ -1576,6 +1802,69 @@ export function buildStatePanelViewModel(state: PlayStatePanel): StatePanelViewM
     pressureAxisDescriptions,
     pressureTotals,
     prioritySignals: state.prioritySignals ?? [],
-    summary: state.summary ?? { careNow: [], world: [], opportunities: [] },
+    summary: resolvedMechanicFacts,
+    rightRail,
+    latestTurnStateDeltas,
+    latestTurnLedgerAdds,
+    worldFlags,
+    playerInput,
+    devInspection: {
+      mechanicFacts: resolvedMechanicFacts,
+      latestTurnStateDeltas,
+      latestTurnLedgerAdds,
+      worldFlags,
+      playerInput,
+    },
+  };
+}
+
+function normalizeRightRailText(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
+function hasMeaningfulLedgerEntries(entries?: unknown[]): boolean {
+  if (!Array.isArray(entries)) return false;
+  for (const entry of entries) {
+    if (!entry) continue;
+    if (typeof entry === "string") {
+      if (entry.trim()) return true;
+      continue;
+    }
+    if (typeof entry === "object") {
+      const record = entry as Record<string, unknown>;
+      const candidate =
+        (typeof record.message === "string" && record.message) ||
+        (typeof record.text === "string" && record.text) ||
+        (typeof record.cause === "string" && record.cause) ||
+        (typeof record.effect === "string" && record.effect) ||
+        "";
+      if (candidate.trim()) return true;
+    }
+  }
+  return false;
+}
+
+export function presentRightRail(args: { mechanicFacts: MechanicFacts; latestLedgerAdds?: unknown[] }): RightRailPresentation {
+  const seen = new Set<string>();
+  const collect = (lines: FactLine[], limit: number) => {
+    const results: string[] = [];
+    for (const line of lines) {
+      const normalized = normalizeRightRailText(line.text);
+      if (!normalized) continue;
+      const key = normalized.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push(normalized);
+      if (results.length >= limit) break;
+    }
+    return results;
+  };
+  return {
+    careNow: collect(args.mechanicFacts.careNow, 4),
+    world: collect(args.mechanicFacts.world, 5),
+    opportunities: collect(args.mechanicFacts.opportunities, 5),
+    showLedgerFirst: hasMeaningfulLedgerEntries(args.latestLedgerAdds),
   };
 }

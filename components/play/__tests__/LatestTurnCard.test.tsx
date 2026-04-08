@@ -41,14 +41,13 @@ describe("LatestTurnCard consequence presentation", () => {
     render(<LatestTurnCard model={viewModel} />);
 
     expect(screen.getByText("Persistent")).toBeTruthy();
-    expect(screen.getByText("The chamber is on fire.")).toBeTruthy();
-    expect(screen.getByText("Fabric is oil-soaked.")).toBeTruthy();
-    expect(screen.getByText("The crate is open.")).toBeTruthy();
+    expect(screen.getAllByText("The chamber is on fire.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Fabric is oil-soaked.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("The crate is open.").length).toBeGreaterThan(0);
 
-    expect(screen.getByText("This Turn")).toBeTruthy();
-    expect(screen.getByText(/Noise increased\.?/i)).toBeTruthy();
-    expect(screen.getByText(/Time advanced\.?/i)).toBeTruthy();
-    expect(screen.queryByText(/No immediate consequences detected/i)).toBeNull();
+    expect(screen.getByText(/Turn changes/i)).toBeTruthy();
+    expect(screen.getAllByText(/Noise increased\.?/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Time advanced\.?/i).length).toBeGreaterThan(0);
   });
 
   it("filters internal/legacy consequence lines", () => {
@@ -88,6 +87,6 @@ describe("LatestTurnCard consequence presentation", () => {
     const turn = baseTurn({ stateDeltas: [], stateFlags: null });
     const viewModel = buildLatestTurnViewModel(turn, "calm");
     render(<LatestTurnCard model={viewModel} />);
-    expect(screen.getByText(/no immediate consequences detected/i)).toBeTruthy();
+    expect(screen.queryByText(/You still achieved/i)).toBeNull();
   });
 });

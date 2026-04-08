@@ -12,6 +12,7 @@ import type { FinalizedConsequenceNarration } from "@/server/scene/finalized-con
 import type { LedgerPresentationEntry } from "@/server/scene/ledger-presentation";
 import type { TurnResolutionPresentation } from "@/server/scene/turn-resolution-presentation";
 import type { ParsedInventoryIntent } from "@/lib/engine/inventory/parseInventoryIntent";
+import type { MechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
 
 export type PressureStage = "calm" | "tension" | "danger" | "crisis";
 
@@ -97,5 +98,5 @@ export type PlayStatePanel = {
   ambience?: string;
   contextTags?: string[];
   flags?: Record<string, unknown> | null;
-  summary: StateSummaryBucket;
+  summary: MechanicFacts;
 };

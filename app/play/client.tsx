@@ -19,6 +19,7 @@ import { cardPadding, cardShell, emptyState, sectionHeading } from "@/components
 import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
 import { normalizeStatePanel } from "./normalizeStatePanel";
+import { deriveMechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
@@ -659,8 +660,18 @@ export default function PlayClient({
           result,
         });
       }
-      if (result.turn && result.turn.id) {
-        setResolvedTurns((prev) => [result.turn, ...prev]);
+      if (result.turn) {
+        setResolvedTurns((prev) => {
+          const next = result.turn.id
+            ? [result.turn, ...prev.filter((turn) => turn.id !== result.turn?.id)]
+            : [result.turn, ...prev];
+          console.log("client.turn.inserted", {
+            insertedTurnId: result.turn?.id ?? null,
+            insertedInput: result.turn?.playerInput ?? null,
+            newLength: next.length,
+          });
+          return next;
+        });
       }
       if (result.state) {
         setRawPlayState(result.state);
@@ -711,6 +722,12 @@ export default function PlayClient({
   const latestDisplayTurn = hasTurns ? latestTurn : showPreview ? previewLatestTurn : null;
   const recentDisplayTurns = hasTurns ? previousTurns : showPreview ? previewTurns.slice(1) : [];
   const displayPressureStage = (showPreview ? previewLatestTurn.pressureStage : pressureStage) ?? "calm";
+  console.log("client.latestTurn.selection", {
+    resolvedTurnsCount: resolvedTurns.length,
+    latestTurnId: latestTurn?.id ?? null,
+    latestTurnInput: latestTurn?.playerInput ?? null,
+    latestTurnFinalizedByAffordance: latestTurn?.isFinalizedByAffordance ?? false,
+  });
   const [highlightLatestTurn, setHighlightLatestTurn] = useState(false);
   const [showTurnDivider, setShowTurnDivider] = useState(false);
   const latestTurnRef = useRef<HTMLDivElement | null>(null);
@@ -754,6 +771,15 @@ export default function PlayClient({
       } catch {
         body = null;
       }
+
+      console.log("client.turn.response", {
+        turnId: (body as any)?.turn?.id ?? null,
+        isFinalizedByAffordance: (body as any)?.turn?.isFinalizedByAffordance ?? false,
+        playerInput: (body as any)?.turn?.playerInput ?? null,
+        scene: (body as any)?.turn?.scene ?? null,
+        mechanicFacts: (body as any)?.turn?.mechanicFacts ?? null,
+        stateDeltaKeys: ((body as any)?.turn?.stateDeltas ?? []).map((d: any) => d?.key ?? d?.op),
+      });
 
       console.log(
         "scene.art.client.kick.body.json",
@@ -803,10 +829,32 @@ export default function PlayClient({
       return limitHistory(next);
     });
 
+  const canonicalMechanicFacts = useMemo(() => {
+    const statsArray = currentStatePanel.stats ?? [];
+    const statsRecord: Record<string, unknown> = {};
+    for (const stat of statsArray) {
+      const key =
+        typeof stat.key === "string" ? stat.key.toLowerCase() : String(stat.key ?? "").toLowerCase();
+      statsRecord[key] = stat.value;
+    }
+    return deriveMechanicFacts({
+      stateFlags: currentStatePanel.flags ?? null,
+      stateDeltas: latestDisplayTurn?.stateDeltas ?? [],
+      ledgerAdds: latestDisplayTurn?.ledgerAdds ?? [],
+      stats: statsRecord,
+    });
+  }, [currentStatePanel, latestDisplayTurn]);
   const latestTurnModel = useMemo(() => {
     if (!latestDisplayTurn) return null;
-    return buildLatestTurnViewModel(latestDisplayTurn, displayPressureStage);
-  }, [displayPressureStage, latestDisplayTurn]);
+    return buildLatestTurnViewModel(latestDisplayTurn, displayPressureStage, {
+      mechanicFacts: canonicalMechanicFacts,
+    });
+  }, [displayPressureStage, latestDisplayTurn, canonicalMechanicFacts]);
+  console.log("client.latestTurn.model_source", {
+    latestDisplayTurnId: latestDisplayTurn?.id ?? null,
+    latestDisplayTurnInput: latestDisplayTurn?.playerInput ?? null,
+    latestDisplayTurnMechanicFacts: latestDisplayTurn?.mechanicFacts ?? null,
+  });
 
   const liveStatus = liveSceneArt?.status ?? "missing";
   const hasReadyImage =
@@ -819,7 +867,21 @@ export default function PlayClient({
     () => recentDisplayTurns.map((turn) => buildAdventureHistoryRowViewModel(turn, displayPressureStage)),
     [displayPressureStage, recentDisplayTurns]
   );
-  const statePanelViewModel = useMemo(() => buildStatePanelViewModel(currentStatePanel), [currentStatePanel]);
+  const statePanelViewModel = useMemo(
+    () =>
+      buildStatePanelViewModel(
+        currentStatePanel,
+        latestDisplayTurn?.ledgerAdds ?? [],
+        canonicalMechanicFacts,
+        {
+          latestTurnStateDeltas: latestDisplayTurn?.stateDeltas ?? [],
+          latestTurnLedgerAdds: latestDisplayTurn?.ledgerAdds ?? [],
+          worldFlags: currentStatePanel.flags ?? {},
+          playerInput: latestDisplayTurn?.playerInput ?? null,
+        }
+      ),
+    [currentStatePanel, latestDisplayTurn?.ledgerAdds, latestDisplayTurn?.stateDeltas, latestDisplayTurn?.playerInput, canonicalMechanicFacts]
+  );
   const initialPressureSummaryRef = useRef(statePanelViewModel.pressureSummary);
   const pressureSummary = hasHydrated
     ? statePanelViewModel.pressureSummary
@@ -1303,22 +1365,20 @@ export default function PlayClient({
             <aside className={ui.rightColumn}>
               <div className="space-y-6">
                 <section className="space-y-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">World</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">Situation</div>
                   <WorldContext
                     location={currentStatePanel.location ?? "Servants’ Wing"}
                     timeOfDay={currentStatePanel.timeOfDay ?? "Late Night"}
                     ambience={currentStatePanel.ambience ?? "Cold / Quiet"}
                     tags={currentStatePanel.contextTags ?? []}
                   />
-                  {hasRenderableOpportunity && (
-                    <SceneRenderStatusStrip
-                      label={renderOpportunityLabel}
-                      onRender={onRenderScene}
-                      isRendering={isRenderingScene}
-                      remainingCredits={creditsRemaining}
-                      creditMessage={sceneCreditMessage}
-                    />
-                  )}
+                  <SceneRenderStatusStrip
+                    label={renderOpportunityLabel}
+                    onRender={onRenderScene}
+                    isRendering={isRenderingScene}
+                    remainingCredits={creditsRemaining}
+                    creditMessage={sceneCreditMessage}
+                  />
                   {(() => {
                     console.log("play.inventory.render", {
                       statePanelInventory: currentStatePanel.inventory,
@@ -1332,13 +1392,6 @@ export default function PlayClient({
                     console.log("play.rawState.inventory.items", (rawPlayState as any)?.inventory?.items);
                     return <StatePanel viewModel={statePanelViewModel} />;
                   })()}
-                </section>
-                <section className="space-y-4">
-                  <LedgerPanel entries={latestDisplayTurn ? formatLedgerDisplay(latestDisplayTurn.ledgerAdds ?? []) : []} />
-                </section>
-                <section className="space-y-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">History</div>
-                  <RecentTurnsPanel rows={recentTurnRows} />
                 </section>
               </div>
             </aside>

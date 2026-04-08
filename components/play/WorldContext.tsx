@@ -7,16 +7,17 @@ type WorldContextProps = {
   timeOfDay?: string;
   ambience?: string;
   tags?: string[];
+  showHeading?: boolean;
 };
 
-export default function WorldContext({ location, timeOfDay, ambience, tags }: WorldContextProps) {
+export default function WorldContext({ location, timeOfDay, ambience, tags, showHeading = false }: WorldContextProps) {
   const fallbackLocation = location ?? "Unknown location";
   const fallbackTime = timeOfDay ?? "Unknown time";
   const fallbackAmbience = ambience ?? "Stillness";
 
   return (
     <section className={`${cardShell} ${cardPadding} space-y-4`}>
-      <div className={sectionHeading}>World</div>
+      {showHeading ? <div className={sectionHeading}>World</div> : null}
       <div className="space-y-3 text-sm text-[#d8d2c3]">
         <div className="flex items-center justify-between text-sm">
           <span className="text-[#a59e90]">Location</span>

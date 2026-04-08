@@ -1,4 +1,6 @@
 import type { TurnPersistenceArgs } from "../../../app/api/turn/turnDb";
+import type { IntentMode } from "@/lib/watchfulness-action-flags";
+import type { IntentMode } from "@/lib/watchfulness-action-flags";
 
 export type RunTurnPipelineResult = {
   turn: any;
@@ -18,6 +20,7 @@ export type RunTurnPipelineArgs = {
   holdKey: string;
   leaseKey: string;
   estInputTokens: number;
+  mode: IntentMode;
 };
 
 export type RunTurnPipelineDeps = {
@@ -78,6 +81,7 @@ export async function runTurnPipeline(
           holdKey: args.holdKey,
           leaseKey: args.leaseKey,
           estInputTokens: args.estInputTokens,
+          mode: args.mode,
           hashHex: deps.hashHex,
           asUnknownArray: deps.asUnknownArray,
           commitUsageAndRelease: deps.commitUsageAndRelease,
