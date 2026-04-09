@@ -711,8 +711,18 @@ export default function PlayClient({
     navigator.clipboard.writeText(value);
   };
 
-  const latestTurn = resolvedTurns[0] ?? null;
-  const previousTurns = resolvedTurns.slice(1);
+  const canonicalResolvedTurns = (() => {
+    const playableTurns = resolvedTurns.filter((turn) => {
+      const input = turn.playerInput?.trim();
+      const hasInput = Boolean(input);
+      const hasState = (turn.stateDeltas?.length ?? 0) > 0;
+      const hasLedger = (turn.ledgerAdds?.length ?? 0) > 0;
+      return hasInput || hasState || hasLedger || Boolean(turn.isFinalizedByAffordance);
+    });
+    return playableTurns.length > 0 ? playableTurns : resolvedTurns;
+  })();
+  const latestTurn = canonicalResolvedTurns[0] ?? null;
+  const previousTurns = canonicalResolvedTurns.slice(1);
   const pressureStage = currentStatePanel.pressureStage ?? "calm";
   const currentEntry = currentId ? history.find((entry) => entry.adventureId === currentId) ?? null : null;
   const pinnedEntries = history.filter((entry) => entry.pinned && entry.adventureId !== currentId);
@@ -727,6 +737,8 @@ export default function PlayClient({
     latestTurnId: latestTurn?.id ?? null,
     latestTurnInput: latestTurn?.playerInput ?? null,
     latestTurnFinalizedByAffordance: latestTurn?.isFinalizedByAffordance ?? false,
+    canonicalResolvedCount: canonicalResolvedTurns.length,
+    canonicalLatestId: canonicalResolvedTurns[0]?.id ?? null,
   });
   const [highlightLatestTurn, setHighlightLatestTurn] = useState(false);
   const [showTurnDivider, setShowTurnDivider] = useState(false);
