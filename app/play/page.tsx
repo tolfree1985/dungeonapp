@@ -542,12 +542,19 @@ let persistedAdventureOwnerId: string | null = null;
             },
           };
           turn.presentation = buildPlayTurnPresentation(turn);
-          turn.mechanicFacts = deriveMechanicFacts({
-            stateFlags: asRecord(stateRecord?.flags ?? null),
-            stateDeltas: turn.stateDeltas,
-            ledgerAdds: turn.ledgerAdds,
-            stats: statsMap,
-          });
+          const hasStateDeltas = (turn.stateDeltas?.length ?? 0) > 0;
+          const hasPressureDeltas = Array.isArray((turn as any).pressureDeltas)
+            ? ((turn as any).pressureDeltas as unknown[]).length > 0
+            : false;
+          const canonicalMechanicTurn = hasStateDeltas || hasPressureDeltas || Boolean(turn.isFinalizedByAffordance);
+          turn.mechanicFacts = canonicalMechanicTurn
+            ? deriveMechanicFacts({
+                stateFlags: asRecord(stateRecord?.flags ?? null),
+                stateDeltas: turn.stateDeltas,
+                ledgerAdds: turn.ledgerAdds,
+                stats: statsMap,
+              })
+            : null;
           const hasActionDelta = (turn.stateDeltas ?? []).some(
             (delta) =>
               delta && typeof delta === "object" && typeof (delta as Record<string, unknown>).key === "string" &&
