@@ -2,6 +2,7 @@ export const WORLD_FLAGS = {
   door: {
     forced: "door.forced",
     open: "ledger_room_door_open",
+    openAttempted: "door.open_attempted",
     kicked: "door.kicked",
     inspected: "door.inspected",
     conditionRevealed: "door.condition_revealed",

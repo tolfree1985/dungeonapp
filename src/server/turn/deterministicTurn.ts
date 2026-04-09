@@ -665,34 +665,48 @@ function resolveDoorAffordance(
   _stateFlags: Record<string, boolean>,
 ): InteractionResolutionResult | null {
   if (match.affordanceId !== "ledger_room_door") return null;
-  if (intent.verb !== "inspect") return null;
 
   const stateDeltas: StateDelta[] = [];
   const ledgerAdds: LedgerEntry[] = [];
   const emitFlag = (key: string, detail: string) => stateDeltas.push(flagSet(key, true, detail));
 
-  emitFlag(ACTION_FLAGS.doorInspect, "You study the door and note every hinge.");
-  emitFlag(WORLD_FLAGS.door.inspected, "You examine the door carefully and learn its story.");
-  emitFlag(WORLD_FLAGS.door.conditionRevealed, "The door's condition is now understood.");
-  ledgerAdds.push({
-    kind: "state_change",
-    domain: "world",
-    cause: "door.inspect",
-    effect: WORLD_FLAGS.door.conditionRevealed,
-    detail: "Inspecting the door reveals its structural condition and any recent tampering.",
-  });
+  if (intent.verb === "inspect") {
+    emitFlag(ACTION_FLAGS.doorInspect, "You study the door and note every hinge.");
+    emitFlag(WORLD_FLAGS.door.inspected, "You examine the door carefully and learn its story.");
+    emitFlag(WORLD_FLAGS.door.conditionRevealed, "The door's condition is now understood.");
+    ledgerAdds.push({
+      kind: "state_change",
+      domain: "world",
+      cause: "door.inspect",
+      effect: WORLD_FLAGS.door.conditionRevealed,
+      detail: "Inspecting the door reveals its structural condition and any recent tampering.",
+    });
+  } else if (intent.verb === "open") {
+    emitFlag(ACTION_FLAGS.doorOpen, "You try to open the door with measured force.");
+    emitFlag(WORLD_FLAGS.door.openAttempted, "You attempt to open the ledger room door.");
+    emitFlag(WORLD_FLAGS.door.open, "The ledger room door is now open.");
+    ledgerAdds.push({
+      kind: "state_change",
+      domain: "world",
+      cause: "door.open",
+      effect: WORLD_FLAGS.door.open,
+      detail: "The door swings open, granting you access to the ledger room.",
+    });
+  } else {
+    return null;
+  }
 
   return {
     stateDeltas,
     ledgerAdds,
     mechanicContext: {
-      interactionType: "inspect",
+      interactionType: intent.verb === "inspect" ? "inspect" : "force",
       targetId: match.affordanceId,
-      visibility: "observational",
-      noisiness: "silent",
-      urgency: "slow",
+      visibility: intent.verb === "inspect" ? "observational" : "physical",
+      noisiness: intent.verb === "inspect" ? "silent" : "medium",
+      urgency: intent.verb === "inspect" ? "slow" : "normal",
     },
-    outcomeHint: "clean",
+    outcomeHint: intent.verb === "inspect" ? "clean" : "risky",
   };
 }
 

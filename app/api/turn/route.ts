@@ -3712,7 +3712,7 @@ function stripNonLookObservationArtifacts(
     return true;
   });
 
-  const cleanedLedgerAdds = (legacyResolvedTurn.ledgerAdds ?? []).filter((entry: any) => {
+  const cleanedLedgerAdds = (resolvedTurn.ledgerAdds ?? []).filter((entry: any) => {
     const cause = String(entry?.cause ?? "");
     const action = String(entry?.action ?? "");
     const detail = String(entry?.detail ?? "");
@@ -3725,7 +3725,7 @@ function stripNonLookObservationArtifacts(
   });
 
   return {
-    ...legacyResolvedTurn,
+    ...resolvedTurn,
     stateDeltas: cleanedStateDeltas,
     ledgerAdds: cleanedLedgerAdds,
   };
