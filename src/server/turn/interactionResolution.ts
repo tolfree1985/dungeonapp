@@ -89,6 +89,8 @@ const FORCE_DOOR_PATTERNS = [
 const interactionHandlers: Record<string, InteractionHandler> = {
   "force:door": resolveForceDoor,
   "kick:door": resolveKickDoor,
+  "inspect:door": resolveInspectDoor,
+  "inspect:ledger_room_door": resolveInspectDoor,
   "search:room": resolveSearchRoom,
   "inspect:crate": resolveInspectCrate,
   "search:crate": resolveSearchCrate,
@@ -143,13 +145,38 @@ export function resolveInteractionMutation(
   interaction: ResolvedInteraction,
   state: AdventureState,
 ): InteractionMutationResult {
-  if (interaction.mode !== "DO" || !interaction.verb || !interaction.targetType) {
+  if (interaction.mode === "SAY" || !interaction.verb || !interaction.targetType) {
+    console.log("interaction.dispatch.key", {
+      mode: interaction.mode,
+      verb: interaction.verb,
+      targetType: interaction.targetType,
+    });
     return { stateDeltas: [], ledgerAdds: [] };
   }
   const key = `${interaction.verb}:${interaction.targetType}`;
+  console.log("interaction.dispatch.key", {
+    mode: interaction.mode,
+    verb: interaction.verb,
+    targetType: interaction.targetType,
+    lookupKey: key,
+  });
   const handler = interactionHandlers[key];
-  if (!handler) return { stateDeltas: [], ledgerAdds: [] };
-  return handler(interaction, state);
+  if (!handler) {
+    console.log("interaction.handler.result", {
+      key,
+      hasResult: false,
+    });
+    return { stateDeltas: [], ledgerAdds: [] };
+  }
+  const result = handler(interaction, state);
+  console.log("interaction.handler.result", {
+    key,
+    hasResult: Boolean(result),
+    resultKeys: result ? Object.keys(result) : [],
+    stateDeltaCount: result?.stateDeltas?.length ?? 0,
+    ledgerCount: result?.ledgerAdds?.length ?? 0,
+  });
+  return result;
 }
 
 function detectVerb(normalizedInput: string): InteractionVerb | null {
@@ -277,6 +304,38 @@ function resolveMoveChair(state: AdventureState): InteractionMutationResult {
   return {
     stateDeltas: [createFlagDelta("chair.moved", "Object", "The chair is dragged aside, and the floor beneath it is exposed.")],
     ledgerAdds: [],
+  };
+}
+
+function resolveInspectDoor(_state: AdventureState): InteractionMutationResult {
+  const deltas: CanonicalStateDelta[] = [
+    createFlagDelta("action.door.inspect", "Action", "You inspect the door closely."),
+    createFlagDelta("door.inspected", "Door", "You study the door and gather relevant details."),
+    createFlagDelta("door.condition_revealed", "Door", "The door’s condition is now understood."),
+  ];
+  console.log(
+    "door.inspect.contract",
+    JSON.stringify(
+      {
+        stateDeltaOps: deltas.map((delta) => delta.op),
+        stateDeltaKeys: deltas
+          .filter((delta) => delta.op === "flag.set")
+          .map((delta) => (delta as Record<string, unknown>).key ?? null),
+        ledgerCount: 1,
+      },
+      null,
+      2,
+    ),
+  );
+  return {
+    stateDeltas: deltas,
+    ledgerAdds: [
+      {
+        cause: "door.inspect",
+        effect: "door.condition_revealed",
+        detail: "Inspecting the door reveals its condition and structural details.",
+      },
+    ],
   };
 }
 

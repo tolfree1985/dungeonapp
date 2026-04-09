@@ -3,6 +3,8 @@ export const WORLD_FLAGS = {
     forced: "door.forced",
     open: "ledger_room_door_open",
     kicked: "door.kicked",
+    inspected: "door.inspected",
+    conditionRevealed: "door.condition_revealed",
   },
   drawer: {
     pulled: "drawer.pulled",

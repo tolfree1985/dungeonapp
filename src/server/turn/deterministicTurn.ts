@@ -52,6 +52,9 @@ const ACTION_FLAGS = {
   drawerPull: "action.drawer.pull",
   deskInspect: "action.desk.inspect",
   deskSearch: "action.desk.search",
+  doorInspect: "action.door.inspect",
+  doorOpen: "action.door.open",
+  doorForce: "action.door.force",
 } as const;
 function flagSet(key: string, value = true, detail?: string): StateDelta {
   return {
@@ -468,8 +471,14 @@ function resolveAffordance(params: {
   match: AffordanceMatch;
   stateFlags: Record<string, boolean>;
 }): InteractionResolutionResult | null {
-  if (params.match.resolver !== "container") return null;
-  return resolveContainerAffordance(params.intent, params.match, params.stateFlags);
+  switch (params.match.resolver) {
+    case "container":
+      return resolveContainerAffordance(params.intent, params.match, params.stateFlags);
+    case "door":
+      return resolveDoorAffordance(params.intent, params.match, params.stateFlags);
+    default:
+      return null;
+  }
 }
 
 function resolveContainerAffordance(
@@ -648,6 +657,43 @@ function resolveContainerAffordance(
   }
 
   return null;
+}
+
+function resolveDoorAffordance(
+  intent: ActionIntent,
+  match: AffordanceMatch,
+  _stateFlags: Record<string, boolean>,
+): InteractionResolutionResult | null {
+  if (match.affordanceId !== "ledger_room_door") return null;
+  if (intent.verb !== "inspect") return null;
+
+  const stateDeltas: StateDelta[] = [];
+  const ledgerAdds: LedgerEntry[] = [];
+  const emitFlag = (key: string, detail: string) => stateDeltas.push(flagSet(key, true, detail));
+
+  emitFlag(ACTION_FLAGS.doorInspect, "You study the door and note every hinge.");
+  emitFlag(WORLD_FLAGS.door.inspected, "You examine the door carefully and learn its story.");
+  emitFlag(WORLD_FLAGS.door.conditionRevealed, "The door's condition is now understood.");
+  ledgerAdds.push({
+    kind: "state_change",
+    domain: "world",
+    cause: "door.inspect",
+    effect: WORLD_FLAGS.door.conditionRevealed,
+    detail: "Inspecting the door reveals its structural condition and any recent tampering.",
+  });
+
+  return {
+    stateDeltas,
+    ledgerAdds,
+    mechanicContext: {
+      interactionType: "inspect",
+      targetId: match.affordanceId,
+      visibility: "observational",
+      noisiness: "silent",
+      urgency: "slow",
+    },
+    outcomeHint: "clean",
+  };
 }
 
 function selectOutcome(turnIndex: number): OutcomeBand {
