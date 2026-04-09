@@ -55,7 +55,7 @@ const ACTION_FLAGS = {
   doorInspect: "action.door.inspect",
   doorOpen: "action.door.open",
   doorForce: "action.door.force",
-} as const;
+  } as const;
 function flagSet(key: string, value = true, detail?: string): StateDelta {
   return {
     op: "flag.set",
@@ -668,6 +668,7 @@ function resolveDoorAffordance(
 
   const stateDeltas: StateDelta[] = [];
   const ledgerAdds: LedgerEntry[] = [];
+  const pressureAdds: StateDelta[] = [];
   const emitFlag = (key: string, detail: string) => stateDeltas.push(flagSet(key, true, detail));
 
   if (intent.verb === "inspect") {
@@ -692,6 +693,18 @@ function resolveDoorAffordance(
       effect: WORLD_FLAGS.door.open,
       detail: "The door swings open, granting you access to the ledger room.",
     });
+  } else if (intent.verb === "force") {
+    emitFlag(ACTION_FLAGS.doorForce, "You slam the door with your shoulder and a crowbar.");
+    emitFlag(WORLD_FLAGS.door.forced, "The ledger room door is forced open.");
+    emitFlag("door.frame_damaged", "The door frame splinters under the impact.");
+    ledgerAdds.push({
+      kind: "state_change",
+      domain: "world",
+      cause: "door.force",
+      effect: WORLD_FLAGS.door.forced,
+      detail: "Forcing the door opens it but leaves the frame scarred.",
+    });
+    pressureAdds.push(pressureAdd("time", 1));
   } else {
     return null;
   }
@@ -699,6 +712,7 @@ function resolveDoorAffordance(
   return {
     stateDeltas,
     ledgerAdds,
+    pressureAdds: pressureAdds.length > 0 ? pressureAdds : undefined,
     mechanicContext: {
       interactionType: intent.verb === "inspect" ? "inspect" : "force",
       targetId: match.affordanceId,
@@ -707,6 +721,7 @@ function resolveDoorAffordance(
       urgency: intent.verb === "inspect" ? "slow" : "normal",
     },
     outcomeHint: intent.verb === "inspect" ? "clean" : "risky",
+    failForwardEligible: intent.verb === "force",
   };
 }
 

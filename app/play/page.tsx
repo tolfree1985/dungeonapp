@@ -556,6 +556,18 @@ let persistedAdventureOwnerId: string | null = null;
           turn.isFinalizedByAffordance = hasActionDelta;
           return turn;
         });
+        const latestHydratedTurn = [...turns]
+          .sort((a, b) => (b.turnIndex ?? -1) - (a.turnIndex ?? -1))[0] ?? null;
+        console.log("play.server.latest_turn_payload", {
+          id: latestHydratedTurn?.id ?? null,
+          input: latestHydratedTurn?.playerInput ?? null,
+          turnIndex: latestHydratedTurn?.turnIndex ?? null,
+          finalized: latestHydratedTurn?.isFinalizedByAffordance ?? false,
+          hasMechanicFacts: Boolean(latestHydratedTurn?.mechanicFacts),
+          mechanicFactKeys: latestHydratedTurn?.mechanicFacts
+            ? Object.keys(latestHydratedTurn.mechanicFacts)
+            : [],
+        });
       }
     } catch (error) {
       if (isAdventureOwnershipError(error) && error.code === "ADVENTURE_FORBIDDEN") {

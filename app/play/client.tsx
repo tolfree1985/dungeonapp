@@ -68,7 +68,7 @@ const previewLatestTurn: PlayTurn & { rollTotal: number; pressureStage: string }
   pressureStage: "tension",
 };
 
-const previewTurns: Array<PlayTurn & { rollTotal?: number; pressureStage?: string }> = [
+  const previewTurns: Array<PlayTurn & { rollTotal?: number; pressureStage?: string }> = [
   previewLatestTurn,
   {
     id: "chronicle-preview-previous",
@@ -208,6 +208,16 @@ export default function PlayClient({
   sceneStylePreset,
   sceneRenderMode = "full",
 }: PlayClientProps) {
+  console.log("play.client.turns_prop_preview",
+    turns.slice(0, 5).map((turn) => ({
+      id: turn.id ?? null,
+      input: turn.playerInput ?? null,
+      turnIndex: turn.turnIndex ?? null,
+      finalized: turn.isFinalizedByAffordance ?? false,
+      hasMechanicFacts: Boolean(turn.mechanicFacts),
+      mechanicFactKeys: turn.mechanicFacts ? Object.keys(turn.mechanicFacts) : [],
+    }))
+  );
   console.log("play.client.initial_scene_art_prop", {
     sceneImage,
   });
