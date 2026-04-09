@@ -65,6 +65,8 @@ export type PlayTurn = {
   inventoryActionKind?: ParsedInventoryIntent["kind"] | null;
   inventoryActionTarget?: string | null;
   pressureStage?: PressureStage | null;
+  isFinalizedByAffordance?: boolean;
+  mechanicFacts?: MechanicFacts | null;
 };
 
 export type PlayTurnPresentation = {

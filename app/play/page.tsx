@@ -20,6 +20,7 @@ import { resolveSceneVisualState, type VisualStateDelta } from "@/lib/resolveSce
 import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
 import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { buildPlayTurnPresentation } from "./normalizeTurnPresentation";
+import { deriveMechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
 import { randomUUID } from "node:crypto";
 import { createAdventureFromScenarioId } from "@/lib/game/createAdventureFromScenario";
 import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
@@ -516,6 +517,12 @@ let persistedAdventureOwnerId: string | null = null;
             return String(value);
           }
         };
+        const statsMap: Record<string, unknown> = {};
+        for (const stat of statePanel.stats ?? []) {
+          const key = typeof stat.key === "string" ? stat.key.toLowerCase() : String(stat.key ?? "").toLowerCase();
+          statsMap[key] = stat.value;
+        }
+
         turns = (playableAdventure.turns ?? []).map((row) => {
           const resolutionText = resolutionToString(row.resolution);
           const turn: PlayTurn = {
@@ -535,6 +542,18 @@ let persistedAdventureOwnerId: string | null = null;
             },
           };
           turn.presentation = buildPlayTurnPresentation(turn);
+          turn.mechanicFacts = deriveMechanicFacts({
+            stateFlags: asRecord(stateRecord?.flags ?? null),
+            stateDeltas: turn.stateDeltas,
+            ledgerAdds: turn.ledgerAdds,
+            stats: statsMap,
+          });
+          const hasActionDelta = (turn.stateDeltas ?? []).some(
+            (delta) =>
+              delta && typeof delta === "object" && typeof (delta as Record<string, unknown>).key === "string" &&
+              (delta as Record<string, unknown>).key?.startsWith("action."),
+          );
+          turn.isFinalizedByAffordance = hasActionDelta;
           return turn;
         });
       }
