@@ -242,6 +242,58 @@ export function deriveMechanicFacts({
     ),
   );
 
+  const hasDoorOpen =
+    Boolean(flags["ledger_room_door_open"]) ||
+    deriveFlagKeys.includes("ledger_room_door_open") ||
+    ledgerTexts.some((text) => /ledger room door/.test(text) && /open/i.test(text));
+
+  if (hasDoorOpen) {
+    const source: FactLine["source"] = "derived";
+    pushFact(facts, seen, {
+      id: "door_opened",
+      text: "You opened the ledger room door.",
+      bucket: "achieved",
+      kind: "progress",
+      severity: "medium",
+      priority: 70,
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "door_open_turn",
+      text: "The ledger room door swings open.",
+      bucket: "turnChanges",
+      kind: "progress",
+      severity: "medium",
+      priority: 65,
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "door_open_persistent",
+      text: "The ledger room door remains open.",
+      bucket: "persistent",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "door_open_world",
+      text: "The ledger room is now accessible.",
+      bucket: "world",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "door_open_opportunity",
+      text: "You can now move through the doorway.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "low",
+      priority: 50,
+      source,
+    });
+  }
+
   const lookupStat = (keys: string[]): number | null => {
     for (const key of keys) {
       const value = statMap[key];
