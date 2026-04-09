@@ -711,17 +711,24 @@ export default function PlayClient({
     navigator.clipboard.writeText(value);
   };
 
-  const canonicalResolvedTurns = (() => {
-    const playableTurns = resolvedTurns.filter((turn) => {
-      const input = turn.playerInput?.trim();
-      const hasInput = Boolean(input);
-      const hasState = (turn.stateDeltas?.length ?? 0) > 0;
-      const hasLedger = (turn.ledgerAdds?.length ?? 0) > 0;
-      return hasInput || hasState || hasLedger || Boolean(turn.isFinalizedByAffordance);
-    });
-    return playableTurns.length > 0 ? playableTurns : resolvedTurns;
-  })();
-  const latestTurn = canonicalResolvedTurns[0] ?? null;
+  const isDisplayEligibleTurn = (turn: PlayTurn | null | undefined) => {
+    if (!turn) return false;
+    const hasInput = Boolean(turn.playerInput?.trim());
+    const hasState = (turn.stateDeltas?.length ?? 0) > 0;
+    const hasLedger = (turn.ledgerAdds?.length ?? 0) > 0;
+    const finalized = turn.isFinalizedByAffordance === true;
+    return hasInput || hasState || hasLedger || finalized;
+  };
+
+  const canonicalLatest = [...resolvedTurns]
+    .sort((a, b) => {
+      const aIndex = typeof a.turnIndex === "number" ? a.turnIndex : -1;
+      const bIndex = typeof b.turnIndex === "number" ? b.turnIndex : -1;
+      return bIndex - aIndex;
+    })
+    .find(isDisplayEligibleTurn) ?? null;
+  const canonicalResolvedTurns = canonicalLatest ? ([canonicalLatest] as PlayTurn[]) : resolvedTurns;
+  const latestTurn = canonicalLatest ?? (resolvedTurns[0] ?? null);
   const previousTurns = canonicalResolvedTurns.slice(1);
   const pressureStage = currentStatePanel.pressureStage ?? "calm";
   const currentEntry = currentId ? history.find((entry) => entry.adventureId === currentId) ?? null : null;
@@ -732,13 +739,27 @@ export default function PlayClient({
   const latestDisplayTurn = hasTurns ? latestTurn : showPreview ? previewLatestTurn : null;
   const recentDisplayTurns = hasTurns ? previousTurns : showPreview ? previewTurns.slice(1) : [];
   const displayPressureStage = (showPreview ? previewLatestTurn.pressureStage : pressureStage) ?? "calm";
+  const candidateLog = [...resolvedTurns]
+    .sort((a, b) => {
+      const aIndex = typeof a.turnIndex === "number" ? a.turnIndex : -1;
+      const bIndex = typeof b.turnIndex === "number" ? b.turnIndex : -1;
+      return bIndex - aIndex;
+    })
+    .slice(0, 10)
+    .map((turn) => ({
+      id: turn.id ?? null,
+      input: turn.playerInput ?? null,
+      turnIndex: turn.turnIndex ?? null,
+      finalized: turn.isFinalizedByAffordance ?? false,
+      stateDeltaCount: turn.stateDeltas?.length ?? 0,
+      ledgerCount: turn.ledgerAdds?.length ?? 0,
+    }));
   console.log("client.latestTurn.selection", {
     resolvedTurnsCount: resolvedTurns.length,
     latestTurnId: latestTurn?.id ?? null,
     latestTurnInput: latestTurn?.playerInput ?? null,
     latestTurnFinalizedByAffordance: latestTurn?.isFinalizedByAffordance ?? false,
-    canonicalResolvedCount: canonicalResolvedTurns.length,
-    canonicalLatestId: canonicalResolvedTurns[0]?.id ?? null,
+    latestTurnCandidatePreview: candidateLog,
   });
   const [highlightLatestTurn, setHighlightLatestTurn] = useState(false);
   const [showTurnDivider, setShowTurnDivider] = useState(false);
