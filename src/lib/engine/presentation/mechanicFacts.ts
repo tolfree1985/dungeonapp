@@ -175,6 +175,7 @@ export function deriveMechanicFacts({
   ledgerAdds,
   stats,
 }: MechanicFactsInput): MechanicFacts {
+
   const facts: MechanicFacts = {
     achieved: [],
     costs: [],
