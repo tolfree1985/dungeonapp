@@ -705,6 +705,7 @@ function resolveDoorAffordance(
       detail: "Forcing the door opens it but leaves the frame scarred.",
     });
     pressureAdds.push(pressureAdd("time", 1));
+    pressureAdds.push(pressureAdd("noise", 1));
   } else {
     return null;
   }
