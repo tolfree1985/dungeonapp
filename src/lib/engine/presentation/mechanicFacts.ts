@@ -31,6 +31,10 @@ export type MechanicFacts = {
   opportunities: FactLine[];
 };
 
+type MechanicFactsOptions = {
+  debug?: boolean;
+};
+
 type MechanicFactsInput = {
   stateFlags?: Record<string, unknown> | null;
   stateDeltas?: unknown[];
@@ -169,12 +173,19 @@ function pushFact(
   facts[line.bucket].push(line);
 }
 
-export function deriveMechanicFacts({
-  stateFlags,
-  stateDeltas,
-  ledgerAdds,
-  stats,
-}: MechanicFactsInput): MechanicFacts {
+export function deriveMechanicFacts(
+  {
+    stateFlags,
+    stateDeltas,
+    ledgerAdds,
+    stats,
+  }: MechanicFactsInput,
+  options?: MechanicFactsOptions,
+): MechanicFacts | null {
+  const normalizedStateDeltas = Array.isArray(stateDeltas) ? stateDeltas : [];
+  if (normalizedStateDeltas.length === 0) {
+    return null;
+  }
 
   const facts: MechanicFacts = {
     achieved: [],
@@ -197,17 +208,17 @@ export function deriveMechanicFacts({
 
   const flags = normalizeFlags(stateFlags);
   const statMap = stats ?? {};
-
-  const deltaKeys =
-    Array.isArray(stateDeltas) && stateDeltas.length > 0
-      ? stateDeltas
-          .filter(
-            (delta): delta is { kind: string; key?: string; value?: unknown } =>
-              Boolean(delta && typeof delta === "object" && typeof (delta as Record<string, unknown>).kind === "string"),
-          )
-          .filter((delta) => delta.kind === "flag.set" && typeof delta.key === "string")
-          .map((delta) => ({ key: delta.key, value: delta.value }))
-      : [];
+  const deltaKinds = normalizedStateDeltas.map((delta) => {
+    if (!delta || typeof delta !== "object") return "unknown";
+    return (delta as Record<string, unknown>).op ?? (delta as Record<string, unknown>).kind ?? "unknown";
+  });
+  const deltaKeys = normalizedStateDeltas
+    .filter(
+      (delta): delta is { kind: string; key?: string; value?: unknown } =>
+        Boolean(delta && typeof delta === "object" && typeof (delta as Record<string, unknown>).kind === "string"),
+    )
+    .filter((delta) => delta.kind === "flag.set" && typeof delta.key === "string")
+    .map((delta) => ({ key: delta.key, value: delta.value }));
   console.log(
     "mechanic.truth.input",
     JSON.stringify(
