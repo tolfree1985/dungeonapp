@@ -113,7 +113,7 @@ export async function turnPersistence(
     select: { id: true, latestTurnIndex: true },
   });
 
-  const turn = await db.turn.create({
+  const turnRow = await db.turn.create({
     data: {
       adventureId: currentAdventure.id,
       turnIndex: nextTurnIndex,
@@ -146,14 +146,14 @@ export async function turnPersistence(
     }),
   );
 
-  const stateDeltas = args.asUnknownArray((turn as any).stateDeltas);
-  const ledgerAdds = args.asUnknownArray((turn as any).ledgerAdds);
+  const stateDeltas = args.asUnknownArray((turnRow as any).stateDeltas);
+  const ledgerAdds = args.asUnknownArray((turnRow as any).ledgerAdds);
 
   const turnPayload = {
-    turnId: turn.id,
-    turnIndex: turn.turnIndex,
-    scene: turn.scene,
-    resolution: turn.resolution,
+    turnId: turnRow.id,
+    turnIndex: turnRow.turnIndex,
+    scene: turnRow.scene,
+    resolution: turnRow.resolution,
     stateDeltas,
     ledgerAdds,
   };
@@ -187,8 +187,8 @@ export async function turnPersistence(
       eventHash,
       engineVersion: "billing-phase-a-b-v1",
       status: "APPLIED",
-      baseStateHash: args.hashHex(`base|${currentAdventure.id}|${turn.turnIndex}`),
-      resultStateHash: args.hashHex(`result|${currentAdventure.id}|${turn.turnIndex}`),
+      baseStateHash: args.hashHex(`base|${currentAdventure.id}|${turnRow.turnIndex}`),
+      resultStateHash: args.hashHex(`result|${currentAdventure.id}|${turnRow.turnIndex}`),
       rngSeed: "0",
       playerInput: args.playerText,
       modelInputHash,
@@ -196,5 +196,9 @@ export async function turnPersistence(
     },
   });
 
-  return { turn, billing: committed, idempotencyKey: args.idempotencyKey };
+  const publishedTurn = {
+    ...turnRow,
+    mechanicFacts: resolvedTurn.mechanicFacts ?? null,
+  };
+  return { turn: publishedTurn, billing: committed, idempotencyKey: args.idempotencyKey };
 }

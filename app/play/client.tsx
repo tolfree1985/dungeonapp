@@ -5,7 +5,7 @@ import HistorySlotCard from "@/components/play/HistorySlotCard";
 import { formatPlayTimestamp } from "~/components/play/formatTimestamp";
 import LatestTurnCard from "@/components/play/LatestTurnCard";
 import StatePanel from "@/components/play/StatePanel";
-import { SceneImagePanel } from "@/components/play/SceneImagePanel";
+import SceneImagePanel from "@/components/play/SceneImagePanel";
 import {
   AdventureHistoryRowViewModel,
   buildAdventureHistoryRowViewModel,
@@ -19,7 +19,6 @@ import { cardPadding, cardShell, emptyState, sectionHeading } from "@/components
 import { ui } from "@/lib/ui/classes";
 import type { PlayScenarioMeta, PlayStatePanel, PlayTurn } from "./types";
 import { normalizeStatePanel } from "./normalizeStatePanel";
-import { deriveMechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
 import type { ResolvedSceneImage } from "@/lib/sceneArt";
 import type { SceneFramingState } from "@/lib/resolveSceneFramingState";
 import type { SceneSubjectState } from "@/lib/resolveSceneSubjectState";
@@ -629,6 +628,8 @@ export default function PlayClient({
       }
 
       const result = (payload ?? {}) as TurnApiResponse;
+      const turn = result.turn ?? null;
+      console.log("CLIENT TURN MECHANIC FACTS", turn?.mechanicFacts ?? null);
       console.log("client.handleSubmitTurn.result", result);
       console.log("client.handleSubmitTurn.sceneArt", result.sceneArt);
       console.log(
@@ -670,14 +671,12 @@ export default function PlayClient({
           result,
         });
       }
-      if (result.turn) {
+      if (turn) {
         setResolvedTurns((prev) => {
-          const next = result.turn.id
-            ? [result.turn, ...prev.filter((turn) => turn.id !== result.turn?.id)]
-            : [result.turn, ...prev];
+          const next = turn.id ? [turn, ...prev.filter((existing) => existing.id !== turn.id)] : [turn, ...prev];
           console.log("client.turn.inserted", {
-            insertedTurnId: result.turn?.id ?? null,
-            insertedInput: result.turn?.playerInput ?? null,
+            insertedTurnId: turn.id ?? null,
+            insertedInput: turn.playerInput ?? null,
             newLength: next.length,
           });
           return next;
@@ -872,29 +871,25 @@ export default function PlayClient({
       return limitHistory(next);
     });
 
-  const canonicalMechanicFacts = useMemo(() => {
-    const statsArray = currentStatePanel.stats ?? [];
-    const statsRecord: Record<string, unknown> = {};
-    for (const stat of statsArray) {
-      const key =
-        typeof stat.key === "string" ? stat.key.toLowerCase() : String(stat.key ?? "").toLowerCase();
-      statsRecord[key] = stat.value;
-    }
-    return deriveMechanicFacts({
-      stateFlags: currentStatePanel.flags ?? null,
-      stateDeltas: latestDisplayTurn?.stateDeltas ?? [],
-      ledgerAdds: latestDisplayTurn?.ledgerAdds ?? [],
-      stats: statsRecord,
-    });
-  }, [currentStatePanel, latestDisplayTurn]);
+  const latestDisplayTurnRef = useRef<PlayTurn | null>(null);
+  if (latestDisplayTurnRef.current === null) {
+    latestDisplayTurnRef.current = latestDisplayTurn;
+  }
+  const effectiveLatestDisplayTurn = hasHydrated ? latestDisplayTurn : latestDisplayTurnRef.current;
+  const canonicalMechanicFacts = useMemo(
+    () => effectiveLatestDisplayTurn?.mechanicFacts ?? null,
+    [effectiveLatestDisplayTurn?.mechanicFacts]
+  );
   const latestTurnModel = useMemo(() => {
-    if (!latestDisplayTurn) return null;
-    return buildLatestTurnViewModel(latestDisplayTurn, displayPressureStage, {
+    if (!effectiveLatestDisplayTurn) return null;
+    return buildLatestTurnViewModel(effectiveLatestDisplayTurn, displayPressureStage, {
       mechanicFacts: canonicalMechanicFacts,
     });
-  }, [displayPressureStage, latestDisplayTurn, canonicalMechanicFacts]);
+  }, [displayPressureStage, effectiveLatestDisplayTurn, canonicalMechanicFacts]);
   console.log("client.latestTurn.model_source", {
+    latestHydrated: hasHydrated,
     latestDisplayTurnId: latestDisplayTurn?.id ?? null,
+    effectiveDisplayTurnId: effectiveLatestDisplayTurn?.id ?? null,
     latestDisplayTurnInput: latestDisplayTurn?.playerInput ?? null,
     latestDisplayTurnMechanicFacts: latestDisplayTurn?.mechanicFacts ?? null,
   });
@@ -914,16 +909,16 @@ export default function PlayClient({
     () =>
       buildStatePanelViewModel(
         currentStatePanel,
-        latestDisplayTurn?.ledgerAdds ?? [],
+        effectiveLatestDisplayTurn?.ledgerAdds ?? [],
         canonicalMechanicFacts,
         {
-          latestTurnStateDeltas: latestDisplayTurn?.stateDeltas ?? [],
-          latestTurnLedgerAdds: latestDisplayTurn?.ledgerAdds ?? [],
+          latestTurnStateDeltas: effectiveLatestDisplayTurn?.stateDeltas ?? [],
+          latestTurnLedgerAdds: effectiveLatestDisplayTurn?.ledgerAdds ?? [],
           worldFlags: currentStatePanel.flags ?? {},
-          playerInput: latestDisplayTurn?.playerInput ?? null,
+          playerInput: effectiveLatestDisplayTurn?.playerInput ?? null,
         }
       ),
-    [currentStatePanel, latestDisplayTurn?.ledgerAdds, latestDisplayTurn?.stateDeltas, latestDisplayTurn?.playerInput, canonicalMechanicFacts]
+    [currentStatePanel, effectiveLatestDisplayTurn, canonicalMechanicFacts]
   );
   const initialPressureSummaryRef = useRef(statePanelViewModel.pressureSummary);
   const pressureSummary = hasHydrated
@@ -1376,8 +1371,9 @@ export default function PlayClient({
                   </div>
                 </div>
                 <div className="border-t border-white/10 px-6 py-4">
-                  {hasActiveSceneArt ? (
+                  {displaySceneArt ? (
                     <SceneImagePanel
+                      key={displaySceneArt.sceneKey ?? "scene-art"}
                       sceneArt={sceneArtRenderInput}
                       caption={displayedSceneImageCaption ?? undefined}
                       transition={liveSceneTransition}

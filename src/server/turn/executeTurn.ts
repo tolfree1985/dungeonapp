@@ -4,6 +4,7 @@ import { Usage429Error } from "../../../app/api/turn/enforceUsageTx";
 import { runLegacyTurnFlow, type RunLegacyTurnFlowArgs, type RunLegacyTurnFlowDeps } from "@/server/turn/runLegacyTurnFlow";
 import { runTurnPipeline, type RunTurnPipelineArgs, type RunTurnPipelineDeps } from "@/server/turn/runTurnPipeline";
 import { logTurnHealthSummary, logStructuredFailure } from "@/lib/turn/observability";
+import { type IntentMode } from "@/lib/watchfulness-action-flags";
 
 export type ExecuteTurnArgs = {
   userId: string;
@@ -13,6 +14,7 @@ export type ExecuteTurnArgs = {
   softRate: { allowed: boolean; retryAfterMs?: number; reason?: string } | null;
   adventureLocked?: boolean;
   usageVerdict?: { allowed: boolean; retryAfterMs?: number; reason?: string } | null;
+  mode: IntentMode;
   legacy: {
     args: RunLegacyTurnFlowArgs;
     deps: RunLegacyTurnFlowDeps;
@@ -96,13 +98,16 @@ export async function executeTurn(args: ExecuteTurnArgs, deps: ExecuteTurnDeps =
   const allowlisted =
     allowUsers.includes(args.userId) || allowAdvs.includes(args.adventureId);
 
+  const forcePipeline = args.mode === "DO";
   const pipelineEnabled =
-    process.env.TURN_PIPELINE === "1" && (allowlisted || percentGate);
+    forcePipeline ||
+    (process.env.TURN_PIPELINE === "1" && (allowlisted || percentGate));
 
   console.info("turn.branch", {
     userId: args.userId,
     adventureId: args.adventureId,
     branch: pipelineEnabled ? "pipeline" : "legacy",
+    forced: forcePipeline,
   });
 
   const res = pipelineEnabled

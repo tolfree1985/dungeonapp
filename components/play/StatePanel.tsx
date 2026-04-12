@@ -7,6 +7,17 @@ type StatePanelProps = {
   viewModel: StatePanelViewModel;
 };
 
+const uniqueById = <T extends { id: string }>(items: T[]): T[] => {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    result.push(item);
+  }
+  return result;
+};
+
 const sections: Array<{ label: string; key: keyof StatePanelViewModel; empty: string }> = [
   { label: "Inventory", key: "inventory", empty: "Your pack is empty." },
   { label: "Relations", key: "relations", empty: "No key relationships yet." },
@@ -35,13 +46,21 @@ export default function StatePanel({ viewModel }: StatePanelProps) {
     empty: section.empty,
   }));
   const summary = viewModel.summary ?? emptyMechanicFacts;
-  const careSignals = summary.careNow.map((line) => ({
-    id: line.id,
-    label: line.text,
-    kind: line.kind ?? "hazard",
-    severity: line.severity ?? "medium",
-  }));
-  const worldSummary = summary.world;
+  const careSignals = uniqueById(
+    summary.careNow.map((line) => ({
+      id: line.id,
+      label: line.text,
+      kind: line.kind ?? "hazard",
+      severity: line.severity ?? "medium",
+      priority: line.priority ?? 0,
+    })),
+  ).sort((a, b) => {
+    if ((a.priority ?? 0) !== (b.priority ?? 0)) {
+      return (b.priority ?? 0) - (a.priority ?? 0);
+    }
+    return a.id.localeCompare(b.id);
+  });
+  const worldSummary = uniqueById(summary.world);
   const opportunitySummary = summary.opportunities;
   const pressureTotals = viewModel.pressureTotals ?? {
     suspicion: 0,

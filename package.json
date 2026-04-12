@@ -42,7 +42,7 @@
     "test:node": "node --import tsx --test",
     "test:smoke:mvp": "node --import tsx --test app/smoke/mvp-flow.node.test.ts",
     "test:scenario-db": "node --import tsx --test src/lib/auth/session.node.test.ts src/lib/api/identity.node.test.ts src/lib/adventure/ownership.node.test.ts app/api/auth/login/route.node.test.ts app/api/scenario/route.node.test.ts app/api/adventure/from-scenario/route.node.test.ts src/lib/game/createAdventureFromScenario.node.test.ts src/lib/scenario/scenarioValidator.node.test.ts src/lib/scenario/scenarioRepo.node.test.ts src/lib/creator/creatorScenario.node.test.ts",
-    "test:node:turn": "node --import tsx --test app/api/turn/route.node.test.ts src/server/turn/guard/getTurnGuardVerdict.node.test.ts app/api/turn/enforceUsageTx.node.test.ts src/server/turn/executeTurn.node.test.ts src/server/turn/runTurnPipeline.node.test.ts src/server/turn/executeTurn.shapeParity.node.test.ts src/server/turn/executeTurn.percent.node.test.ts",
+    "test:node:turn": "find src/server/turn -name '*.node.test.ts' -print0 | xargs -0 node --import tsx --test",
     "test:e2e": "playwright test",
     "verify:env": "node --import tsx scripts/verify-env.ts"
   },

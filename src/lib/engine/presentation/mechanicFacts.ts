@@ -1,3 +1,7 @@
+import { DEFAULT_ALERT_CLOCK_ID, DEFAULT_NOISE_CLOCK_ID } from "@/lib/game/bootstrap";
+import { classifyDeltas } from "@/lib/engine/delta/classifyDeltas";
+import { WORLD_FLAGS } from "@/lib/engine/worldFlags";
+
 export type FactBucket =
   | "achieved"
   | "costs"
@@ -40,6 +44,7 @@ type MechanicFactsInput = {
   stateDeltas?: unknown[];
   ledgerAdds?: unknown[];
   stats?: Record<string, unknown> | null;
+  blockedActions?: Record<string, unknown> | null;
 };
 
 type PressureDomain = "danger" | "noise" | "time" | "suspicion";
@@ -93,6 +98,24 @@ const LEDGER_PRESSURE_KEYWORDS: Array<{ domain: PressureDomain; keywords: string
   { domain: "time", keywords: ["time", "delay", "turn", "clock", "minute", "wait", "waiting"] },
   { domain: "suspicion", keywords: ["suspicion", "alert", "watchful", "npc suspicion", "eyes"] },
 ];
+
+const CLOCK_PRESSURE_DOMAINS: Record<string, PressureDomain> = {
+  [DEFAULT_NOISE_CLOCK_ID]: "noise",
+  [DEFAULT_ALERT_CLOCK_ID]: "danger",
+  "clk_suspicion": "suspicion",
+};
+
+const detectPressureDomainFromDelta = (record: Record<string, unknown>): PressureDomain | null => {
+  const op = typeof record.op === "string" ? record.op.toLowerCase() : "";
+  if (op === "time.inc" || op === "clock.inc") {
+    return null;
+  }
+  if (op === "pressure.add") {
+    const domain = typeof record.domain === "string" ? record.domain.toLowerCase() : "";
+    return canonicalPressureDomain(domain);
+  }
+  return null;
+};
 
 const canonicalPressureDomain = (value: string): PressureDomain | null => {
   const normalized = value?.trim().toLowerCase();
@@ -162,9 +185,35 @@ const collectLedgerTexts = (ledgerAdds?: unknown[]): string[] => {
 const includesAll = (text: string, keywords: string[]): boolean =>
   keywords.every((keyword) => text.includes(keyword));
 
+const FLAG_FACTS: Record<
+  string,
+  {
+    world?: { text: string; severity?: FactSeverity; priority?: number };
+    careNow?: { text: string; severity?: FactSeverity; priority?: number };
+  }
+> = {
+  "guard.alerted": {
+    world: { text: "Guards are on alert.", priority: 80 },
+    careNow: { text: "Enemies are watching for noise.", severity: "medium", priority: 90 },
+  },
+  "guard.searching": {
+    world: { text: "Guards are searching the room.", severity: "medium", priority: 80 },
+    careNow: { text: "Guards are combing the space; avoid exposure.", severity: "high", priority: 95 },
+  },
+  "player.revealed": {
+    world: { text: "Your position is known.", priority: 80 },
+  },
+  "status.exposed": {
+    careNow: { text: "You are exposed to danger; find cover.", severity: "high", priority: 90 },
+  },
+  "action.constraint_pressure": {
+    careNow: { text: "Pressure constrains your actions now.", severity: "medium", priority: 70 },
+  },
+};
+
 function pushFact(
   facts: MechanicFacts,
-  seen: Record<FactBucket, Set<string>>,
+  seen: Record<FactBucket, Set<string>>, 
   line: FactLine
 ) {
   const bucketSet = seen[line.bucket];
@@ -173,19 +222,51 @@ function pushFact(
   facts[line.bucket].push(line);
 }
 
+const sortFacts = (lines: FactLine[]): FactLine[] => {
+  return [...lines].sort((a, b) => {
+    const pa = a.priority ?? 0;
+    const pb = b.priority ?? 0;
+    if (pa !== pb) return pb - pa;
+    return a.id.localeCompare(b.id);
+  });
+};
+
+const normalizeFactText = (text: string): string => text.trim().toLowerCase();
+
+const dedupeFacts = (lines: FactLine[]): FactLine[] => {
+  const seen = new Set<string>();
+  return lines.filter((line) => {
+    const key = `${line.bucket}:${normalizeFactText(line.text)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const dedupeAndSortFacts = (lines: FactLine[]): FactLine[] => {
+  const deduped = dedupeFacts(lines);
+  return sortFacts(deduped);
+};
+
 export function deriveMechanicFacts(
   {
     stateFlags,
     stateDeltas,
     ledgerAdds,
     stats,
+    blockedActions,
   }: MechanicFactsInput,
   options?: MechanicFactsOptions,
 ): MechanicFacts | null {
   const normalizedStateDeltas = Array.isArray(stateDeltas) ? stateDeltas : [];
-  if (normalizedStateDeltas.length === 0) {
-    return null;
-  }
+  const normalizedFlags = normalizeFlags(stateFlags);
+  const stateHasFlags = Object.keys(normalizedFlags).length > 0;
+  const classification = classifyDeltas(normalizedStateDeltas);
+  const blockedActionsRaw = blockedActions ?? null;
+  const normalizedBlockedActions = normalizeFlags(blockedActionsRaw);
+  const hasBlockedWait = Boolean(
+    normalizedBlockedActions["wait"] || normalizedBlockedActions["WAIT"],
+  );
 
   const facts: MechanicFacts = {
     achieved: [],
@@ -206,24 +287,25 @@ export function deriveMechanicFacts(
     opportunities: new Set(),
   };
 
-  const flags = normalizeFlags(stateFlags);
+  const world = facts.world;
+  const careNow = facts.careNow;
+
+  const flags = normalizedFlags;
   const statMap = stats ?? {};
   const deltaKinds = normalizedStateDeltas.map((delta) => {
     if (!delta || typeof delta !== "object") return "unknown";
     return (delta as Record<string, unknown>).op ?? (delta as Record<string, unknown>).kind ?? "unknown";
   });
-  const deltaKeys = normalizedStateDeltas
-    .filter(
-      (delta): delta is { kind: string; key?: string; value?: unknown } =>
-        Boolean(delta && typeof delta === "object" && typeof (delta as Record<string, unknown>).kind === "string"),
-    )
-    .filter((delta) => delta.kind === "flag.set" && typeof delta.key === "string")
-    .map((delta) => ({ key: delta.key, value: delta.value }));
+  const stateFlagKeys = Object.keys(flags);
+  const classificationFlagKeys = classification.flagSets.map((entry) => entry.key);
+  const combinedFlagKeys = Array.from(new Set([...stateFlagKeys, ...classificationFlagKeys]));
   console.log(
     "mechanic.truth.input",
     JSON.stringify(
       {
-        deltaKeys,
+        flagKeys: combinedFlagKeys,
+        timeIncs: classification.timeIncs,
+        clockIncs: classification.clockIncs,
         ledgerAdds,
       },
       null,
@@ -231,29 +313,99 @@ export function deriveMechanicFacts(
     ),
   );
 
-  const deriveFlagKeys =
-    Array.isArray(stateDeltas) && stateDeltas.length > 0
-      ? stateDeltas
-          .filter(
-            (delta): delta is { kind: string; key?: string } =>
-              Boolean(delta && typeof delta === "object" && typeof (delta as Record<string, unknown>).kind === "string"),
-          )
-          .filter((delta) => delta.kind === "flag.set" && typeof delta.key === "string")
-          .map((delta) => delta.key)
-      : [];
+  const deriveFlagKeys = combinedFlagKeys;
   const ledgerTexts = collectLedgerTexts(ledgerAdds);
-  console.log(
-    "mechanic.truth.derive_input",
-    JSON.stringify(
-      {
-        flagKeys: deriveFlagKeys,
-        ledgerTexts,
-      },
-      null,
-      2,
-    ),
-  );
+  const uniqueFlagKeys = Array.from(new Set(deriveFlagKeys));
+  const pushUniqueFact = (bucket: FactLine[], fact: FactLine) => {
+    if (bucket.some((entry) => entry.id === fact.id)) return;
+    bucket.push(fact);
+  };
 
+  const pushPersistentWorldFact = (fact: FactLine) => {
+    if (world.some((entry) => entry.id === fact.id)) return;
+    world.push({ ...fact, source: fact.source ?? "state" });
+  };
+
+  const pushPersistentCareFact = (fact: FactLine) => {
+    if (careNow.some((entry) => entry.id === fact.id)) return;
+    careNow.push({ ...fact, source: fact.source ?? "state" });
+  };
+
+  if (stateHasFlags) {
+    if (normalizedFlags[WORLD_FLAGS.guard.searching]) {
+      pushPersistentWorldFact({
+        id: "guard_searching_world",
+        text: "Guards are searching the room.",
+        bucket: "world",
+        kind: "info",
+        severity: "medium",
+        source: "state",
+      });
+    }
+    if (normalizedFlags[WORLD_FLAGS.guard.alerted]) {
+      pushPersistentWorldFact({
+        id: "guard_alerted_world",
+        text: "Guards are on alert.",
+        bucket: "world",
+        kind: "info",
+        severity: "medium",
+        source: "state",
+      });
+    }
+    if (normalizedFlags[WORLD_FLAGS.status.exposed]) {
+      pushPersistentCareFact({
+        id: "status.exposed_care",
+        text: "You are exposed to danger; find cover.",
+        bucket: "careNow",
+        kind: "hazard",
+        severity: "high",
+        source: "state",
+      });
+    }
+  }
+  if (hasBlockedWait) {
+    pushPersistentCareFact({
+      id: "wait_blocked",
+      text: "Waiting is no longer safe.",
+      bucket: "careNow",
+      kind: "hazard",
+      severity: "high",
+      source: "state",
+    });
+  }
+
+  const resolveCareNowConflicts = (lines: FactLine[]): FactLine[] => {
+    const hasExposedSignal = lines.some((fact) => fact.id === "status.exposed_care");
+    if (!hasExposedSignal) return lines;
+    return lines.filter((fact) => fact.id !== "exposure_reduced");
+  };
+
+  for (const flagKey of uniqueFlagKeys) {
+    const fact = FLAG_FACTS[flagKey];
+    if (!fact) continue;
+    if (fact.world?.text) {
+      const id = fact.world.id ?? `${flagKey}_world`;
+      pushUniqueFact(world, {
+        id,
+        text: fact.world.text,
+        bucket: "world",
+        kind: "info",
+        severity: fact.world.severity,
+        source: "state",
+      });
+    }
+    if (fact.careNow?.text) {
+      const id = fact.careNow.id ?? `${flagKey}_care`;
+      pushUniqueFact(careNow, {
+        id,
+        text: fact.careNow.text,
+        bucket: "careNow",
+        kind: "hazard",
+        severity: fact.careNow.severity,
+        source: "state",
+      });
+    }
+  }
   const hasDoorOpen =
     Boolean(flags["ledger_room_door_open"]) ||
     deriveFlagKeys.includes("ledger_room_door_open") ||
@@ -305,6 +457,7 @@ export function deriveMechanicFacts(
       source,
     });
   }
+
 
   const lookupStat = (keys: string[]): number | null => {
     for (const key of keys) {
@@ -558,6 +711,77 @@ export function deriveMechanicFacts(
     });
   };
 
+  const addDoorInspectFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "door_inspect_achieved",
+      text: "You inspected the door.",
+      bucket: "achieved",
+      kind: "progress",
+      severity: "medium",
+      priority: 60,
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "door_inspect_world",
+      text: "The door's condition is now revealed.",
+      bucket: "world",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+  };
+
+  const addSneakFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "sneak_achieved",
+      text: "You moved quietly.",
+      bucket: "achieved",
+      kind: "progress",
+      severity: "medium",
+      priority: 70,
+      source,
+    });
+  };
+
+  const addHideFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "hide_achieved",
+      text: "You slipped into cover.",
+      bucket: "achieved",
+      kind: "progress",
+      severity: "medium",
+      priority: 70,
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "hide_world",
+      text: "You remain hidden.",
+      bucket: "world",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "hide_persistent",
+      text: "Cover holds you in place.",
+      bucket: "persistent",
+      kind: "info",
+      severity: "low",
+      source,
+    });
+  };
+
+  const addExposureReducedFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "exposure_reduced",
+      text: "Your exposure to sight diminishes.",
+      bucket: "careNow",
+      kind: "hazard",
+      severity: "medium",
+      source,
+    });
+  };
+
   const addRoomSearchFacts = (source: FactLine["source"]) => {
     pushFact(facts, seen, {
       id: "room_search_achieved",
@@ -591,6 +815,75 @@ export function deriveMechanicFacts(
       bucket: "opportunities",
       kind: "opportunity",
       severity: "medium",
+      priority: 55,
+      source,
+    });
+  };
+
+  const addRoomSoundFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "room_sound_achieved",
+      text: "You pinpoint the hidden sound source.",
+      bucket: "achieved",
+      kind: "progress",
+      severity: "medium",
+      priority: 70,
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "room_sound_world",
+      text: "A secret activity now pulses through the room.",
+      bucket: "world",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "room_sound_opportunity",
+      text: "You can now investigate the noise.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "low",
+      priority: 55,
+      source,
+    });
+  };
+
+  const addHiddenActivityFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "hidden_activity_world",
+      text: "A subtle activity now reveals itself.",
+      bucket: "world",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "hidden_activity_opportunity",
+      text: "Tracking the activity may expose a new lead.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "low",
+      priority: 60,
+      source,
+    });
+  };
+
+  const addLedgerFragmentFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "ledger_fragment_world",
+      text: "You uncovered a hidden ledger fragment.",
+      bucket: "world",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "ledger_fragment_opportunity",
+      text: "The fragment may point to useful intel.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "low",
       priority: 55,
       source,
     });
@@ -630,6 +923,93 @@ export function deriveMechanicFacts(
       kind: "opportunity",
       severity: "medium",
       priority: 50,
+      source,
+    });
+  };
+
+  const addContainerSearchFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "container_search_achieved",
+      text: "You uncovered what's inside the container.",
+      bucket: "achieved",
+      kind: "progress",
+      severity: "medium",
+      priority: 75,
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "container_search_world",
+      text: "The container's contents are now exposed.",
+      bucket: "world",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "container_search_opportunity",
+      text: "The container can now be cleaned out or used.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "low",
+      priority: 50,
+      source,
+    });
+  };
+
+  const addObjectSearchFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "object_search_achieved",
+      text: "You deciphered the object's clues.",
+      bucket: "achieved",
+      kind: "progress",
+      severity: "medium",
+      priority: 70,
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "object_search_world",
+      text: "The object's purpose is now obvious.",
+      bucket: "world",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "object_search_opportunity",
+      text: "You can now manipulate the object with intent.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "low",
+      priority: 55,
+      source,
+    });
+  };
+
+  const addFixtureSearchFacts = (source: FactLine["source"]) => {
+    pushFact(facts, seen, {
+      id: "fixture_search_achieved",
+      text: "You mapped the fixture's secrets.",
+      bucket: "achieved",
+      kind: "progress",
+      severity: "medium",
+      priority: 70,
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "fixture_search_world",
+      text: "The fixture's design is now understood.",
+      bucket: "world",
+      kind: "info",
+      severity: "medium",
+      source,
+    });
+    pushFact(facts, seen, {
+      id: "fixture_search_opportunity",
+      text: "You can exploit the fixture's mechanics.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "low",
+      priority: 55,
       source,
     });
   };
@@ -829,38 +1209,172 @@ export function deriveMechanicFacts(
   const addPressureDomainFacts = (domain: PressureDomain, source: FactLine["source"]) => {
     const definition = PRESSURE_COST_DEFINITIONS[domain];
     if (!definition) return;
+    return;
+  };
+
+  if (classification.hasTimeCost) {
     pushFact(facts, seen, {
-      id: `pressure_cost_${domain}`,
-      text: definition.costText,
+      id: "time_cost",
+      text: "Time advanced.",
       bucket: "costs",
       kind: "cost",
-      severity: definition.severity,
-      priority: definition.priority,
-      source,
+      severity: "medium",
+      priority: 60,
+      source: "delta",
     });
     pushFact(facts, seen, {
-      id: `pressure_turn_${domain}`,
-      text: definition.turnText,
-      bucket: "turnChanges",
-      kind: "hazard",
-      severity: definition.severity,
-      priority: definition.priority,
-      source,
-    });
-    pushFact(facts, seen, {
-      id: `pressure_care_${domain}`,
-      text: definition.careText,
+      id: "time_care",
+      text: "Time pressure grows.",
       bucket: "careNow",
       kind: "hazard",
-      severity: definition.severity,
-      priority: Math.max(definition.priority - 10, 20),
-      source,
+      severity: "medium",
+      priority: 50,
+      source: "delta",
+    });
+  }
+  if (classification.hasNoiseCost) {
+    const noiseDelta = classification.clockIncs.find((entry) => entry.id === "clk_noise");
+    pushFact(facts, seen, {
+      id: "noise_cost",
+      text: `Noise increased (+${noiseDelta?.by ?? 1}).`,
+      bucket: "costs",
+      kind: "cost",
+      severity: "medium",
+      priority: 70,
+      source: "delta",
+    });
+    pushFact(facts, seen, {
+      id: "noise_care",
+      text: "You may be detected.",
+      bucket: "careNow",
+      kind: "hazard",
+      severity: "medium",
+      priority: 60,
+      source: "delta",
+    });
+  }
+  if (classification.hasAlertCost) {
+    const alertDelta = classification.clockIncs.find((entry) => entry.id === "clk_alert");
+    pushFact(facts, seen, {
+      id: "alert_cost",
+      text: `Alert increased (+${alertDelta?.by ?? 1}).`,
+      bucket: "costs",
+      kind: "cost",
+      severity: "medium",
+      priority: 70,
+      source: "delta",
+    });
+    pushFact(facts, seen, {
+      id: "alert_care",
+      text: "Enemies are becoming alert.",
+      bucket: "careNow",
+      kind: "hazard",
+      severity: "medium",
+      priority: 60,
+      source: "delta",
+    });
+  }
+  if (classification.hasAlertDelta) {
+    pushFact(facts, seen, {
+      id: "alert_signal",
+      text: "Alert energy shifts around you.",
+      bucket: "careNow",
+      kind: "hazard",
+      severity: "medium",
+      priority: 65,
+      source: "delta",
+    });
+    pushFact(facts, seen, {
+      id: "alert_opportunity",
+      text: "Alertness alters the opportunity space.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "low",
+      priority: 50,
+      source: "delta",
+    });
+  }
+  if (classification.hasDamageDelta) {
+    pushFact(facts, seen, {
+      id: "damage_detected",
+      text: "Force leaves visible damage behind.",
+      bucket: "world",
+      kind: "hazard",
+      severity: "medium",
+      priority: 60,
+      source: "delta",
+    });
+  }
+  if (classification.hasExposureDelta) {
+    pushFact(facts, seen, {
+      id: "exposure_signal",
+      text: "Exposure just increased; keep moving.",
+      bucket: "careNow",
+      kind: "hazard",
+      severity: "medium",
+      priority: 60,
+      source: "delta",
+    });
+    pushFact(facts, seen, {
+      id: "exposure_opportunity",
+      text: "The scene knows about you now.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "medium",
+      priority: 55,
+      source: "delta",
+    });
+  }
+  if (classification.hasPositionDelta) {
+    pushFact(facts, seen, {
+      id: "position_shift",
+      text: "The tactical picture shifts.",
+      bucket: "turnChanges",
+      kind: "progress",
+      severity: "low",
+      priority: 50,
+      source: "delta",
+    });
+    pushFact(facts, seen, {
+      id: "position_persistent",
+      text: "New positions open future steps.",
+      bucket: "opportunities",
+      kind: "opportunity",
+      severity: "low",
+      priority: 45,
+      source: "delta",
+    });
+  }
+
+  const addCostTurnChangeFact = (id: string, text: string) => {
+    pushFact(facts, seen, {
+      id,
+      text,
+      bucket: "turnChanges",
+      kind: "progress",
+      severity: "medium",
+      priority: 60,
+      source: "delta",
     });
   };
+  if (classification.hasTimeCost) {
+    addCostTurnChangeFact("time_advanced", "Time advanced.");
+  }
+  if (classification.hasNoiseCost) {
+    addCostTurnChangeFact("noise_increased", "Noise increased.");
+  }
 
   for (const delta of deltaRecords) {
     if (!delta || typeof delta !== "object") continue;
     const record = delta as Record<string, unknown>;
+    const pressureDomain = detectPressureDomainFromDelta(record);
+    if (pressureDomain) {
+      if (!pressureDomainsThisTurn.has(pressureDomain)) {
+        addPressureDomainFacts(pressureDomain, "delta");
+        pressureDomainsThisTurn.add(pressureDomain);
+      }
+      continue;
+    }
     const rawKey = typeof record.key === "string" ? record.key : "";
     const key = rawKey.toLowerCase();
     const nextValue = record.next ?? record.value;
@@ -885,29 +1399,77 @@ export function deriveMechanicFacts(
 
     if (record.kind === "flag.set" && typeof rawKey === "string") {
       const normalizedKey = rawKey.toLowerCase();
+      if (normalizedKey.includes("room.sound_source_revealed")) {
+        addRoomSoundFacts("delta");
+        continue;
+      }
+      if (normalizedKey.includes("clue.hidden_activity_heard")) {
+        addHiddenActivityFacts("delta");
+        continue;
+      }
+      if (normalizedKey.includes("clue.ledger_fragment_found")) {
+        addLedgerFragmentFacts("delta");
+        continue;
+      }
+      if (normalizedKey.includes("status.hidden")) {
+        addHideFacts("flag");
+        continue;
+      }
+      if (normalizedKey.includes("status.repositioned")) {
+        addSneakFacts("flag");
+        continue;
+      }
+      if (normalizedKey.includes("status.exposed")) {
+        addExposureReducedFacts("flag");
+        continue;
+      }
       if (normalizedKey.includes("door.kicked") || normalizedKey.includes("door.forced")) {
         addDoorActionFacts("delta");
+        continue;
+      }
+      if (normalizedKey.includes("door.inspected") || normalizedKey.includes("door.condition_revealed")) {
+        addDoorInspectFacts("delta");
+        continue;
       }
       if (normalizedKey.includes("room.searched")) {
         addRoomSearchFacts("delta");
+        continue;
       }
       if (normalizedKey.includes("desk.searched")) {
         addDeskSearchFacts("delta");
+        continue;
       }
       if (normalizedKey.includes("drawer.pulled")) {
         addDrawerPulledFacts("delta");
+        continue;
       }
       if (normalizedKey.includes("chair.moved")) {
         addChairMovedFacts("delta");
+        continue;
       }
       if (normalizedKey.includes("cabinet.tipped")) {
         addCabinetTippedFacts("delta");
+        continue;
       }
       if (normalizedKey.includes("crate.inspected")) {
         addCrateInspectFacts("delta");
+        continue;
       }
       if (normalizedKey.includes("crate.searched")) {
         addCrateSearchFacts("delta");
+        continue;
+      }
+      if (normalizedKey.includes("container.searched")) {
+        addContainerSearchFacts("delta");
+        continue;
+      }
+      if (normalizedKey.includes("object.searched")) {
+        addObjectSearchFacts("delta");
+        continue;
+      }
+      if (normalizedKey.includes("fixture.searched")) {
+        addFixtureSearchFacts("delta");
+        continue;
       }
     }
 
@@ -1165,5 +1727,35 @@ export function deriveMechanicFacts(
     }
   }
 
+  for (const flagKey of deriveFlagKeys) {
+    const mapping = FLAG_FACTS[flagKey];
+    if (!mapping) continue;
+    if (mapping.world) {
+      pushFact(facts, seen, {
+        id: `${flagKey}_world`,
+        text: mapping.world.text,
+        bucket: "world",
+        kind: "info",
+        severity: mapping.world.severity,
+        priority: mapping.world.priority ?? 80,
+        source: "flag",
+      });
+    }
+    if (mapping.careNow) {
+      pushFact(facts, seen, {
+        id: `${flagKey}_care`,
+        text: mapping.careNow.text,
+        bucket: "careNow",
+        kind: "hazard",
+        severity: mapping.careNow.severity ?? "high",
+        priority: mapping.careNow.priority ?? 90,
+        source: "flag",
+      });
+    }
+  }
+
+  facts.careNow = resolveCareNowConflicts(facts.careNow);
+  facts.careNow = dedupeAndSortFacts(facts.careNow);
+  facts.world = dedupeAndSortFacts(facts.world);
   return facts;
 }

@@ -60,7 +60,8 @@ export function parseInventoryIntent(input: TurnInput): ParsedInventoryIntent {
   if (input.mode !== "DO" && input.mode !== "SAY") return null;
 
   const normalized = normalizeIntentText(input.text);
-  const target = matchInventoryTarget(normalized) ?? normalized;
+  const matchedTarget = matchInventoryTarget(normalized);
+  const target = matchedTarget ?? normalized;
 
   if (input.mode === "DO") {
     if (includesTrigger(normalized, ["take", "pick up", "grab", "recover", "pocket"])) {
@@ -70,6 +71,9 @@ export function parseInventoryIntent(input: TurnInput): ParsedInventoryIntent {
       return { kind: "drop", target };
     }
     if (includesTrigger(normalized, ["stash", "hide", "tuck", "leave"])) {
+      if (!matchedTarget) {
+        return null;
+      }
       return { kind: "stash", target, container: null };
     }
     if (includesTrigger(normalized, ["light", "ignite"])) {

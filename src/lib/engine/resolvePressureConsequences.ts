@@ -1,4 +1,5 @@
 import type { StateDelta, LedgerEntry } from "./resolveTurnContract";
+import { normalizeFlagKey } from "@/lib/engine/worldFlags";
 
 type PressureConsequencesInput = {
   previousPressure: Record<string, number>;
@@ -16,7 +17,7 @@ const CONSEQUENCES = [
   {
     domain: "noise",
     threshold: 3,
-    flag: "guard_alerted",
+    flag: "guard.alerted",
     action: "ALERT",
     effect: "Noise draws guard attention",
     detail: "Constant noise has alerted nearby guards.",
@@ -24,7 +25,7 @@ const CONSEQUENCES = [
   {
     domain: "noise",
     threshold: 5,
-    flag: "guard_searching",
+    flag: "guard.searching",
     action: "SEARCH",
     effect: "Guards begin actively searching the area",
     detail: "The racket is now forcing guards to search.",
@@ -32,7 +33,7 @@ const CONSEQUENCES = [
   {
     domain: "noise",
     threshold: 7,
-    flag: "status_confrontation",
+    flag: "status.confrontation",
     action: "CONFRONTATION",
     effect: "The situation escalates into confrontation",
     detail: "Noise has become impossible to ignore.",
@@ -40,7 +41,7 @@ const CONSEQUENCES = [
   {
     domain: "suspicion",
     threshold: 3,
-    flag: "npc_distrust",
+    flag: "npc.distrust",
     action: "DISTRUST",
     effect: "Suspicion breeds distrust",
     detail: "Characters start doubting your motives.",
@@ -48,7 +49,7 @@ const CONSEQUENCES = [
   {
     domain: "suspicion",
     threshold: 5,
-    flag: "npc_resistant",
+    flag: "npc.resistant",
     action: "RESIST",
     effect: "Suspicion hardens into resistance",
     detail: "Your words are increasingly resisted.",
@@ -56,7 +57,7 @@ const CONSEQUENCES = [
   {
     domain: "suspicion",
     threshold: 7,
-    flag: "npc_hostile",
+    flag: "npc.hostile",
     action: "HOSTILITY",
     effect: "Suspicion turns hostile",
     detail: "Suspicion has hardened into open hostility.",
@@ -64,7 +65,7 @@ const CONSEQUENCES = [
   {
     domain: "time",
     threshold: 4,
-    flag: "opportunity_narrowed",
+    flag: "opportunity.narrowed",
     action: "OPPORTUNITY",
     effect: "Opportunity window narrows",
     detail: "The delay is closing your available opportunity.",
@@ -72,7 +73,7 @@ const CONSEQUENCES = [
   {
     domain: "time",
     threshold: 6,
-    flag: "opportunity_closed",
+    flag: "opportunity.closed",
     action: "CLOSE",
     effect: "Opportunity window closes",
     detail: "The last chance slips away.",
@@ -80,7 +81,7 @@ const CONSEQUENCES = [
   {
     domain: "time",
     threshold: 8,
-    flag: "scene_escalated",
+    flag: "scene.escalated",
     action: "ESCALATE",
     effect: "Time pressure escalates the scene",
     detail: "Lingering time pressure pushes the situation toward crisis.",
@@ -88,7 +89,7 @@ const CONSEQUENCES = [
   {
     domain: "danger",
     threshold: 3,
-    flag: "position_compromised",
+    flag: "position.compromised",
     action: "EXPOSE",
     effect: "Escalating danger compromises your position",
     detail: "The rising danger leaves your position exposed.",
@@ -96,7 +97,7 @@ const CONSEQUENCES = [
   {
     domain: "danger",
     threshold: 5,
-    flag: "escape_route_cut",
+    flag: "escape.route_cut",
     action: "CUT_OFF",
     effect: "Danger cuts off the obvious escape route",
     detail: "The situation has become dangerous enough to close the clean exit.",
@@ -113,7 +114,8 @@ const CONSEQUENCES = [
 
 function readFlag(record: Record<string, unknown> | null, key: string): boolean {
   if (!record) return false;
-  const value = record[key];
+  const normalizedKey = normalizeFlagKey(key);
+  const value = record[normalizedKey] ?? record[key];
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value > 0;
   return false;

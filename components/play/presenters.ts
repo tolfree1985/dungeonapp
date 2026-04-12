@@ -35,7 +35,6 @@ import { shapeTurnPresentation } from "@/lib/presentation/shapeTurnPresentation"
 import { mapLedgerText } from "@/lib/presentation/ledgerLabels";
 import type { ConsequenceLine } from "@/lib/engine/presentation/consequenceTranslator";
 import { buildTurnChanges, type TurnChangeItem } from "@/lib/engine/presentation/turnChangesTranslator";
-import { deriveMechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
 import type { FactLine, MechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
 export type { FactLine, MechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
 import {
@@ -876,31 +875,23 @@ export function buildLatestTurnViewModel(
     .map((line) => line.trim())
     .filter(Boolean);
 
-  const stateFlags = (turn as any).stateFlags as Record<string, unknown> | null;
-  const resolvedMechanicFacts =
-    context?.mechanicFacts ??
-    deriveMechanicFacts({
-      stateFlags,
-      stateDeltas: rawStateDeltas,
-      ledgerAdds: turn.ledgerAdds ?? [],
-      stats: {},
-    });
-  const persistentLines = resolvedMechanicFacts.persistent;
-  const turnLines = resolvedMechanicFacts.turnChanges;
-  const hasAccelerantFire =
-    stateFlags?.["scene.fire.accelerant"] === true ||
-    persistentLines.some(
-      (line) =>
-        line.bucket === "world" &&
-        line.text.toLowerCase().includes("burning fast")
-    );
-  const hasSceneFire =
-    stateFlags?.["scene.fire"] === true ||
-    persistentLines.some(
-      (line) =>
-        line.bucket === "world" &&
-        line.text.toLowerCase().includes("on fire")
-    );
+  const serverMechanicFacts = (turn as any).mechanicFacts ?? context?.mechanicFacts ?? null;
+  if (!serverMechanicFacts) {
+    throw new Error("UI received turn without mechanicFacts");
+  }
+  const mechanicFacts: MechanicFacts = serverMechanicFacts;
+  const persistentLines = mechanicFacts.persistent;
+  const turnLines = mechanicFacts.turnChanges;
+  const hasAccelerantFire = persistentLines.some(
+    (line) =>
+      line.bucket === "world" &&
+      line.text.toLowerCase().includes("burning fast")
+  );
+  const hasSceneFire = persistentLines.some(
+    (line) =>
+      line.bucket === "world" &&
+      line.text.toLowerCase().includes("on fire")
+  );
   const fireNarrationLine = hasAccelerantFire
     ? "Fire now spreads faster due to accelerant."
     : hasSceneFire
@@ -910,7 +901,6 @@ export function buildLatestTurnViewModel(
     stateDeltas: rawStateDeltas,
     ledger: turn.ledgerAdds ?? [],
   });
-  const mechanicFacts = resolvedMechanicFacts;
   const factToTurnChangeItem = (fact: FactLine): TurnChangeItem => {
     let kind: TurnChangeItem["kind"] = "progress";
     if (fact.bucket === "costs") kind = "cost";
@@ -1636,30 +1626,6 @@ function buildRelationItems(state: PlayStatePanel): StateItemViewModel[] {
   });
 }
 
-function addWorldContextRows(state: PlayStatePanel, worldItems: StateItemViewModel[], seenLabels: Set<string>) {
-  const contextRows: Array<[string, string | undefined]> = [
-    ["Location", state.location],
-    ["Time of day", state.timeOfDay],
-    ["Ambience", state.ambience],
-  ];
-  contextRows.forEach(([label, value]) => {
-    if (!value) return;
-    const normalized = label.toLowerCase();
-    if (seenLabels.has(normalized)) return;
-    seenLabels.add(normalized);
-    const item = buildStateItem(label, value, "world");
-    if (item) worldItems.push(item);
-  });
-  if (state.contextTags && state.contextTags.length > 0) {
-    const normalized = "context tags";
-    if (!seenLabels.has(normalized)) {
-      seenLabels.add(normalized);
-      const item = buildStateItem("Context tags", state.contextTags.join(", "), "world");
-      if (item) worldItems.push(item);
-    }
-  }
-}
-
 export function buildStatePanelViewModel(
   state: PlayStatePanel,
   latestLedgerAdds: unknown[] = [],
@@ -1673,7 +1639,6 @@ export function buildStatePanelViewModel(
 ): StatePanelViewModel {
   const seenLabels = new Set<string>();
   const statusItems: StateItemViewModel[] = [];
-  const worldItems: StateItemViewModel[] = [];
   let alertValue: number | null = null;
   const canonicalPressure = {
     suspicion:
@@ -1712,14 +1677,8 @@ export function buildStatePanelViewModel(
     const emphasis = normalized.includes("alert") || normalized.includes("pressure") ? "high" : "normal";
     const item = buildStateItem(label, stat.value, category, emphasis);
     if (!item) return;
-    if (category === "world") {
-      worldItems.push(item);
-    } else {
-      statusItems.push(item);
-    }
+    statusItems.push(item);
   });
-
-  addWorldContextRows(state, worldItems, seenLabels);
 
   const quests = buildStateItemsFromQuest(state);
   const inventory = buildInventoryItems(state);
@@ -1774,13 +1733,13 @@ export function buildStatePanelViewModel(
     ? ((state as PlayStatePanel & { turns?: unknown[] }).turns as unknown[]).length
     : null;
   const turnsValue = inputTurnsValue ?? stateTurnsValue ?? 0;
-  const resolvedMechanicFacts =
-    mechanicFacts ??
-    deriveMechanicFacts({
-      stateFlags: state.flags ?? null,
-      stateDeltas: [],
-      stats: statsRecord,
-    });
+  if (!mechanicFacts) {
+    throw new Error("State panel missing mechanicFacts");
+  }
+  const resolvedMechanicFacts = mechanicFacts;
+  if (resolvedMechanicFacts.careNow.length > 0 && resolvedMechanicFacts.world.length === 0) {
+    throw new Error("WORLD is empty while CARE NOW has facts; non-canonical projection detected");
+  }
   const rightRail = presentRightRail({ mechanicFacts: resolvedMechanicFacts, latestLedgerAdds });
   const latestTurnStateDeltas = options?.latestTurnStateDeltas ?? [];
   const latestTurnLedgerAdds = options?.latestTurnLedgerAdds ?? [];
@@ -1789,7 +1748,7 @@ export function buildStatePanelViewModel(
 
   return {
     status: statusItems,
-    world: worldItems,
+    world: [],
     quests,
     inventory,
     relations,
@@ -1846,7 +1805,7 @@ function hasMeaningfulLedgerEntries(entries?: unknown[]): boolean {
   return false;
 }
 
-export function presentRightRail(args: { mechanicFacts: MechanicFacts; latestLedgerAdds?: unknown[] }): RightRailPresentation {
+export function presentRightRail(args: { mechanicFacts: MechanicFacts | null; latestLedgerAdds?: unknown[] }): RightRailPresentation {
   const seen = new Set<string>();
   const collect = (lines: FactLine[], limit: number) => {
     const results: string[] = [];
@@ -1861,10 +1820,20 @@ export function presentRightRail(args: { mechanicFacts: MechanicFacts; latestLed
     }
     return results;
   };
+  const attackMechanicFacts: MechanicFacts =
+    args.mechanicFacts ?? {
+      achieved: [],
+      costs: [],
+      turnChanges: [],
+      persistent: [],
+      careNow: [],
+      world: [],
+      opportunities: [],
+    };
   return {
-    careNow: collect(args.mechanicFacts.careNow, 4),
-    world: collect(args.mechanicFacts.world, 5),
-    opportunities: collect(args.mechanicFacts.opportunities, 5),
+    careNow: collect(attackMechanicFacts.careNow, 4),
+    world: collect(attackMechanicFacts.world, 5),
+    opportunities: collect(attackMechanicFacts.opportunities, 5),
     showLedgerFirst: hasMeaningfulLedgerEntries(args.latestLedgerAdds),
   };
 }

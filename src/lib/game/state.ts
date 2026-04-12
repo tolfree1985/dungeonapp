@@ -24,6 +24,17 @@ export function applyDeltas(state: GameStateV1, deltas: StateDelta[] | any): Gam
         break;
       }
 
+      case "modifier.set": {
+        const key = d.key;
+        const value = d.value;
+        if (!key) throw new Error("modifier.set: key required");
+        if (!s.modifiers || typeof s.modifiers !== "object") {
+          s.modifiers = {} as Record<string, unknown>;
+        }
+        s.modifiers[key] = value;
+        break;
+      }
+
       case "clock.inc": {
         const clocksAny:any = (s as any).world?.clocks;
         const c = Array.isArray(clocksAny) ? clocksAny.find((x:any)=>x?.id===d.id) : clocksAny?.[d.id];
@@ -84,6 +95,17 @@ export function applyDeltas(state: GameStateV1, deltas: StateDelta[] | any): Gam
         if (!s.map.nodes[d.to]) throw new Error(`move: unknown destination '${d.to}'`);
         if (!from.exits.includes(d.to)) throw new Error(`move: illegal edge '${fromId}' -> '${d.to}'`);
         s.world.locationId = d.to;
+        break;
+      }
+
+      case "action.block": {
+        const key = d.key;
+        const value = d.value;
+        if (!key) throw new Error("action.block: key required");
+        if (!s.blockedActions || typeof s.blockedActions !== "object") {
+          s.blockedActions = {} as Record<string, boolean>;
+        }
+        s.blockedActions[key] = Boolean(value);
         break;
       }
 

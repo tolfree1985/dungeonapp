@@ -21,6 +21,7 @@ import { loadResolvedSceneImage } from "@/lib/loadResolvedSceneImage";
 import { resolveSceneRefreshDecision } from "@/lib/resolveSceneRefreshDecision";
 import { buildPlayTurnPresentation } from "./normalizeTurnPresentation";
 import { deriveMechanicFacts } from "@/lib/engine/presentation/mechanicFacts";
+import { derivePressureTotals, buildStatsMap } from "@/lib/engine/presentation/pressureFacts";
 import { randomUUID } from "node:crypto";
 import { createAdventureFromScenarioId } from "@/lib/game/createAdventureFromScenario";
 import { resolveCanonicalSceneIdentity } from "@/lib/scene-art/resolveCanonicalSceneIdentity";
@@ -123,6 +124,7 @@ function describeValue(value: unknown): string | undefined {
     return String(value);
   }
 }
+
 
 function buildVisualDeltasFromLedger(ledgerAdds: unknown[]): VisualStateDelta[] {
   if (!Array.isArray(ledgerAdds)) return [];
@@ -344,7 +346,7 @@ export default async function PlayPage({ searchParams }: PlayPageProps) {
     } else {
       const resumedAdventure = await prisma.adventure.findFirst({
         where: { ownerId: user.id },
-        orderBy: [{ latestTurnIndex: "desc" }, { updatedAt: "desc" }],
+        orderBy: [{ latestTurnIndex: "desc" }],
         select: { id: true },
       });
       if (resumedAdventure) {
@@ -495,15 +497,13 @@ let persistedAdventureOwnerId: string | null = null;
         persistedAdventureOwnerId = playableAdventure.ownerId ?? null;
         rawState = requestedAdventureState;
         const stateRecord = asRecord(rawState ?? {});
+        const statsSource = stateRecord?.stats;
+        const statsArray = Array.isArray(statsSource) ? statsSource : [];
+        const statsMap = buildStatsMap(statsSource);
         statePanel = {
           pressureStage: null,
-          pressure: {
-            suspicion: Number(asRecord(stateRecord?.pressure)?.suspicion ?? 0),
-            noise: Number(asRecord(stateRecord?.pressure)?.noise ?? 0),
-            time: Number(asRecord(stateRecord?.pressure)?.time ?? 0),
-            danger: Number(asRecord(stateRecord?.pressure)?.danger ?? 0),
-          },
-          stats: Array.isArray(stateRecord?.stats) ? stateRecord.stats : [],
+          pressure: derivePressureTotals(stateRecord ?? {}),
+          stats: statsArray,
           inventory: Array.isArray(stateRecord?.inventory) ? stateRecord.inventory : [],
           quests: Array.isArray(stateRecord?.quests) ? stateRecord.quests : [],
           relationships: Array.isArray(stateRecord?.relationships) ? stateRecord.relationships : [],
@@ -517,11 +517,6 @@ let persistedAdventureOwnerId: string | null = null;
             return String(value);
           }
         };
-        const statsMap: Record<string, unknown> = {};
-        for (const stat of statePanel.stats ?? []) {
-          const key = typeof stat.key === "string" ? stat.key.toLowerCase() : String(stat.key ?? "").toLowerCase();
-          statsMap[key] = stat.value;
-        }
 
         turns = (playableAdventure.turns ?? []).map((row) => {
           const resolutionText = resolutionToString(row.resolution);

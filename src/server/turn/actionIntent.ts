@@ -3,6 +3,9 @@ export type IntentMode = "DO" | "SAY" | "LOOK";
 export type CanonicalVerb =
   | "inspect"
   | "search"
+  | "listen"
+  | "sneak"
+  | "hide"
   | "open"
   | "pull"
   | "force"
@@ -60,6 +63,16 @@ export function parseActionIntent(mode: IntentMode, rawInput: string): ActionInt
 function detectVerb(input: string, mode: IntentMode): CanonicalVerb {
   const normalized = input.toLowerCase();
 
+  if (normalized.includes("listen") || normalized.includes("hear")) {
+    return "listen";
+  }
+  if (normalized.includes("sneak") || normalized.includes("creep")) {
+    return "sneak";
+  }
+  if (normalized.includes("hide") || normalized.includes("conceal")) {
+    return "hide";
+  }
+
   if (
     normalized.includes("inspect") ||
     normalized.includes("examine") ||
@@ -79,6 +92,7 @@ function detectVerb(input: string, mode: IntentMode): CanonicalVerb {
     return "search";
   }
 
+  if (normalized.includes("smash") || normalized.includes("bash")) return "force";
   if (normalized.includes("force")) return "force";
   if (normalized.includes("pull")) return "pull";
   if (normalized.includes("tip")) return "tip";
@@ -90,6 +104,6 @@ function detectVerb(input: string, mode: IntentMode): CanonicalVerb {
 }
 
 function detectTargetText(input: string): string | undefined {
-  const targets = ["door", "drawer", "crate", "desk", "cabinet", "room"];
+  const targets = ["door", "drawer", "crate", "desk", "cabinet", "room", "container", "object", "fixture"];
   return targets.find((target) => input.includes(target));
 }

@@ -4,6 +4,10 @@ import { normalizeScenarioContent } from "@/lib/scenario/scenarioValidator";
 import { buildScenarioVersionStamp } from "@/lib/scenario/scenarioVersion";
 import { buildCompatibilityInfo } from "@/lib/engine/contracts/assertAdventureCompatibility";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 type TxLike = {
   adventure: {
     findUnique: (args: any) => Promise<any>;

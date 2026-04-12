@@ -38,7 +38,7 @@ export function getSceneAffordances(_mode: IntentMode): SceneAffordance[] {
       label: "crate",
       aliases: ["crate", "opened crate"],
       resolver: "container",
-      verbs: ["inspect", "search", "move"],
+      verbs: ["inspect", "search", "move", "force"],
     },
     {
       id: "desk",
@@ -52,7 +52,28 @@ export function getSceneAffordances(_mode: IntentMode): SceneAffordance[] {
       label: "room",
       aliases: ["room", "hall"],
       resolver: "room",
-      verbs: ["search", "inspect"],
+      verbs: ["search", "inspect", "listen", "sneak", "hide"],
+    },
+    {
+      id: "general_container",
+      label: "container",
+      aliases: ["container", "box"],
+      resolver: "container",
+      verbs: ["search"],
+    },
+    {
+      id: "generic_object",
+      label: "object",
+      aliases: ["object", "artifact"],
+      resolver: "container",
+      verbs: ["search"],
+    },
+    {
+      id: "room_fixture",
+      label: "fixture",
+      aliases: ["fixture", "pillar", "gauge"],
+      resolver: "container",
+      verbs: ["search"],
     },
     {
       id: "cabinet",

@@ -39,6 +39,7 @@ import { resolveSceneFocusState } from "@/lib/resolveSceneFocusState";
 import { findSceneArt, queueSceneArt, type RenderMode } from "@/lib/sceneArtRepo";
 import { SceneArtPayload } from "@/lib/sceneArt";
 import { buildCanonicalSceneArtPayload } from "@/lib/scene-art/buildCanonicalSceneArtPayload";
+import { derivePressureTotals } from "@/lib/engine/presentation/pressureFacts";
 import { SceneArtStatus } from "@/generated/prisma";
 import { ENGINE_VERSION } from "@/lib/game/engineVersion";
 import { logSceneArtEvent } from "@/lib/scene-art/logging";
@@ -130,6 +131,7 @@ import {
 import { resolvePositionActionFlags, type PositionActionFlags } from "@/lib/position-action-flags";
 import { resolveNoiseActionFlags, type NoiseActionFlags } from "@/lib/noise-action-flags";
 import { applyWorldStateModifiers } from "@/lib/engine/applyWorldStateModifiers";
+import { getEffectiveDifficulty } from "@/lib/game/difficulty";
 import { resolveComplicationWeight } from "@/server/scene/complication-weight";
 import { resolveComplicationTier } from "@/server/scene/complication-tier";
 import { resolveComplicationSelectionPolicy } from "@/server/scene/complication-selection-policy";
@@ -231,12 +233,7 @@ function computePressureFromNormalized(input: {
     stateStats,
     deltas,
   });
-  const canonicalPressure = {
-    noise: Number((state.pressure as Record<string, unknown>)?.noise ?? 0),
-    suspicion: Number((state.pressure as Record<string, unknown>)?.suspicion ?? 0),
-    time: Number((state.pressure as Record<string, unknown>)?.time ?? 0),
-    danger: Number((state.pressure as Record<string, unknown>)?.danger ?? 0),
-  };
+  const canonicalPressure = derivePressureTotals(state);
   const currentPressureAdds = deltas.filter((delta) => delta.kind === "pressure.add");
 
   return {
@@ -1205,6 +1202,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       softRate: softRateResult,
       adventureLocked: false,
       usageVerdict: null,
+      mode: playerIntentMode ?? "LOOK",
       legacy: {
         args: {
           prisma: db,
@@ -1343,6 +1341,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       0,
       readStateTime(stateRecord) - readStateTime(previousStateRecord),
     );
+    stateRecord.pressure = derivePressureTotals(stateRecord);
     const derivedSceneDeltaKind: SceneDeltaKind = decideSceneDeltaKind({
       previous: previousSceneIdentity,
       current: currentSceneIdentity,
@@ -2770,12 +2769,23 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
             },
           }
         : null;
+    const canonicalAdventureState = stateRecord as AdventureState;
     const modifiers = applyWorldStateModifiers({
       stateRecord,
       mode: playerIntentMode ?? "LOOK",
     });
     const baseDifficulty = Number(stateRecord.difficulty ?? 0);
-    const adjustedDifficulty = baseDifficulty + modifiers.difficultyModifier;
+    const afterWorldModifiers = baseDifficulty + modifiers.difficultyModifier;
+    const afterStealthModifier = getEffectiveDifficulty(
+      afterWorldModifiers,
+      canonicalAdventureState,
+      "stealth.difficulty",
+    );
+    const adjustedDifficulty = getEffectiveDifficulty(
+      afterStealthModifier,
+      canonicalAdventureState,
+      "hide.difficulty",
+    );
     const effectiveRollTotal =
       typeof rollTotal === "number" && Number.isFinite(rollTotal)
         ? rollTotal + modifiers.rollAdjustment
@@ -2803,7 +2813,6 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
         outcomeTier: resolvedOutcomeTier,
       });
     }
-    const canonicalAdventureState = stateRecord as AdventureState;
     const inventoryContext = buildInventoryContext(playerText, canonicalAdventureState);
     const authoredEffects =
       playerIntentMode === "LOOK" || playerIntentMode === "DO" || playerIntentMode === "SAY"
@@ -3090,7 +3099,7 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       canUseSceneDelta: renderDecisionOutcome.canUseSceneDelta,
       canReusePreviousSceneArt: renderDecisionOutcome.canReusePreviousSceneArt,
     });
-    const branch = (finalized as any)?.branch ?? "legacy";
+    const branch = (finalized as any)?.branch ?? "deterministic";
 
     if (branch === "legacy" && canonicalPayload && refreshDecision) {
       const legacySceneArt = await orchestrateLegacySceneArtDecision({
@@ -3162,6 +3171,12 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
       const { outcome, ...rest } = entry as Record<string, unknown>;
       return rest as LedgerEntry;
     });
+    for (const entry of normalizedLedgerAdds) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      if (Object.prototype.hasOwnProperty.call(entry, "outcome")) {
+        throw new Error("Ledger entry contains forbidden outcome field");
+      }
+    }
     const costNeeded = ["success_with_cost", "mixed", "failure_with_progress"].includes(resolvedOutcomeTier);
     if (costNeeded && !classification.hasCost) {
       const pressureDeltas = inferPressureDeltas({
@@ -3570,20 +3585,22 @@ export async function postTurn(req: Request, deps: PostHandlerDeps = {}) {
     });
 
 
-      const responseBody = {
-        ok: true,
-        action: action ?? null,
-        tags,
+    const canonicalResolvedStateDeltas = finalResolvedTurn.stateDeltas ?? [];
+    const canonicalResolvedLedgerAdds = finalResolvedTurn.ledgerAdds ?? [];
+    const responseBody = {
+      ok: true,
+      action: action ?? null,
+      tags,
       rollTotal: rollTotal ?? null,
       ...finalized,
       turn: {
         ...(finalized as any).turn,
-        stateDeltas: turnStateDeltas,
-        ledgerAdds: normalizedLedgerAdds,
+        stateDeltas: canonicalResolvedStateDeltas,
+        ledgerAdds: canonicalResolvedLedgerAdds,
         stateFlags: canonicalFlags,
       },
-      stateDeltas: turnStateDeltas,
-      ledgerAdds: normalizedLedgerAdds,
+      stateDeltas: canonicalResolvedStateDeltas,
+      ledgerAdds: canonicalResolvedLedgerAdds,
       sceneArt: finalSceneArt,
       sceneUpdate: sceneTransitionPayload
         ? {
