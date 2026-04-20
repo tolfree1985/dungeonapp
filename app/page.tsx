@@ -59,8 +59,8 @@ export default function HomePage() {
       </header>
 
       <section className="relative z-10 min-h-screen px-6">
-        <div className="absolute left-1/2 top-[68%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 text-center md:top-[66%] md:gap-3">
-          <p className="mb-3 text-[11px] uppercase tracking-[0.35em] text-[#8A867F]/55">
+        <div className="absolute left-1/2 top-[70%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-3 text-center md:top-[68%] md:gap-4">
+          <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.2em] text-[#CFC8B8]/82">
             The world does not forget
           </p>
 
@@ -68,11 +68,11 @@ export default function HomePage() {
             CHRONICLE
           </h1>
 
-          <p className="mt-[0.6rem] text-lg font-medium uppercase tracking-[0.12em] text-[#D6D1C6] sm:text-xl">
+          <p className="mt-[0.8rem] text-lg font-medium uppercase tracking-[0.12em] text-[#D6D1C6] sm:text-xl">
             Nothing is without consequence.
           </p>
 
-          <button className="mt-[1.4rem] border border-[rgba(196,168,110,0.55)] bg-transparent px-7 py-[14px] text-sm uppercase tracking-[0.12em] text-[#F5F5F0]/90 shadow-none backdrop-blur-[1px] transition duration-200 ease-out hover:border-[rgba(196,168,110,0.75)] hover:bg-[rgba(196,168,110,0.04)] hover:translate-y-[-1px]">
+          <button className="mt-[1.8rem] border border-[rgba(196,168,110,0.55)] bg-transparent px-7 py-[14px] text-sm uppercase tracking-[0.12em] text-[#F5F5F0]/90 shadow-none backdrop-blur-[1px] transition duration-200 ease-out hover:border-[rgba(196,168,110,0.75)] hover:bg-[rgba(196,168,110,0.04)] hover:translate-y-[-1px]">
             Begin the Chronicle
           </button>
         </div>
