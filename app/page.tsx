@@ -9,13 +9,15 @@ export default function HomePage() {
         fill
         priority
         className="object-cover object-[center_32%]"
+        style={{ filter: "brightness(0.88) contrast(0.94) saturate(0.92)" }}
         sizes="100vw"
       />
 
-      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.72)_0%,rgba(0,0,0,0.34)_24%,rgba(0,0,0,0.18)_58%,rgba(0,0,0,0.7)_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.66)_0%,rgba(0,0,0,0.26)_28%,rgba(0,0,0,0.16)_50%,rgba(0,0,0,0.24)_66%,rgba(0,0,0,0.72)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.06)_0%,rgba(0,0,0,0.16)_40%,rgba(0,0,0,0.42)_100%)]" />
 
       <header className="absolute inset-x-0 top-0 z-20">
-        <div className="mx-12 mt-4 flex items-center justify-between border border-white/10 bg-black/12 px-5 py-3 backdrop-blur-[1px]">
+        <div className="mx-12 mt-4 flex items-center justify-between border border-white/10 bg-black/12 px-5 py-3 backdrop-blur-[0.5px]">
           <div className="flex items-center gap-4 text-white/62">
             <div className="h-6 w-6 border border-white/28" />
             <span className="text-[11px] uppercase tracking-[0.42em]">Chronicle</span>
@@ -43,11 +45,11 @@ export default function HomePage() {
             Nothing is without consequence.
           </p>
 
-          <div className="mt-11 space-y-3 text-lg text-white/66">
+          <div className="mt-11 space-y-3 text-lg text-white/64">
             <p>Every action is recorded.</p>
           </div>
 
-          <button className="mt-11 border border-amber-200/60 bg-amber-200/10 px-10 py-4 text-sm uppercase tracking-[0.28em] text-white/92 shadow-[0_0_20px_rgba(255,200,120,0.15)] backdrop-blur-sm transition hover:border-amber-200/75 hover:bg-amber-200/20">
+          <button className="mt-11 border border-amber-200/70 bg-amber-200/12 px-10 py-4 text-sm uppercase tracking-[0.28em] text-white/94 shadow-[0_0_20px_rgba(255,200,120,0.15)] backdrop-blur-[1px] transition hover:border-amber-200/85 hover:bg-amber-200/18">
             Enter the Chronicle
           </button>
 
