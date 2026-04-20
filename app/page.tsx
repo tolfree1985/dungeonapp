@@ -1,4 +1,10 @@
 import Image from "next/image";
+import { Cormorant_Garamond } from "next/font/google";
+
+const heroSerif = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
 
 export default function HomePage() {
   return (
@@ -59,20 +65,50 @@ export default function HomePage() {
       </header>
 
       <section className="relative z-10 min-h-screen px-6">
-        <div className="absolute left-1/2 top-[70%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-3 text-center md:top-[68%] md:gap-4">
-          <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.2em] text-[#CFC8B8]/82">
+        <div
+          className="absolute left-1/2 top-[70%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-3 text-center md:top-[68%] md:gap-4"
+          style={{
+            backgroundImage:
+              "radial-gradient(ellipse at center, rgba(0, 0, 0, 0.18) 0%, rgba(0, 0, 0, 0.08) 40%, rgba(0, 0, 0, 0) 70%)",
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "center",
+            backgroundSize: "120% 120%",
+          }}
+        >
+          <p
+            className={`${heroSerif.className} mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-[#D6D1C6]/84`}
+            style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.18)", filter: "blur(0.12px)" }}
+          >
             The world does not forget
           </p>
 
-          <h1 className="text-6xl font-medium tracking-[0.08em] text-[#E6E1D9] sm:text-7xl md:text-8xl" style={{ textShadow: "0 1px 2px rgba(0, 0, 0, 0.5)" }}>
+          <h1
+            className={`${heroSerif.className} text-6xl font-semibold tracking-[0.015em] text-[#E8E4DC] sm:text-7xl md:text-8xl`}
+            style={{
+              backgroundImage:
+                "linear-gradient(to bottom, rgba(255,255,255,0.98) 0%, rgba(245,242,235,0.88) 20%, rgba(215,220,225,0.65) 55%, rgba(165,170,175,0.48) 100%)",
+              WebkitBackgroundClip: "text",
+              backgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              textShadow: "0 1px 0 rgba(255,255,255,0.18), 0 0 1px rgba(0,0,0,0.25), 0 2px 3px rgba(0,0,0,0.18)",
+              WebkitTextStroke: "0.15px rgba(0, 0, 0, 0.14)",
+              filter: "drop-shadow(0 1px 0 rgba(0, 0, 0, 0.08))",
+            }}
+          >
             CHRONICLE
           </h1>
 
-          <p className="mt-[0.8rem] text-lg font-medium uppercase tracking-[0.12em] text-[#D6D1C6] sm:text-xl">
+          <p
+            className={`${heroSerif.className} mt-[0.8rem] text-lg font-medium uppercase tracking-[0.055em] text-[#E6E0D6]/78 sm:text-xl`}
+            style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.16)", filter: "blur(0.1px)" }}
+          >
             Nothing is without consequence.
           </p>
 
-          <button className="mt-[1.8rem] border border-[rgba(196,168,110,0.55)] bg-transparent px-7 py-[14px] text-sm uppercase tracking-[0.12em] text-[#F5F5F0]/90 shadow-none backdrop-blur-[1px] transition duration-200 ease-out hover:border-[rgba(196,168,110,0.75)] hover:bg-[rgba(196,168,110,0.04)] hover:translate-y-[-1px]">
+          <button
+            className={`${heroSerif.className} mt-[1.8rem] border border-[rgba(196,168,110,0.74)] bg-transparent px-7 py-[14px] text-sm uppercase tracking-[0.105em] text-[#F5F5F0]/96 shadow-none backdrop-blur-[1px] transition duration-200 ease-out hover:border-[rgba(196,168,110,0.84)] hover:bg-[rgba(196,168,110,0.06)] hover:translate-y-[-1px]`}
+            style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.24)" }}
+          >
             Begin the Chronicle
           </button>
         </div>
