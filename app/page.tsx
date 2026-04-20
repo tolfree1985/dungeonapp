@@ -9,12 +9,18 @@ export default function HomePage() {
         fill
         priority
         className="object-cover object-[center_32%]"
-        style={{ filter: "brightness(0.88) contrast(0.94) saturate(0.92)" }}
         sizes="100vw"
       />
 
-      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.66)_0%,rgba(0,0,0,0.26)_28%,rgba(0,0,0,0.16)_50%,rgba(0,0,0,0.24)_66%,rgba(0,0,0,0.72)_100%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.06)_0%,rgba(0,0,0,0.16)_40%,rgba(0,0,0,0.42)_100%)]" />
+      <div
+        className="pointer-events-none absolute inset-0 bg-[url('/chronicle_noise.png')] bg-repeat opacity-[0.035] mix-blend-overlay"
+        aria-hidden="true"
+      />
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.65)_0%,rgba(0,0,0,0.15)_35%,rgba(0,0,0,0.15)_65%,rgba(0,0,0,0.65)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.03)_0%,rgba(0,0,0,0.35)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_45%,rgba(255,255,255,0.04)_0%,rgba(0,0,0,0.0)_60%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.55)_0%,rgba(0,0,0,0.18)_30%,rgba(0,0,0,0.0)_60%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_75%,rgba(255,255,255,0.04)_0%,rgba(0,0,0,0.0)_60%)]" />
 
       <header className="absolute inset-x-0 top-0 z-20">
         <div className="mx-12 mt-4 flex items-center justify-between border border-white/10 bg-black/12 px-5 py-3 backdrop-blur-[0.5px]">

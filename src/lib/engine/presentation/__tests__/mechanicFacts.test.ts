@@ -471,6 +471,22 @@ describe("mechanicFacts opportunity derivation", () => {
     );
   });
 
+  it("derives a world fact when careNow exists but world would otherwise be empty", () => {
+    const facts = deriveMechanicFacts({
+      stateFlags: {},
+      stateDeltas: [],
+      ledgerAdds: [],
+      stats: {
+        alert: 2,
+      },
+      currentTurnIndex: 12,
+    });
+
+    expect(facts.careNow.length).toBeGreaterThan(0);
+    expect(facts.world.length).toBeGreaterThan(0);
+    expect(facts.world.map((fact) => fact.text)).toContain("Guards are alert.");
+  });
+
   it("emits at most one careNow fact per canonical key", () => {
     const facts = deriveMechanicFacts({
       stateFlags: {

@@ -248,6 +248,48 @@ const dedupeAndSortFacts = (lines: FactLine[]): FactLine[] => {
   return sortFacts(deduped);
 };
 
+const deriveParityWorldFactFromCareNow = (careFact: FactLine): FactLine | null => {
+  const careId = careFact.id.toLowerCase();
+  const careText = careFact.text.toLowerCase();
+
+  const makeWorldFact = (id: string, text: string): FactLine => ({
+    id,
+    text,
+    bucket: "world",
+    kind: "info",
+    severity: careFact.severity,
+    priority: careFact.priority,
+    source: careFact.source,
+  });
+
+  if (careId.includes("fire") || careText.includes("flame")) {
+    return makeWorldFact("world_parity_fire", "Fire is burning.");
+  }
+  if (careId.includes("noise") || careText.includes("noise")) {
+    return makeWorldFact("world_parity_noise", "Noise now carries through the area.");
+  }
+  if (careId.includes("alert") || careText.includes("alert")) {
+    return makeWorldFact("world_parity_alert", "Guards are alert.");
+  }
+  if (careId.includes("search")) {
+    return makeWorldFact("world_parity_search", "Guards are searching the room.");
+  }
+  if (careId.includes("exposure") || careText.includes("exposed")) {
+    return makeWorldFact("world_parity_exposure", "Your position is known.");
+  }
+  if (careId.includes("danger")) {
+    return makeWorldFact("world_parity_danger", "The room feels increasingly hostile.");
+  }
+  if (careId.includes("time")) {
+    return makeWorldFact("world_parity_time", "Time has advanced.");
+  }
+  if (careId.includes("wait")) {
+    return makeWorldFact("world_parity_wait", "Waiting is no longer safe.");
+  }
+
+  return makeWorldFact("world_parity_state", "The wider situation has materially changed.");
+};
+
 export function deriveMechanicFacts(
   {
     stateFlags,
@@ -1756,6 +1798,13 @@ export function deriveMechanicFacts(
 
   facts.careNow = resolveCareNowConflicts(facts.careNow);
   facts.careNow = dedupeAndSortFacts(facts.careNow);
+  if (facts.careNow.length > 0 && facts.world.length === 0) {
+    // Canonical parity guard: if a signal can surface as careNow, it must also yield world truth.
+    const parityWorldFact = deriveParityWorldFactFromCareNow(facts.careNow[0]);
+    if (parityWorldFact) {
+      pushFact(facts, seen, parityWorldFact);
+    }
+  }
   facts.world = dedupeAndSortFacts(facts.world);
   return facts;
 }
