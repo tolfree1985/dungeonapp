@@ -58,31 +58,23 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="relative z-10 flex min-h-screen items-center justify-center px-6 pt-28 md:pt-36">
-        <div className="mx-auto flex max-w-4xl translate-y-8 flex-col items-center text-center md:translate-y-12">
-          <p className="mb-7 text-[11px] uppercase tracking-[0.48em] text-white/42">
+      <section className="relative z-10 min-h-screen px-6">
+        <div className="absolute left-1/2 top-[68%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 text-center md:top-[66%] md:gap-3">
+          <p className="mb-3 text-[11px] uppercase tracking-[0.35em] text-[#8A867F]/55">
             The world does not forget
           </p>
 
-          <h1 className="text-6xl font-semibold tracking-[0.12em] text-white sm:text-7xl md:text-8xl">
+          <h1 className="text-6xl font-medium tracking-[0.08em] text-[#E6E1D9] sm:text-7xl md:text-8xl" style={{ textShadow: "0 1px 2px rgba(0, 0, 0, 0.5)" }}>
             CHRONICLE
           </h1>
 
-          <p className="mt-4 text-lg uppercase tracking-[0.2em] text-white/72 sm:text-xl">
+          <p className="mt-[0.6rem] text-lg font-medium uppercase tracking-[0.12em] text-[#D6D1C6] sm:text-xl">
             Nothing is without consequence.
           </p>
 
-          <div className="mt-11 space-y-3 text-lg text-white/64">
-            <p>Every action is recorded.</p>
-          </div>
-
-          <button className="mt-11 border border-amber-200/70 bg-amber-200/12 px-10 py-4 text-sm uppercase tracking-[0.28em] text-white/94 shadow-[0_0_20px_rgba(255,200,120,0.15)] backdrop-blur-[1px] transition hover:border-amber-200/85 hover:bg-amber-200/18">
-            Enter the Chronicle
+          <button className="mt-[1.4rem] border border-[rgba(196,168,110,0.55)] bg-transparent px-7 py-[14px] text-sm uppercase tracking-[0.12em] text-[#F5F5F0]/90 shadow-none backdrop-blur-[1px] transition duration-200 ease-out hover:border-[rgba(196,168,110,0.75)] hover:bg-[rgba(196,168,110,0.04)] hover:translate-y-[-1px]">
+            Begin the Chronicle
           </button>
-
-          <p className="mt-4 text-[11px] uppercase tracking-[0.38em] text-white/44">
-            Replayable. Inspectable. Irreversible.
-          </p>
         </div>
       </section>
     </main>
