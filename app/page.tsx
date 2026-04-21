@@ -55,12 +55,6 @@ export default function HomePage() {
             <div className="h-6 w-6 border border-white/28" />
             <span className="text-[11px] uppercase tracking-[0.42em]">Chronicle</span>
           </div>
-
-          <nav className="flex items-center gap-8 text-[11px] uppercase tracking-[0.42em] text-white/48">
-            <span>Ash</span>
-            <span>Ruin</span>
-            <span>Ember</span>
-          </nav>
         </div>
       </header>
 
@@ -76,10 +70,10 @@ export default function HomePage() {
           }}
         >
           <p
-            className={`${heroSerif.className} mb-2 text-[12px] font-medium uppercase tracking-[0.12em] text-[#D6D1C6]/84`}
+            className={`${heroSerif.className} mb-2 text-[12px] font-medium uppercase tracking-[0.3em] text-[#FFFFFF]/50`}
             style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.18)", filter: "blur(0.12px)" }}
           >
-            The world does not forget
+            A WORLD OF CONSEQUENCE
           </p>
 
           <h1
@@ -99,17 +93,24 @@ export default function HomePage() {
           </h1>
 
           <p
-            className={`${heroSerif.className} mt-[0.8rem] text-lg font-medium uppercase tracking-[0.055em] text-[#E6E0D6]/78 sm:text-xl`}
-            style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.16)", filter: "blur(0.1px)" }}
+            className={`${heroSerif.className} mt-[0.8rem] text-[12px] font-medium tracking-[0.08em] text-[#FFFFFF]/90`}
+            style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.1)", filter: "blur(0.08px)" }}
           >
-            Nothing is without consequence.
+            An RPG storytelling engine
+          </p>
+
+          <p
+            className={`${heroSerif.className} mt-[1.25rem] text-base font-medium tracking-[0.02em] text-[#FFFFFF]/70 sm:text-lg`}
+            style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.14)", filter: "blur(0.08px)" }}
+          >
+            Your actions shape the story.
           </p>
 
           <button
-            className={`${heroSerif.className} mt-[1.8rem] border border-[rgba(196,168,110,0.74)] bg-transparent px-7 py-[14px] text-sm uppercase tracking-[0.105em] text-[#F5F5F0]/96 shadow-none backdrop-blur-[1px] transition duration-200 ease-out hover:border-[rgba(196,168,110,0.84)] hover:bg-[rgba(196,168,110,0.06)] hover:translate-y-[-1px]`}
-            style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.24)" }}
+            className={`${heroSerif.className} group relative mt-[1.75rem] inline-flex min-w-[260px] items-center justify-center overflow-hidden border border-[rgba(255,255,255,0.4)] bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.04),rgba(0,0,0,0)_55%)] px-10 py-4 text-sm uppercase tracking-[0.22em] text-[rgba(255,255,255,0.92)] shadow-[0_6px_18px_rgba(0,0,0,0.25),inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-[1px] transition-[transform,box-shadow,border-color,color,background-color] duration-90 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-[3px] hover:border-[rgba(255,255,255,0.45)] hover:bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.06),rgba(0,0,0,0)_55%)] hover:text-[rgba(255,255,255,0.95)] hover:shadow-[0_14px_32px_rgba(0,0,0,0.38),0_2px_6px_rgba(0,0,0,0.25)] active:translate-y-[2px] active:scale-[0.982] active:border-[rgba(255,255,255,0.55)] active:bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.04),rgba(0,0,0,0)_55%)] active:shadow-[0_2px_6px_rgba(0,0,0,0.35)]`}
+            style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.14)" }}
           >
-            Begin the Chronicle
+            BEGIN THE CHRONICLE
           </button>
         </div>
       </section>
