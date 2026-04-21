@@ -96,7 +96,7 @@ export default function HomePage() {
             className={`${heroSerif.className} mt-[0.8rem] text-[12px] font-medium tracking-[0.08em] text-[#FFFFFF]/90`}
             style={{ textShadow: "0 1px 1px rgba(0, 0, 0, 0.1)", filter: "blur(0.08px)" }}
           >
-            An RPG storytelling engine
+            An RPG where every choice matters
           </p>
 
           <p
